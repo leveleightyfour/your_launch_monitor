@@ -1,7 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
+import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 class TilesTab extends ConsumerWidget {
@@ -26,6 +29,7 @@ class TilesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final metrics = ref.watch(selectedTilesProvider);
+    final prefs = ref.watch(unitPrefsProvider);
     final avg = shots.isEmpty ? null : ShotData.averageOf(shots);
     final last = selectedShot ?? (shots.isEmpty ? null : shots.first);
     final tablet = isTablet(context);
@@ -70,9 +74,11 @@ class TilesTab extends ConsumerWidget {
               ),
               itemCount: metrics.length,
               itemBuilder: (context, i) => _MetricTile(
+                key: ValueKey(metrics[i]),
                 metric: metrics[i],
                 currentShot: last,
                 avgShot: avg,
+                prefs: prefs,
               ),
             );
           },
@@ -133,19 +139,31 @@ class TilesTab extends ConsumerWidget {
 
 // ── Metric value resolution ───────────────────────────────────────────────────
 
-String metricValue(TileMetric m, ShotData? s) {
+/// Returns the display unit label for [m] respecting [prefs].
+String tileUnit(TileMetric m, UnitPrefs prefs) => switch (m) {
+  TileMetric.ballSpeed || TileMetric.clubSpeed => prefs.speedLabel,
+  TileMetric.apex ||
+  TileMetric.carry ||
+  TileMetric.run ||
+  TileMetric.totalDistance => prefs.distLabel,
+  _ => m.unit,
+};
+
+String metricValue(TileMetric m, ShotData? s, UnitPrefs prefs) {
   if (s == null) return '--';
   return switch (m) {
-    TileMetric.ballSpeed => s.ballSpeed.toStringAsFixed(1),
+    TileMetric.ballSpeed => prefs.spd(s.ballSpeed).toStringAsFixed(1),
     TileMetric.launchDirection => '${s.launchDirection.toStringAsFixed(1)}°',
     TileMetric.launchAngle => '${s.launchAngle.toStringAsFixed(1)}°',
     TileMetric.spinRate => s.spinRate.toStringAsFixed(0),
     TileMetric.spinAxis => '${s.spinAxis.toStringAsFixed(1)}°',
-    TileMetric.apex => s.apex?.toStringAsFixed(1) ?? '--',
-    TileMetric.carry => s.carry.toStringAsFixed(1),
-    TileMetric.run => s.run?.toStringAsFixed(1) ?? '--',
-    TileMetric.totalDistance => s.totalDistance.toStringAsFixed(1),
-    TileMetric.clubSpeed => s.clubSpeed.toStringAsFixed(1),
+    TileMetric.apex =>
+      s.apex != null ? prefs.dist(s.apex!).toStringAsFixed(1) : '--',
+    TileMetric.carry => prefs.dist(s.carry).toStringAsFixed(1),
+    TileMetric.run =>
+      s.run != null ? prefs.dist(s.run!).toStringAsFixed(1) : '--',
+    TileMetric.totalDistance => prefs.dist(s.totalDistance).toStringAsFixed(1),
+    TileMetric.clubSpeed => prefs.spd(s.clubSpeed).toStringAsFixed(1),
     TileMetric.swingPath =>
       s.swingPath != null
           ? '${s.swingPath!.abs().toStringAsFixed(1)}° ${s.swingPath! >= 0 ? 'R' : 'L'}'
@@ -169,19 +187,19 @@ String metricValue(TileMetric m, ShotData? s) {
   };
 }
 
-double? metricRaw(TileMetric m, ShotData? s) {
+double? metricRaw(TileMetric m, ShotData? s, UnitPrefs prefs) {
   if (s == null) return null;
   return switch (m) {
-    TileMetric.ballSpeed => s.ballSpeed,
+    TileMetric.ballSpeed => prefs.spd(s.ballSpeed),
     TileMetric.launchDirection => s.launchDirection,
     TileMetric.launchAngle => s.launchAngle,
     TileMetric.spinRate => s.spinRate,
     TileMetric.spinAxis => s.spinAxis,
-    TileMetric.apex => s.apex,
-    TileMetric.carry => s.carry,
-    TileMetric.run => s.run,
-    TileMetric.totalDistance => s.totalDistance,
-    TileMetric.clubSpeed => s.clubSpeed,
+    TileMetric.apex => s.apex != null ? prefs.dist(s.apex!) : null,
+    TileMetric.carry => prefs.dist(s.carry),
+    TileMetric.run => s.run != null ? prefs.dist(s.run!) : null,
+    TileMetric.totalDistance => prefs.dist(s.totalDistance),
+    TileMetric.clubSpeed => prefs.spd(s.clubSpeed),
     TileMetric.swingPath => s.swingPath,
     TileMetric.faceAngle => s.faceAngle,
     TileMetric.angleOfAttack => s.angleOfAttack,
@@ -197,22 +215,25 @@ class _MetricTile extends StatelessWidget {
   final TileMetric metric;
   final ShotData? currentShot;
   final ShotData? avgShot;
+  final UnitPrefs prefs;
 
   const _MetricTile({
+    super.key,
     required this.metric,
     required this.currentShot,
     required this.avgShot,
+    required this.prefs,
   });
 
   @override
   Widget build(BuildContext context) {
-    final currentStr = metricValue(metric, currentShot);
-    final avgStr = metricValue(metric, avgShot);
+    final currentStr = metricValue(metric, currentShot, prefs);
+    final avgStr = metricValue(metric, avgShot, prefs);
 
     String footer = '';
     if (avgShot != null && currentShot != null) {
-      final cur = metricRaw(metric, currentShot);
-      final avg = metricRaw(metric, avgShot);
+      final cur = metricRaw(metric, currentShot, prefs);
+      final avg = metricRaw(metric, avgShot, prefs);
       if (cur != null && avg != null) {
         final diff = cur - avg;
         footer = 'AVG $avgStr  ±${diff.abs().toStringAsFixed(1)}';
@@ -220,6 +241,8 @@ class _MetricTile extends StatelessWidget {
     } else if (avgShot != null) {
       footer = 'AVG $avgStr';
     }
+
+    final unit = tileUnit(metric, prefs);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -245,22 +268,21 @@ class _MetricTile extends StatelessWidget {
               child: FittedBox(
                 fit: BoxFit.contain,
                 alignment: Alignment.center,
-                child: Text(
-                  currentStr,
+                child: _SplitFlapText(
+                  text: currentStr,
                   style: AppTextStyles.mono(size: 108, weight: FontWeight.w600),
                 ),
               ),
             ),
           ),
-          // Unit below value — italic
-          if (metric.unit.isNotEmpty)
-            Text(
-              metric.unit,
-              style: AppTextStyles.sans(
-                size: 13,
-                color: AppColors.textDimmed,
-              ).copyWith(fontStyle: FontStyle.italic),
-            ),
+          // Unit below value — always reserve height so all tiles scale uniformly
+          Text(
+            unit.isEmpty ? '\u00A0' : unit,
+            style: AppTextStyles.sans(
+              size: 13,
+              color: unit.isEmpty ? Colors.transparent : AppColors.textDimmed,
+            ).copyWith(fontStyle: FontStyle.italic),
+          ),
           // AVG pill at the bottom
           if (footer.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -284,22 +306,109 @@ class _MetricTile extends StatelessWidget {
   }
 }
 
+// ── Split-flap value animation ────────────────────────────────────────────────
+
+class _SplitFlapText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+
+  const _SplitFlapText({required this.text, required this.style});
+
+  @override
+  State<_SplitFlapText> createState() => _SplitFlapTextState();
+}
+
+class _SplitFlapTextState extends State<_SplitFlapText>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  String _from = '';
+
+  static const _duration = Duration(milliseconds: 550);
+
+  @override
+  void initState() {
+    super.initState();
+    _from = widget.text;
+    _ctrl = AnimationController(vsync: this, duration: _duration);
+  }
+
+  @override
+  void didUpdateWidget(_SplitFlapText old) {
+    super.didUpdateWidget(old);
+    if (old.text != widget.text) {
+      _from = old.text;
+      _ctrl.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  // Returns the character to display at [index] given animation progress [t].
+  // Digits cycle through 0–9 with a left-to-right stagger; other chars flip
+  // at the halfway point of their window.
+  String _char(int index, double t) {
+    final to = widget.text;
+    final from = _from;
+    final toChar = index < to.length ? to[index] : ' ';
+    final fromChar = index < from.length ? from[index] : ' ';
+
+    if (toChar == fromChar) return toChar;
+
+    // Each character gets a staggered 70%-wide window within [0, 1].
+    final offset = (index * 0.06).clamp(0.0, 0.45);
+    final localT = ((t - offset) / 0.7).clamp(0.0, 1.0);
+
+    if (localT >= 1.0) return toChar;
+    if (localT <= 0.0) return fromChar;
+
+    final isNumeric =
+        RegExp(r'\d').hasMatch(toChar) || RegExp(r'\d').hasMatch(fromChar);
+    if (isNumeric) {
+      // Snap to final in the last 15% of the window; cycle digits before that.
+      if (localT > 0.85) return toChar;
+      return ((localT * 10).floor() % 10).toString();
+    }
+
+    return localT < 0.5 ? fromChar : toChar;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        final t = _ctrl.value;
+        final len = math.max(widget.text.length, _from.length);
+        final buf = StringBuffer();
+        for (var i = 0; i < len; i++) {
+          buf.write(_char(i, t));
+        }
+        return Text(buf.toString(), style: widget.style);
+      },
+    );
+  }
+}
+
 // ── Customize bottom sheet ────────────────────────────────────────────────────
 
-class _CustomizeSheet extends StatefulWidget {
+class _CustomizeSheet extends ConsumerStatefulWidget {
   final List<TileMetric> current;
   final ValueChanged<List<TileMetric>> onApply;
 
   const _CustomizeSheet({required this.current, required this.onApply});
 
   @override
-  State<_CustomizeSheet> createState() => _CustomizeSheetState();
+  ConsumerState<_CustomizeSheet> createState() => _CustomizeSheetState();
 }
 
-class _CustomizeSheetState extends State<_CustomizeSheet> {
-  late final Set<TileMetric> _selected;
+class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
+  late List<TileMetric> _selected;
 
-  static const _ballData = [
+  static const _ballMetrics = [
     TileMetric.ballSpeed,
     TileMetric.launchDirection,
     TileMetric.launchAngle,
@@ -311,7 +420,7 @@ class _CustomizeSheetState extends State<_CustomizeSheet> {
     TileMetric.totalDistance,
   ];
 
-  static const _clubData = [
+  static const _clubMetrics = [
     TileMetric.clubSpeed,
     TileMetric.swingPath,
     TileMetric.faceAngle,
@@ -324,11 +433,26 @@ class _CustomizeSheetState extends State<_CustomizeSheet> {
   @override
   void initState() {
     super.initState();
-    _selected = Set.from(widget.current);
+    _selected = List.from(widget.current);
+  }
+
+  void _add(TileMetric m) => setState(() => _selected.add(m));
+  void _remove(TileMetric m) => setState(() => _selected.remove(m));
+  void _reorder(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex--;
+      _selected.insert(newIndex, _selected.removeAt(oldIndex));
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final prefs = ref.watch(unitPrefsProvider);
+    final ballAvail =
+        _ballMetrics.where((m) => !_selected.contains(m)).toList();
+    final clubAvail =
+        _clubMetrics.where((m) => !_selected.contains(m)).toList();
+
     return DraggableScrollableSheet(
       initialChildSize: 0.65,
       minChildSize: 0.4,
@@ -350,20 +474,15 @@ class _CustomizeSheetState extends State<_CustomizeSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                Text(
-                  'Customize Tiles',
-                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
-                ),
+                Text('Customize tiles',
+                    style:
+                        AppTextStyles.sans(size: 16, weight: FontWeight.w600)),
                 const Spacer(),
                 GestureDetector(
                   onTap: () => setState(() => _selected.clear()),
-                  child: Text(
-                    'Clear all',
-                    style: AppTextStyles.sans(
-                      size: 12,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
+                  child: Text('Clear all',
+                      style: AppTextStyles.sans(
+                          size: 12, color: AppColors.textMuted)),
                 ),
               ],
             ),
@@ -371,25 +490,73 @@ class _CustomizeSheetState extends State<_CustomizeSheet> {
           const SizedBox(height: 4),
           const Divider(color: AppColors.border),
           Expanded(
-            child: ListView(
+            child: SingleChildScrollView(
               controller: scrollCtrl,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              children: [
-                _Section(
-                  title: 'Ball data',
-                  metrics: _ballData,
-                  selected: _selected,
-                  onToggle: _toggle,
-                ),
-                const SizedBox(height: 16),
-                _Section(
-                  title: 'Club data',
-                  metrics: _clubData,
-                  selected: _selected,
-                  onToggle: _toggle,
-                ),
-                const SizedBox(height: 24),
-              ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Active tiles (reorderable) ──────────────────────────
+                  if (_selected.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                      child: Text('Active',
+                          style: AppTextStyles.sans(
+                              size: 10,
+                              weight: FontWeight.w600,
+                              color: AppColors.textDimmed)),
+                    ),
+                    ReorderableListView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      buildDefaultDragHandles: false,
+                      proxyDecorator: (child, _, __) => Material(
+                        color: Colors.transparent,
+                        elevation: 4,
+                        shadowColor: Colors.black54,
+                        child: child,
+                      ),
+                      onReorder: _reorder,
+                      children: [
+                        for (int i = 0; i < _selected.length; i++)
+                          _buildRow(_selected[i], i, prefs),
+                      ],
+                    ),
+                  ],
+                  // ── Available — ball ────────────────────────────────────
+                  if (ballAvail.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Text('Ball data',
+                          style: AppTextStyles.sans(
+                              size: 10,
+                              weight: FontWeight.w600,
+                              color: AppColors.textDimmed)),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _AvailableChips(
+                          metrics: ballAvail, onAdd: _add),
+                    ),
+                  ],
+                  // ── Available — club ────────────────────────────────────
+                  if (clubAvail.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Text('Club data',
+                          style: AppTextStyles.sans(
+                              size: 10,
+                              weight: FontWeight.w600,
+                              color: AppColors.textDimmed)),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _AvailableChips(
+                          metrics: clubAvail, onAdd: _add),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                ],
+              ),
             ),
           ),
           Padding(
@@ -405,10 +572,7 @@ class _CustomizeSheetState extends State<_CustomizeSheet> {
                   ),
                 ),
                 onPressed: () {
-                  final ordered = TileMetric.values
-                      .where(_selected.contains)
-                      .toList();
-                  widget.onApply(ordered);
+                  widget.onApply(List.from(_selected));
                   Navigator.pop(context);
                 },
                 child: const Text('Apply'),
@@ -420,76 +584,88 @@ class _CustomizeSheetState extends State<_CustomizeSheet> {
     );
   }
 
-  void _toggle(TileMetric m) => setState(() {
-    if (_selected.contains(m)) {
-      _selected.remove(m);
-    } else {
-      _selected.add(m);
-    }
-  });
+  Widget _buildRow(TileMetric m, int index, UnitPrefs prefs) {
+    return Container(
+      key: ValueKey(m),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border2),
+      ),
+      child: Row(
+        children: [
+          ReorderableDragStartListener(
+            index: index,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4),
+              child: Icon(Icons.drag_handle,
+                  size: 18, color: AppColors.textDimmed),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(m.label,
+                style: AppTextStyles.sans(size: 13, color: Colors.white)),
+          ),
+          if (tileUnit(m, prefs).isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Text(tileUnit(m, prefs),
+                  style: AppTextStyles.sans(
+                          size: 11, color: AppColors.textDimmed)
+                      .copyWith(fontStyle: FontStyle.italic)),
+            ),
+          GestureDetector(
+            onTap: () => _remove(m),
+            behavior: HitTestBehavior.opaque,
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.close, size: 16, color: AppColors.textDimmed),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _Section extends StatelessWidget {
-  final String title;
+class _AvailableChips extends StatelessWidget {
   final List<TileMetric> metrics;
-  final Set<TileMetric> selected;
-  final ValueChanged<TileMetric> onToggle;
+  final ValueChanged<TileMetric> onAdd;
 
-  const _Section({
-    required this.title,
-    required this.metrics,
-    required this.selected,
-    required this.onToggle,
-  });
+  const _AvailableChips({required this.metrics, required this.onAdd});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: AppTextStyles.sans(
-            size: 10,
-            weight: FontWeight.w600,
-            color: AppColors.textDimmed,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: metrics.map((m) {
-            final active = selected.contains(m);
-            return GestureDetector(
-              onTap: () => onToggle(m),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: active
-                      ? AppColors.accentFaint
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: active ? AppColors.accent : AppColors.border2,
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: metrics
+          .map((m) => GestureDetector(
+                onTap: () => onAdd(m),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.border2),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.add,
+                          size: 12, color: AppColors.textMuted),
+                      const SizedBox(width: 4),
+                      Text(m.label,
+                          style: AppTextStyles.sans(
+                              size: 12, color: AppColors.textMuted)),
+                    ],
                   ),
                 ),
-                child: Text(
-                  m.label,
-                  style: AppTextStyles.sans(
-                    size: 12,
-                    weight: FontWeight.w400,
-                    color: active ? AppColors.accent : AppColors.textMuted,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
+              ))
+          .toList(),
     );
   }
 }

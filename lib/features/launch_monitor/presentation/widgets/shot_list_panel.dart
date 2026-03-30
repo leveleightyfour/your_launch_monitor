@@ -5,6 +5,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.d
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/tag.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tag_picker_sheet.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
+import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 // ── Shot list metric ──────────────────────────────────────────────────────────
@@ -22,35 +23,45 @@ enum ShotListMetric {
   final String label;
   final String unit;
 
-  String format(ShotData s) {
+  /// Display unit label respecting [prefs].
+  String displayUnit(UnitPrefs prefs) => switch (this) {
+    carry || offline => prefs.distLabel,
+    ballSpeed || clubSpeed => prefs.speedLabel,
+    _ => unit,
+  };
+
+  String format(ShotData s, UnitPrefs prefs) {
     switch (this) {
       case carry:
-        return '${s.carry.toStringAsFixed(1)} yds';
+        return '${prefs.dist(s.carry).toStringAsFixed(1)} ${prefs.distLabel}';
       case ballSpeed:
-        return '${s.ballSpeed.toStringAsFixed(1)} mph';
+        return '${prefs.spd(s.ballSpeed).toStringAsFixed(1)} ${prefs.speedLabel}';
       case clubSpeed:
-        return '${s.clubSpeed.toStringAsFixed(1)} mph';
+        return '${prefs.spd(s.clubSpeed).toStringAsFixed(1)} ${prefs.speedLabel}';
       case spinRate:
         return '${s.spinRate.toStringAsFixed(0)} rpm';
       case launchAngle:
         return '${s.launchAngle.toStringAsFixed(1)}°';
       case offline:
-        final yds = s.carry * (s.launchDirection * 3.14159 / 180.0);
-        final abs = yds.abs();
-        final dir = yds < 0 ? 'L' : 'R';
-        return abs < 0.05 ? '0.0 yds' : '${abs.toStringAsFixed(1)} $dir yds';
+        final raw = s.carry * (s.launchDirection * 3.14159 / 180.0);
+        final converted = prefs.dist(raw);
+        final abs = converted.abs();
+        final dir = raw < 0 ? 'L' : 'R';
+        return abs < 0.05
+            ? '0.0 ${prefs.distLabel}'
+            : '${abs.toStringAsFixed(1)} $dir ${prefs.distLabel}';
     }
   }
 
-  String avg(List<ShotData> shots) {
+  String avg(List<ShotData> shots, UnitPrefs prefs) {
     if (shots.isEmpty) return '--';
-    return format(ShotData.averageOf(shots));
+    return format(ShotData.averageOf(shots), prefs);
   }
 }
 
 // ── Shot list panel ───────────────────────────────────────────────────────────
 
-class ShotListPanel extends StatefulWidget {
+class ShotListPanel extends ConsumerStatefulWidget {
   final List<ShotData> allShots;
   final List<Club> clubs;
   final int selectedShotIndex;
@@ -76,10 +87,10 @@ class ShotListPanel extends StatefulWidget {
   });
 
   @override
-  State<ShotListPanel> createState() => _ShotListPanelState();
+  ConsumerState<ShotListPanel> createState() => _ShotListPanelState();
 }
 
-class _ShotListPanelState extends State<ShotListPanel> {
+class _ShotListPanelState extends ConsumerState<ShotListPanel> {
   final Set<String?> _collapsed = {};
   bool _editMode = false;
   final Set<int> _selectedIndices = {};
@@ -330,7 +341,7 @@ class _ShotListPanelState extends State<ShotListPanel> {
           for (final m in ShotListMetric.values)
             ListTile(
               title: Text(
-                '${m.label} (${m.unit})',
+                '${m.label} (${m.displayUnit(ref.read(unitPrefsProvider))})',
                 style: AppTextStyles.sans(size: 14),
               ),
               trailing: m == widget.metric
@@ -384,7 +395,8 @@ class ShotListClubSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final shots = entries.map((e) => e.shot).toList();
-    final avgStr = metric.avg(shots);
+    final prefs = ref.watch(unitPrefsProvider);
+    final avgStr = metric.avg(shots, prefs);
     final tags = ref.watch(tagsProvider).valueOrNull ?? [];
 
     final groupTagIds =
@@ -566,7 +578,7 @@ class ShotListClubSection extends ConsumerWidget {
                           )),
                       const Spacer(),
                       Text(
-                        metric.format(e.shot),
+                        metric.format(e.shot, prefs),
                         style: AppTextStyles.mono(
                             size: 12, color: Colors.white),
                       ),
@@ -633,7 +645,7 @@ class ShotListClubSection extends ConsumerWidget {
                         )),
                     const Spacer(),
                     Text(
-                      metric.format(e.shot),
+                      metric.format(e.shot, prefs),
                       style:
                           AppTextStyles.mono(size: 12, color: Colors.white),
                     ),

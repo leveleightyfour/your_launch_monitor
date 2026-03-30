@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
+import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 const _fCol = 3;
@@ -15,25 +16,46 @@ const _shotColW = 28.0;
 double _offlineYds(ShotData s) =>
     s.carry * math.sin(s.launchDirection * math.pi / 180.0);
 
-String _fmtOffline(double yds) {
-  final abs = yds.abs();
-  if (abs < 0.05) return '0.0';
-  return '${abs.toStringAsFixed(1)} ${yds < 0 ? 'L' : 'R'}';
+String _fmtVal(double val, {bool withDir = false, double? rawForDir}) {
+  final abs = val.abs();
+  if (withDir) {
+    final src = rawForDir ?? val;
+    if (abs < 0.05) return '0.0';
+    return '${abs.toStringAsFixed(1)} ${src < 0 ? 'L' : 'R'}';
+  }
+  return abs < 0.05 ? '0.0' : abs.toStringAsFixed(1);
 }
 
-String tableColumnValue(TableColumn col, ShotData s) {
+/// Display unit label for [col] respecting [prefs].
+String tableColUnit(TableColumn col, UnitPrefs prefs) => switch (col) {
+  TableColumn.ballSpeed || TableColumn.clubSpeed => prefs.speedLabel,
+  TableColumn.carry ||
+  TableColumn.offline ||
+  TableColumn.apex ||
+  TableColumn.run ||
+  TableColumn.totalDistance => prefs.distLabel,
+  _ => col.unit,
+};
+
+String tableColumnValue(TableColumn col, ShotData s, UnitPrefs prefs) {
   return switch (col) {
-    TableColumn.carry => s.carry.toStringAsFixed(1),
-    TableColumn.ballSpeed => s.ballSpeed.toStringAsFixed(1),
+    TableColumn.carry => prefs.dist(s.carry).toStringAsFixed(1),
+    TableColumn.ballSpeed => prefs.spd(s.ballSpeed).toStringAsFixed(1),
     TableColumn.launchAngle => '${s.launchAngle.toStringAsFixed(1)}°',
     TableColumn.launchDirection => '${s.launchDirection.toStringAsFixed(1)}°',
-    TableColumn.offline => _fmtOffline(_offlineYds(s)),
+    TableColumn.offline => _fmtVal(
+        prefs.dist(_offlineYds(s)),
+        withDir: true,
+        rawForDir: _offlineYds(s),
+      ),
     TableColumn.spinRate => s.spinRate.toStringAsFixed(0),
     TableColumn.spinAxis => '${s.spinAxis.toStringAsFixed(1)}°',
-    TableColumn.apex => s.apex?.toStringAsFixed(1) ?? '--',
-    TableColumn.run => s.run?.toStringAsFixed(1) ?? '--',
-    TableColumn.totalDistance => s.totalDistance.toStringAsFixed(1),
-    TableColumn.clubSpeed => s.clubSpeed.toStringAsFixed(1),
+    TableColumn.apex =>
+      s.apex != null ? prefs.dist(s.apex!).toStringAsFixed(1) : '--',
+    TableColumn.run =>
+      s.run != null ? prefs.dist(s.run!).toStringAsFixed(1) : '--',
+    TableColumn.totalDistance => prefs.dist(s.totalDistance).toStringAsFixed(1),
+    TableColumn.clubSpeed => prefs.spd(s.clubSpeed).toStringAsFixed(1),
     TableColumn.smashFactor => s.smashFactor.toStringAsFixed(2),
     TableColumn.swingPath => s.swingPath != null
         ? '${s.swingPath!.abs().toStringAsFixed(1)}° ${s.swingPath! >= 0 ? 'R' : 'L'}'
@@ -48,19 +70,19 @@ String tableColumnValue(TableColumn col, ShotData s) {
   };
 }
 
-double _colRaw(TableColumn col, ShotData s) {
+double _colRaw(TableColumn col, ShotData s, UnitPrefs prefs) {
   return switch (col) {
-    TableColumn.carry => s.carry,
-    TableColumn.ballSpeed => s.ballSpeed,
+    TableColumn.carry => prefs.dist(s.carry),
+    TableColumn.ballSpeed => prefs.spd(s.ballSpeed),
     TableColumn.launchAngle => s.launchAngle,
     TableColumn.launchDirection => s.launchDirection,
-    TableColumn.offline => _offlineYds(s).abs(),
+    TableColumn.offline => prefs.dist(_offlineYds(s).abs()),
     TableColumn.spinRate => s.spinRate,
     TableColumn.spinAxis => s.spinAxis,
-    TableColumn.apex => s.apex ?? 0,
-    TableColumn.run => s.run ?? 0,
-    TableColumn.totalDistance => s.totalDistance,
-    TableColumn.clubSpeed => s.clubSpeed,
+    TableColumn.apex => s.apex != null ? prefs.dist(s.apex!) : 0,
+    TableColumn.run => s.run != null ? prefs.dist(s.run!) : 0,
+    TableColumn.totalDistance => prefs.dist(s.totalDistance),
+    TableColumn.clubSpeed => prefs.spd(s.clubSpeed),
     TableColumn.smashFactor => s.smashFactor,
     TableColumn.swingPath => s.swingPath?.abs() ?? 0,
     TableColumn.faceAngle => s.faceAngle?.abs() ?? 0,
@@ -100,6 +122,7 @@ class _TableTabState extends ConsumerState<TableTab> {
   @override
   Widget build(BuildContext context) {
     final columns = ref.watch(selectedTableColumnsProvider);
+    final prefs = ref.watch(unitPrefsProvider);
 
     if (widget.shots.isEmpty) {
       return Center(
@@ -113,7 +136,7 @@ class _TableTabState extends ConsumerState<TableTab> {
 
     double sd(TableColumn col) {
       if (shots.length <= 1) return 0;
-      final vals = shots.map((s) => _colRaw(col, s)).toList();
+      final vals = shots.map((s) => _colRaw(col, s, prefs)).toList();
       final mean = vals.reduce((a, b) => a + b) / vals.length;
       final v = vals
               .map((x) => (x - mean) * (x - mean))
@@ -133,12 +156,12 @@ class _TableTabState extends ConsumerState<TableTab> {
                 showStats: _showStats,
                 onToggle: () => setState(() => _showStats = !_showStats),
               ),
-            _DynamicTableHeader(columns: columns),
+            _DynamicTableHeader(columns: columns, prefs: prefs),
             if (_showStats) ...[
               _DynamicStatsRow(
                 label: 'AVG',
                 columns: columns,
-                getValue: (col) => tableColumnValue(col, avg),
+                getValue: (col) => tableColumnValue(col, avg, prefs),
                 isAvg: true,
               ),
               _DynamicStatsRow(
@@ -156,6 +179,7 @@ class _TableTabState extends ConsumerState<TableTab> {
                   number: shots.length - i,
                   shot: shots[i],
                   columns: columns,
+                  prefs: prefs,
                   isSelected: widget.selectedIndex == i,
                   onTap: widget.onRowTap != null ? () => widget.onRowTap!(i) : null,
                 ),
@@ -280,7 +304,9 @@ class _ClubHeaderBar extends StatelessWidget {
 
 class _DynamicTableHeader extends StatelessWidget {
   final List<TableColumn> columns;
-  const _DynamicTableHeader({required this.columns});
+  final UnitPrefs prefs;
+
+  const _DynamicTableHeader({required this.columns, required this.prefs});
 
   @override
   Widget build(BuildContext context) {
@@ -316,9 +342,9 @@ class _DynamicTableHeader extends StatelessWidget {
                       color: AppColors.textDimmed,
                     ),
                   ),
-                  if (col.unit.isNotEmpty)
+                  if (tableColUnit(col, prefs).isNotEmpty)
                     Text(
-                      col.unit,
+                      tableColUnit(col, prefs),
                       style:
                           AppTextStyles.sans(size: 7, color: AppColors.border2),
                     ),
@@ -386,6 +412,7 @@ class _DynamicShotRow extends StatelessWidget {
   final int number;
   final ShotData shot;
   final List<TableColumn> columns;
+  final UnitPrefs prefs;
   final bool isSelected;
   final VoidCallback? onTap;
 
@@ -393,6 +420,7 @@ class _DynamicShotRow extends StatelessWidget {
     required this.number,
     required this.shot,
     required this.columns,
+    required this.prefs,
     this.isSelected = false,
     this.onTap,
   });
@@ -403,8 +431,7 @@ class _DynamicShotRow extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color:
-              isSelected ? AppColors.accentGhost : Colors.transparent,
+          color: isSelected ? AppColors.accentGhost : Colors.transparent,
           border: Border(
             left: isSelected
                 ? const BorderSide(color: AppColors.accent, width: 2)
@@ -427,7 +454,7 @@ class _DynamicShotRow extends StatelessWidget {
               (col) => Expanded(
                 flex: _fCol,
                 child: Text(
-                  tableColumnValue(col, shot),
+                  tableColumnValue(col, shot, prefs),
                   style: AppTextStyles.mono(size: 12, color: Colors.white),
                   textAlign: TextAlign.right,
                   overflow: TextOverflow.ellipsis,

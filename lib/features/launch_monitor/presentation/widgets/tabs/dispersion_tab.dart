@@ -1,16 +1,19 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
+import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
-class DispersionTab extends StatefulWidget {
+class DispersionTab extends ConsumerStatefulWidget {
   final List<ShotData> allShots;
   final List<Club> clubs;
   final Club? selectedClub;
   final ShotData? highlightedShot;
   final ValueChanged<Club?> onClubSelected;
+
   /// Retained for API compatibility; the horizontal filter bar handles selection.
   final bool showSidebar;
 
@@ -25,10 +28,10 @@ class DispersionTab extends StatefulWidget {
   });
 
   @override
-  State<DispersionTab> createState() => _DispersionTabState();
+  ConsumerState<DispersionTab> createState() => _DispersionTabState();
 }
 
-class _DispersionTabState extends State<DispersionTab> {
+class _DispersionTabState extends ConsumerState<DispersionTab> {
   Club? _filterClub;
 
   @override
@@ -39,6 +42,8 @@ class _DispersionTabState extends State<DispersionTab> {
 
   @override
   Widget build(BuildContext context) {
+    final prefs = ref.watch(unitPrefsProvider);
+
     final clubsWithShots = widget.clubs
         .where((c) => widget.allShots.any((s) => s.clubId == c.id))
         .toList();
@@ -49,23 +54,24 @@ class _DispersionTabState extends State<DispersionTab> {
 
     final shotCount = selectedShots.length;
 
-    final avgCarry = selectedShots.isEmpty
+    final avgCarryYds = selectedShots.isEmpty
         ? 0.0
         : selectedShots.map((s) => s.carry).reduce((a, b) => a + b) /
               selectedShots.length;
 
-    final avgOffline = selectedShots.isEmpty
+    final avgOfflineYds = selectedShots.isEmpty
         ? 0.0
         : selectedShots
-                .map((s) => s.carry * (s.launchDirection * math.pi / 180.0))
-                .reduce((a, b) => a + b) /
-            selectedShots.length;
+                  .map((s) => s.carry * (s.launchDirection * math.pi / 180.0))
+                  .reduce((a, b) => a + b) /
+              selectedShots.length;
 
     String offlineStr() {
       if (selectedShots.isEmpty) return '--';
-      final abs = avgOffline.abs();
+      final converted = prefs.dist(avgOfflineYds);
+      final abs = converted.abs();
       if (abs < 0.05) return '0.0';
-      final dir = avgOffline < 0 ? 'L' : 'R';
+      final dir = avgOfflineYds < 0 ? 'L' : 'R';
       return '${abs.toStringAsFixed(1)} $dir';
     }
 
@@ -77,19 +83,24 @@ class _DispersionTabState extends State<DispersionTab> {
           child: Row(
             children: [
               _DispStat(
+                flex: 2,
                 label: 'Shots',
                 value: shotCount > 0 ? shotCount.toString() : '--',
                 unit: '',
               ),
               _DispStat(
+                flex: 3,
                 label: 'Avg Carry',
-                value: avgCarry > 0 ? avgCarry.toStringAsFixed(1) : '--',
-                unit: 'yds',
+                value: avgCarryYds > 0
+                    ? prefs.dist(avgCarryYds).toStringAsFixed(1)
+                    : '--',
+                unit: selectedShots.isEmpty ? '' : prefs.distLabel,
               ),
               _DispStat(
+                flex: 3,
                 label: 'Avg Offline',
                 value: offlineStr(),
-                unit: selectedShots.isEmpty ? '' : 'yds',
+                unit: selectedShots.isEmpty ? '' : prefs.distLabel,
               ),
             ],
           ),
@@ -113,6 +124,7 @@ class _DispersionTabState extends State<DispersionTab> {
                         allShots: selectedShots.isEmpty
                             ? widget.allShots
                             : selectedShots,
+                        prefs: prefs,
                       ),
                       Expanded(
                         child: CustomPaint(
@@ -149,15 +161,17 @@ class _DispersionTabState extends State<DispersionTab> {
             active: _filterClub == null,
             onTap: () => setState(() => _filterClub = null),
           ),
-          ...clubsWithShots.map((club) => Padding(
-                padding: const EdgeInsets.only(left: 6),
-                child: _FilterChip(
-                  label: club.shortName,
-                  color: club.color,
-                  active: _filterClub?.id == club.id,
-                  onTap: () => setState(() => _filterClub = club),
-                ),
-              )),
+          ...clubsWithShots.map(
+            (club) => Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: _FilterChip(
+                label: club.shortName,
+                color: club.color,
+                active: _filterClub?.id == club.id,
+                onTap: () => setState(() => _filterClub = club),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -170,16 +184,19 @@ class _DispStat extends StatelessWidget {
   final String label;
   final String value;
   final String unit;
+  final int flex;
 
   const _DispStat({
     required this.label,
     required this.value,
     required this.unit,
+    this.flex = 1,
   });
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
+      flex: flex,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -197,9 +214,13 @@ class _DispStat extends StatelessWidget {
             children: [
               Text(value, style: AppTextStyles.mono(size: 52)),
               const SizedBox(width: 4),
-              Text(unit,
-                  style:
-                      AppTextStyles.sans(size: 14, color: AppColors.textDimmed)),
+              Text(
+                unit,
+                style: AppTextStyles.sans(
+                  size: 14,
+                  color: AppColors.textDimmed,
+                ),
+              ),
             ],
           ),
         ],
@@ -244,10 +265,7 @@ class _FilterChip extends StatelessWidget {
               Container(
                 width: 7,
                 height: 7,
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                ),
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
               const SizedBox(width: 5),
             ],
@@ -270,8 +288,9 @@ class _FilterChip extends StatelessWidget {
 
 class _YAxis extends StatelessWidget {
   final List<ShotData> allShots;
+  final UnitPrefs prefs;
 
-  const _YAxis({required this.allShots});
+  const _YAxis({required this.allShots, required this.prefs});
 
   @override
   Widget build(BuildContext context) {
@@ -281,19 +300,19 @@ class _YAxis extends StatelessWidget {
 
     final step = ((maxC - minC) / 3).ceilToDouble();
     final bottom = (minC / 10).floor() * 10.0;
-    final labels =
-        List.generate(4, (i) => bottom + step * i).reversed.toList();
+    final labels = List.generate(4, (i) => bottom + step * i).reversed.toList();
 
     return SizedBox(
       width: 28,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: labels
-            .map((v) => Text(
-                  v.toStringAsFixed(0),
-                  style:
-                      AppTextStyles.mono(size: 9, color: AppColors.textDimmed),
-                ))
+            .map(
+              (v) => Text(
+                prefs.dist(v).toStringAsFixed(0),
+                style: AppTextStyles.mono(size: 9, color: AppColors.textDimmed),
+              ),
+            )
             .toList(),
       ),
     );
@@ -404,13 +423,22 @@ class _DispersionPainter extends CustomPainter {
       final shots = shotsPerClub[filterClub!.id];
       if (shots != null && shots.isNotEmpty) {
         _drawClubEllipse(
-          canvas, shots, filterClub!.color, 1.5, toX, toY,
-          filled: true, fillAlpha: 15,
+          canvas,
+          shots,
+          filterClub!.color,
+          1.5,
+          toX,
+          toY,
+          filled: true,
+          fillAlpha: 15,
         );
         final dotPaint = Paint()..color = Colors.white;
         for (final shot in shots) {
           canvas.drawCircle(
-            Offset(toX(shot.lateralOffset), toY(shot.carry)), 3.5, dotPaint);
+            Offset(toX(shot.lateralOffset), toY(shot.carry)),
+            3.5,
+            dotPaint,
+          );
         }
       }
     }
@@ -421,15 +449,21 @@ class _DispersionPainter extends CustomPainter {
       final ringColor = highlightedShot!.clubId != null
           ? (clubById[highlightedShot!.clubId!]?.color ?? AppColors.accent)
           : AppColors.accent;
-      canvas.drawCircle(Offset(hx, hy), 14,
-          Paint()
-            ..color = ringColor.withAlpha(40)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
-      canvas.drawCircle(Offset(hx, hy), 10,
-          Paint()
-            ..color = ringColor.withAlpha(220)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5);
+      canvas.drawCircle(
+        Offset(hx, hy),
+        14,
+        Paint()
+          ..color = ringColor.withAlpha(40)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+      );
+      canvas.drawCircle(
+        Offset(hx, hy),
+        10,
+        Paint()
+          ..color = ringColor.withAlpha(220)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
       canvas.drawCircle(Offset(hx, hy), 5, Paint()..color = Colors.white);
     }
   }
@@ -447,22 +481,24 @@ class _DispersionPainter extends CustomPainter {
     if (shots.isEmpty) return;
     final avgLateral =
         shots.map((s) => s.lateralOffset).reduce((a, b) => a + b) /
-            shots.length;
+        shots.length;
     final avgCarry =
         shots.map((s) => s.carry).reduce((a, b) => a + b) / shots.length;
 
     if (shots.length == 1) {
       canvas.drawCircle(
-        Offset(toX(avgLateral), toY(avgCarry)), 5, Paint()..color = color);
+        Offset(toX(avgLateral), toY(avgCarry)),
+        5,
+        Paint()..color = color,
+      );
       return;
     }
 
     double sd(Iterable<double> vals) {
       final list = vals.toList();
       final mean = list.reduce((a, b) => a + b) / list.length;
-      final variance = list
-              .map((x) => (x - mean) * (x - mean))
-              .reduce((a, b) => a + b) /
+      final variance =
+          list.map((x) => (x - mean) * (x - mean)).reduce((a, b) => a + b) /
           (list.length - 1);
       return math.sqrt(variance);
     }
@@ -474,7 +510,10 @@ class _DispersionPainter extends CustomPainter {
     final rx = (toX(avgLateral + sigmaLateral) - cx).abs() + 6;
     final ry = (toY(avgCarry + sigmaCarry) - cy).abs() + 6;
     final rect = Rect.fromCenter(
-        center: Offset(cx, cy), width: rx * 2, height: ry * 2);
+      center: Offset(cx, cy),
+      width: rx * 2,
+      height: ry * 2,
+    );
 
     if (filled) {
       canvas.drawOval(rect, Paint()..color = color.withAlpha(fillAlpha));
@@ -500,8 +539,11 @@ class _DispersionPainter extends CustomPainter {
     for (var i = 0; i < count; i++) {
       final t0 = i * (dashLen + gapLen);
       final t1 = t0 + dashLen;
-      canvas.drawLine(Offset(p1.dx + ux * t0, p1.dy + uy * t0),
-          Offset(p1.dx + ux * t1, p1.dy + uy * t1), paint);
+      canvas.drawLine(
+        Offset(p1.dx + ux * t0, p1.dy + uy * t0),
+        Offset(p1.dx + ux * t1, p1.dy + uy * t1),
+        paint,
+      );
     }
   }
 
