@@ -119,3 +119,11 @@ class AppTheme {
 /// Returns true when the device's shortest side is ≥ 600dp (iPad / large tablet).
 bool isTablet(BuildContext context) =>
     MediaQuery.of(context).size.shortestSide >= 600;
+
+/// Returns true on ultra-wide displays (21:9 and wider).
+/// Requires shortestSide ≥ 600 to exclude phones in landscape,
+/// which share a similar aspect ratio (~19.5:9 ≈ 2.17).
+bool isUltraWide(BuildContext context) {
+  final size = MediaQuery.of(context).size;
+  return size.shortestSide >= 600 && size.width / size.height >= 1.9;
+}

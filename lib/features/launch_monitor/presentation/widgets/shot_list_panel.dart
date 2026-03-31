@@ -66,6 +66,7 @@ class ShotListPanel extends ConsumerStatefulWidget {
   final List<Club> clubs;
   final int selectedShotIndex;
   final Future<void> Function(int shotIndex, List<int> tagIds)? onUpdateShotTags;
+  final Future<void> Function(List<int> indices)? onDeleteShots;
   final ShotListMetric metric;
   final ValueChanged<ShotListMetric> onMetricChanged;
   final ValueChanged<int> onShotSelected;
@@ -84,6 +85,7 @@ class ShotListPanel extends ConsumerStatefulWidget {
     required this.onShotSelected,
     this.onClearShots,
     this.onUpdateShotTags,
+    this.onDeleteShots,
   });
 
   @override
@@ -99,6 +101,13 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
         _editMode = false;
         _selectedIndices.clear();
       });
+
+  Future<void> _applyBulkDelete(BuildContext context) async {
+    if (_selectedIndices.isEmpty || widget.onDeleteShots == null) return;
+    final indices = _selectedIndices.toList();
+    await widget.onDeleteShots!(indices);
+    if (mounted) _exitEditMode();
+  }
 
   Future<void> _applyBulkTags(BuildContext context) async {
     if (_selectedIndices.isEmpty || widget.onUpdateShotTags == null) return;
@@ -259,35 +268,78 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                 border: Border(top: BorderSide(color: AppColors.border)),
               ),
               padding: const EdgeInsets.all(12),
-              child: GestureDetector(
-                onTap: _selectedIndices.isEmpty
-                    ? null
-                    : () => _applyBulkTags(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: _selectedIndices.isEmpty
-                        ? AppColors.card
-                        : AppColors.accentSubtle,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: _selectedIndices.isEmpty
-                          ? AppColors.border2
-                          : AppColors.accent,
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      'Tag Selected',
-                      style: AppTextStyles.sans(
-                        size: 13,
-                        color: _selectedIndices.isEmpty
-                            ? AppColors.textMuted
-                            : AppColors.accent,
+              child: Row(
+                children: [
+                  if (widget.onUpdateShotTags != null) ...[
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: _selectedIndices.isEmpty
+                            ? null
+                            : () => _applyBulkTags(context),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: _selectedIndices.isEmpty
+                                ? AppColors.card
+                                : AppColors.accentSubtle,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _selectedIndices.isEmpty
+                                  ? AppColors.border2
+                                  : AppColors.accent,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Tag Selected',
+                              style: AppTextStyles.sans(
+                                size: 13,
+                                color: _selectedIndices.isEmpty
+                                    ? AppColors.textMuted
+                                    : AppColors.accent,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
+                    if (widget.onDeleteShots != null)
+                      const SizedBox(width: 8),
+                  ],
+                  if (widget.onDeleteShots != null)
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: _selectedIndices.isEmpty
+                            ? null
+                            : () => _applyBulkDelete(context),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: _selectedIndices.isEmpty
+                                ? AppColors.card
+                                : Colors.red.withAlpha(20),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _selectedIndices.isEmpty
+                                  ? AppColors.border2
+                                  : Colors.red,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Delete',
+                              style: AppTextStyles.sans(
+                                size: 13,
+                                color: _selectedIndices.isEmpty
+                                    ? AppColors.textMuted
+                                    : Colors.red,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             )
           else if (widget.onClearShots != null)

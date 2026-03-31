@@ -167,7 +167,13 @@ class _TableTabState extends ConsumerState<TableTab> {
               _DynamicStatsRow(
                 label: '+/-',
                 columns: columns,
-                getValue: (col) => sd(col).toStringAsFixed(1),
+                getValue: (col) {
+                  final val = sd(col).toStringAsFixed(1);
+                  final unit = tableColUnit(col, prefs);
+                  if (unit == 'deg') return '$val°';
+                  if (unit.isNotEmpty) return '$val $unit';
+                  return val;
+                },
                 isAvg: false,
               ),
             ],

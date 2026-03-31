@@ -75,6 +75,21 @@ class LaunchMonitor extends _$LaunchMonitor {
     state = state.copyWith(shots: []);
   }
 
+  /// Deletes shots at the given indices (into [state.shots]) and removes from DB.
+  Future<void> deleteShots(List<int> indices) async {
+    final updated = List<ShotData>.from(state.shots);
+    final db = ref.read(appDatabaseProvider);
+    // Process descending so earlier indices stay valid.
+    final sorted = indices.toList()..sort((a, b) => b.compareTo(a));
+    for (final i in sorted) {
+      if (i < 0 || i >= updated.length) continue;
+      final shot = updated[i];
+      if (shot.dbId != null) await db.deleteShotById(shot.dbId!);
+      updated.removeAt(i);
+    }
+    state = state.copyWith(shots: updated);
+  }
+
   /// Updates the tag IDs on a live shot by its list index and persists to DB.
   Future<void> updateShotTags(int index, List<int> tagIds) async {
     final updated = List<ShotData>.from(state.shots);

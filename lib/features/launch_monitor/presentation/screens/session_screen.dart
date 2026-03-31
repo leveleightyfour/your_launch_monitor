@@ -13,6 +13,7 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/c
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/dispersion_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/table_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/tiles_tab.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/live_analysis_panel.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/providers.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -125,7 +126,35 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             ),
             if (error != null) ErrorBanner(message: error),
             Expanded(
-              child: isTablet(context)
+              child: isUltraWide(context)
+                  // ── Ultra-wide: shot list always pinned + content + analysis panel
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: 280,
+                          child: ShotListPanel(
+                            allShots: allShots,
+                            clubs: clubs,
+                            selectedShotIndex: safeIdx,
+                            metric: _shotListMetric,
+                            onMetricChanged: (m) =>
+                                setState(() => _shotListMetric = m),
+                            onShotSelected: (i) =>
+                                ref.read(selectedShotIndexProvider.notifier).state = i,
+                            onClearShots: notifier.clearShots,
+                            onUpdateShotTags: notifier.updateShotTags,
+                            onDeleteShots: notifier.deleteShots,
+                          ),
+                        ),
+                        Expanded(child: content),
+                        SizedBox(
+                          width: 320,
+                          child: const LiveAnalysisPanel(),
+                        ),
+                      ],
+                    )
+                  : isTablet(context)
                   ? Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -150,6 +179,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                   ref.read(selectedShotIndexProvider.notifier).state = i,
                               onClearShots: notifier.clearShots,
                               onUpdateShotTags: notifier.updateShotTags,
+                              onDeleteShots: notifier.deleteShots,
                             ),
                           ),
                         ),
@@ -215,6 +245,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                     ref.read(selectedShotIndexProvider.notifier).state = i,
                                 onClearShots: notifier.clearShots,
                                 onUpdateShotTags: notifier.updateShotTags,
+                                onDeleteShots: notifier.deleteShots,
                               ),
                             ),
                           ),
@@ -230,6 +261,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               onShotListToggle: () =>
                   setState(() => _showShotList = !_showShotList),
               showShotList: _showShotList,
+              hideShotListToggle: isUltraWide(context),
             ),
           ],
         ),
@@ -747,6 +779,7 @@ class _ActiveBottomBar extends StatelessWidget {
   final VoidCallback onClubTap;
   final VoidCallback onShotListToggle;
   final bool showShotList;
+  final bool hideShotListToggle;
 
   const _ActiveBottomBar({
     required this.shotCount,
@@ -754,6 +787,7 @@ class _ActiveBottomBar extends StatelessWidget {
     required this.onClubTap,
     required this.onShotListToggle,
     required this.showShotList,
+    this.hideShotListToggle = false,
   });
 
   @override
@@ -767,7 +801,8 @@ class _ActiveBottomBar extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Left: shot-list toggle with count badge
+          // Left: shot-list toggle with count badge (hidden in ultra-wide)
+          if (!hideShotListToggle)
           Align(
             alignment: Alignment.centerLeft,
             child: GestureDetector(

@@ -52,6 +52,25 @@ class SessionsNotifier extends Notifier<List<Session>> {
     state = state.where((a) => a.id != id).toList();
   }
 
+  /// Permanently deletes shots by their DB IDs and patches in-memory state.
+  Future<void> deleteShots(List<int> shotDbIds) async {
+    final db = ref.read(appDatabaseProvider);
+    for (final id in shotDbIds) {
+      await db.deleteShotById(id);
+    }
+    state = [
+      for (final session in state)
+        Session(
+          id: session.id,
+          name: session.name,
+          createdAt: session.createdAt,
+          shots: session.shots
+              .where((s) => !shotDbIds.contains(s.dbId))
+              .toList(),
+        ),
+    ];
+  }
+
   /// Updates the tags for a single shot inside a stored session.
   Future<void> updateShotTags(int shotDbId, List<int> tagIds) async {
     final db = ref.read(appDatabaseProvider);

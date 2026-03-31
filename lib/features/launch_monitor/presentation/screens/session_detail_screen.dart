@@ -55,6 +55,18 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
     }
   }
 
+  Future<void> _deleteShots(List<ShotData> allShots, List<int> indices) async {
+    final dbIds = indices
+        .where((i) => i < allShots.length && allShots[i].dbId != null)
+        .map((i) => allShots[i].dbId!)
+        .toList();
+    if (dbIds.isEmpty) return;
+    await ref.read(sessionsProvider.notifier).deleteShots(dbIds);
+    setState(() {
+      _selectedShotIndex = 0;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final clubs = ref.watch(clubsProvider);
@@ -151,6 +163,8 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
                                   setState(() => _selectedShotIndex = i),
                               onUpdateShotTags: (i, tags) =>
                                   _updateShotTags(allShots, i, tags),
+                              onDeleteShots: (indices) =>
+                                  _deleteShots(allShots, indices),
                             ),
                           ),
                         ),

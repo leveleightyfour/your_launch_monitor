@@ -166,6 +166,10 @@ class AppDatabase extends _$AppDatabase {
 
   // ── Shot tag updates ──────────────────────────────────────────────────────
 
+  /// Permanently removes a single shot row.
+  Future<void> deleteShotById(int shotId) =>
+      (delete(shots)..where((s) => s.id.equals(shotId))).go();
+
   /// Overwrites the tagIds for a single shot row.
   Future<void> updateShotTagIds(int shotId, List<int> tagIds) {
     return (update(shots)..where((s) => s.id.equals(shotId))).write(

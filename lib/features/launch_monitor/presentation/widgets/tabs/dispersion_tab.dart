@@ -78,32 +78,40 @@ class _DispersionTabState extends ConsumerState<DispersionTab> {
     return Column(
       children: [
         // Stats row
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Row(
-            children: [
-              _DispStat(
-                flex: 2,
-                label: 'Shots',
-                value: shotCount > 0 ? shotCount.toString() : '--',
-                unit: '',
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // In split view the pane is narrower; give Shots a minimum width
+            // that scales with available space so the row stays balanced in
+            // full-screen mode but stays compact in split view.
+            final shotsMinWidth = constraints.maxWidth * 0.18;
+            return Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(
+                children: [
+                  _DispStat(
+                    label: 'Shots',
+                    value: shotCount > 0 ? shotCount.toString() : '--',
+                    unit: '',
+                    expand: false,
+                    minWidth: shotsMinWidth,
+                  ),
+                  const SizedBox(width: 16),
+                  _DispStat(
+                    label: 'Avg Carry',
+                    value: avgCarryYds > 0
+                        ? prefs.dist(avgCarryYds).toStringAsFixed(1)
+                        : '--',
+                    unit: selectedShots.isEmpty ? '' : prefs.distLabel,
+                  ),
+                  _DispStat(
+                    label: 'Avg Offline',
+                    value: offlineStr(),
+                    unit: selectedShots.isEmpty ? '' : prefs.distLabel,
+                  ),
+                ],
               ),
-              _DispStat(
-                flex: 3,
-                label: 'Avg Carry',
-                value: avgCarryYds > 0
-                    ? prefs.dist(avgCarryYds).toStringAsFixed(1)
-                    : '--',
-                unit: selectedShots.isEmpty ? '' : prefs.distLabel,
-              ),
-              _DispStat(
-                flex: 3,
-                label: 'Avg Offline',
-                value: offlineStr(),
-                unit: selectedShots.isEmpty ? '' : prefs.distLabel,
-              ),
-            ],
-          ),
+            );
+          },
         ),
         // Club filter bar — shown when clubs have shots
         if (clubsWithShots.isNotEmpty) _buildFilterBar(clubsWithShots),
@@ -184,48 +192,54 @@ class _DispStat extends StatelessWidget {
   final String label;
   final String value;
   final String unit;
-  final int flex;
+  final bool expand;
+  final double minWidth;
 
   const _DispStat({
     required this.label,
     required this.value,
     required this.unit,
-    this.flex = 1,
+    this.expand = true,
+    this.minWidth = 0,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      flex: flex,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: AppTextStyles.sans(
-              size: 12,
-              color: AppColors.textDimmed,
-              weight: FontWeight.w400,
-            ),
+    final column = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: AppTextStyles.sans(
+            size: 12,
+            color: AppColors.textDimmed,
+            weight: FontWeight.w400,
           ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(value, style: AppTextStyles.mono(size: 52)),
-              const SizedBox(width: 4),
-              Text(
-                unit,
-                style: AppTextStyles.sans(
-                  size: 14,
-                  color: AppColors.textDimmed,
-                ),
+        ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(value, style: AppTextStyles.mono(size: 52)),
+            const SizedBox(width: 4),
+            Text(
+              unit,
+              style: AppTextStyles.sans(
+                size: 14,
+                color: AppColors.textDimmed,
               ),
-            ],
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+      ],
     );
+    final constrained = minWidth > 0
+        ? ConstrainedBox(
+            constraints: BoxConstraints(minWidth: minWidth),
+            child: column,
+          )
+        : column;
+    return expand ? Expanded(child: constrained) : constrained;
   }
 }
 
