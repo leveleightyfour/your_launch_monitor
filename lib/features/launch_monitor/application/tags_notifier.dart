@@ -1,6 +1,7 @@
 import 'dart:ui' show Color;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:omni_sniffer/features/launch_monitor/data/database.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/tag.dart';
 

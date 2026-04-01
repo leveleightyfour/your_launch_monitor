@@ -1,8 +1,10 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:omni_sniffer/shared/providers/router.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 

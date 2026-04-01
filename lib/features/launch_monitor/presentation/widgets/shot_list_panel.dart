@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/tag.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tag_picker_sheet.dart';
-import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -134,6 +135,7 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
       final s = widget.allShots[i];
       grouped.putIfAbsent(s.clubId, () => []).add((shot: s, index: i));
     }
+    final groupedEntries = grouped.entries.toList();
 
     Club? clubFor(String? id) {
       if (id == null) return null;
@@ -220,45 +222,44 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
           ),
           // Club sections
           Expanded(
-            child: ListView(
-              children: [
-                for (final entry in grouped.entries)
-                  ShotListClubSection(
-                    club: clubFor(entry.key),
-                    entries: entry.value,
-                    metric: widget.metric,
-                    selectedShotIndex: widget.selectedShotIndex,
-                    collapsed: _collapsed.contains(entry.key),
-                    onToggleCollapse: () => setState(() {
-                      if (_collapsed.contains(entry.key)) {
-                        _collapsed.remove(entry.key);
-                      } else {
-                        _collapsed.add(entry.key);
-                      }
-                    }),
-                    onShotSelected: widget.onShotSelected,
-                    onUpdateShotTags:
-                        _editMode ? null : widget.onUpdateShotTags,
-                    editMode: _editMode,
-                    selectedIndices: _selectedIndices,
-                    onToggleIndex: (i) => setState(() {
-                      if (_selectedIndices.contains(i)) {
-                        _selectedIndices.remove(i);
-                      } else {
-                        _selectedIndices.add(i);
-                      }
-                    }),
-                    onSelectGroup: () => setState(() {
-                      final indices =
-                          entry.value.map((e) => e.index).toSet();
-                      if (indices.every(_selectedIndices.contains)) {
-                        _selectedIndices.removeAll(indices);
-                      } else {
-                        _selectedIndices.addAll(indices);
-                      }
-                    }),
-                  ),
-              ],
+            child: ListView.builder(
+              itemCount: groupedEntries.length,
+              itemBuilder: (context, i) {
+                final entry = groupedEntries[i];
+                return ShotListClubSection(
+                  club: clubFor(entry.key),
+                  entries: entry.value,
+                  metric: widget.metric,
+                  selectedShotIndex: widget.selectedShotIndex,
+                  collapsed: _collapsed.contains(entry.key),
+                  onToggleCollapse: () => setState(() {
+                    if (_collapsed.contains(entry.key)) {
+                      _collapsed.remove(entry.key);
+                    } else {
+                      _collapsed.add(entry.key);
+                    }
+                  }),
+                  onShotSelected: widget.onShotSelected,
+                  onUpdateShotTags: _editMode ? null : widget.onUpdateShotTags,
+                  editMode: _editMode,
+                  selectedIndices: _selectedIndices,
+                  onToggleIndex: (j) => setState(() {
+                    if (_selectedIndices.contains(j)) {
+                      _selectedIndices.remove(j);
+                    } else {
+                      _selectedIndices.add(j);
+                    }
+                  }),
+                  onSelectGroup: () => setState(() {
+                    final indices = entry.value.map((e) => e.index).toSet();
+                    if (indices.every(_selectedIndices.contains)) {
+                      _selectedIndices.removeAll(indices);
+                    } else {
+                      _selectedIndices.addAll(indices);
+                    }
+                  }),
+                );
+              },
             ),
           ),
           // Footer

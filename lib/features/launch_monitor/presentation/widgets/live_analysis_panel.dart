@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:omni_sniffer/features/launch_monitor/application/session_analyser.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
@@ -22,7 +23,7 @@ class LiveAnalysisPanel extends ConsumerWidget {
         border: Border(left: BorderSide(color: AppColors.border)),
       ),
       child: analysis == null
-          ? _EmptyState()
+          ? const _EmptyState()
           : _AnalysisContent(analysis: analysis, prefs: prefs),
     );
   }
@@ -31,6 +32,8 @@ class LiveAnalysisPanel extends ConsumerWidget {
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
   @override
   Widget build(BuildContext context) {
     return Center(

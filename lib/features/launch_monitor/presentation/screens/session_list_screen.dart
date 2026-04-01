@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:omni_sniffer/features/launch_monitor/application/sessions_notifier.dart';
-import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dart';
-import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
-import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/status_indicator.dart';
+
 import 'package:omni_sniffer/features/launch_monitor/application/providers.dart';
+import 'package:omni_sniffer/features/launch_monitor/application/sessions_notifier.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/status_indicator.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 class SessionListScreen extends ConsumerWidget {

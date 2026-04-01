@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
@@ -282,28 +283,30 @@ class _DispersionTabState extends ConsumerState<DispersionTab>
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
-      child: ListView(
+      child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        children: [
-          _FilterChip(
-            label: 'All',
-            color: AppColors.accent,
-            active: _filterClub == null,
-            onTap: () => setState(() => _filterClub = null),
-          ),
-          ...clubsWithShots.map(
-            (club) => Padding(
-              padding: const EdgeInsets.only(left: 6),
-              child: _FilterChip(
-                label: club.shortName,
-                color: club.color,
-                active: _filterClub?.id == club.id,
-                onTap: () => setState(() => _filterClub = club),
-              ),
+        itemCount: clubsWithShots.length + 1,
+        itemBuilder: (context, i) {
+          if (i == 0) {
+            return _FilterChip(
+              label: 'All',
+              color: AppColors.accent,
+              active: _filterClub == null,
+              onTap: () => setState(() => _filterClub = null),
+            );
+          }
+          final club = clubsWithShots[i - 1];
+          return Padding(
+            padding: const EdgeInsets.only(left: 6),
+            child: _FilterChip(
+              label: club.shortName,
+              color: club.color,
+              active: _filterClub?.id == club.id,
+              onTap: () => setState(() => _filterClub = club),
             ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

@@ -8,15 +8,16 @@ A reference guide for consistent, maintainable Flutter development across all pr
 
 1. [Project Structure](#project-structure)
 2. [Naming Conventions](#naming-conventions)
-3. [Riverpod â Providers](#riverpod--providers)
-4. [Riverpod â State & AsyncValue](#riverpod--state--asyncvalue)
-5. [UI Architecture](#ui-architecture)
-6. [Widget Design](#widget-design)
-7. [Navigation](#navigation)
-8. [Error Handling](#error-handling)
-9. [Performance](#performance)
-10. [Testing](#testing)
-11. [General Dart](#general-dart)
+3. [Riverpod — Providers](#riverpod--providers)
+4. [Riverpod — State & AsyncValue](#riverpod--state--asyncvalue)
+5. [Riverpod — Provider Lifecycle & Invalidation](#riverpod--provider-lifecycle--invalidation)
+6. [UI Architecture](#ui-architecture)
+7. [Widget Design](#widget-design)
+8. [Navigation](#navigation)
+9. [Error Handling](#error-handling)
+10. [Performance](#performance)
+11. [Testing](#testing)
+12. [General Dart](#general-dart)
 
 ---
 
@@ -26,29 +27,29 @@ Organise by **feature**, not by type. Each feature folder is self-contained.
 
 ```
 lib/
-âââ core/
-â   âââ constants/
-â   âââ extensions/
-â   âââ theme/
-â   âââ utils/
-âââ features/
-â   âââ auth/
-â   â   âââ data/          # Repositories, data sources, DTOs
-â   â   âââ domain/        # Models, entities, interfaces
-â   â   âââ application/   # Providers, notifiers, use-case logic
-â   â   âââ presentation/  # Screens, widgets, controllers
-â   âââ settings/
-â       âââ data/
-â       âââ domain/
-â       âââ application/
-â       âââ presentation/
-âââ shared/
-â   âââ widgets/           # App-wide reusable widgets
-â   âââ providers/         # App-wide providers (e.g. router, theme)
-âââ main.dart
+├── core/
+│   ├── constants/
+│   ├── extensions/
+│   ├── theme/
+│   └── utils/
+├── features/
+│   ├── auth/
+│   │   ├── data/          # Repositories, data sources, DTOs
+│   │   ├── domain/        # Models, entities, interfaces
+│   │   ├── application/   # Providers, notifiers, use-case logic
+│   │   └── presentation/  # Screens, widgets, controllers
+│   └── settings/
+│       ├── data/
+│       ├── domain/
+│       ├── application/
+│       └── presentation/
+├── shared/
+│   ├── widgets/           # App-wide reusable widgets
+│   └── providers/         # App-wide providers (e.g. router, theme)
+└── main.dart
 ```
 
-- Keep `main.dart` minimal â bootstrap only (ProviderScope, app-level config).
+- Keep `main.dart` minimal — bootstrap only (ProviderScope, app-level config).
 - Do not put business logic in `presentation/`. That belongs in `application/`.
 - `shared/` is for things used across 3+ features; otherwise keep it in the feature.
 
@@ -70,7 +71,7 @@ lib/
 
 ---
 
-## Riverpod â Providers
+## Riverpod — Providers
 
 ### Choose the right provider type
 
@@ -85,15 +86,43 @@ lib/
 
 Prefer `NotifierProvider` / `AsyncNotifierProvider` over `StateNotifierProvider` (deprecated in Riverpod 2.x).
 
-### Provider definition
+### Code generation
+
+Prefer the `@riverpod` annotation (via `riverpod_generator`) over manual provider definitions. Code generation reduces boilerplate, enforces correct typing, and integrates with `riverpod_lint`.
 
 ```dart
-// â Good â typed, scoped, named clearly
+// ✅ Preferred — code-generated provider
+@riverpod
+Future<List<Post>> posts(PostsRef ref) async {
+  return ref.watch(postRepositoryProvider).fetchAll();
+}
+
+// ✅ Code-generated notifier
+@riverpod
+class UserProfile extends _$UserProfile {
+  @override
+  Future<UserProfileModel> build() async {
+    return ref.watch(userRepositoryProvider).fetchProfile();
+  }
+
+  Future<void> updateDisplayName(String name) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(
+      () => ref.read(userRepositoryProvider).updateName(name),
+    );
+  }
+}
+```
+
+For manual definitions (e.g. when code generation is not in use):
+
+```dart
+// ✅ Good — typed, scoped, named clearly
 final userRepositoryProvider = Provider<UserRepository>((ref) {
   return UserRepository(client: ref.watch(httpClientProvider));
 });
 
-// â Good â AsyncNotifierProvider
+// ✅ Good — AsyncNotifierProvider
 final userProfileProvider =
     AsyncNotifierProvider<UserProfileNotifier, UserProfile>(
   UserProfileNotifier.new,
@@ -121,25 +150,41 @@ class UserProfileNotifier extends AsyncNotifier<UserProfile> {
 
 - `build()` is the single source of truth for initial/reset state.
 - Use `AsyncValue.guard()` to safely wrap async mutations.
-- Never perform side effects directly in `build()` â use `ref.listenSelf` or `ref.listen` instead.
+- Never perform side effects directly in `build()` — use `ref.listenSelf` or `ref.listen` instead.
+
+### ref.listenSelf
+
+Use `ref.listenSelf` inside a notifier's `build()` to react to its own state changes — for example, to log errors or trigger analytics without coupling the UI layer.
+
+```dart
+@override
+Future<UserProfile> build() async {
+  ref.listenSelf((previous, next) {
+    next.whenOrNull(
+      error: (e, st) => logger.error('UserProfile error', e, st),
+    );
+  });
+  return ref.watch(userRepositoryProvider).fetchProfile();
+}
+```
 
 ### Provider dependencies
 
 ```dart
-// â Use ref.watch for reactive dependencies
+// ✅ Use ref.watch for reactive dependencies
 final formattedNameProvider = Provider<String>((ref) {
   final profile = ref.watch(userProfileProvider).valueOrNull;
   return profile?.displayName ?? 'Guest';
 });
 
-// â Use ref.read inside callbacks/methods (not during build)
+// ✅ Use ref.read inside callbacks/methods (not during build)
 void onButtonTap() {
   ref.read(userProfileProvider.notifier).updateDisplayName('Aden');
 }
 
-// â Never use ref.watch inside callbacks or event handlers
+// ❌ Never use ref.watch inside callbacks or event handlers
 void onButtonTap() {
-  ref.watch(userProfileProvider); // BAD â causes unexpected rebuilds
+  ref.watch(userProfileProvider); // BAD — causes unexpected rebuilds
 }
 ```
 
@@ -160,7 +205,7 @@ Future<List<Post>> posts(PostsRef ref) async {
 ### Family providers
 
 ```dart
-// â Use .family for parameterised providers
+// ✅ Use .family for parameterised providers
 final postByIdProvider = FutureProvider.family<Post, String>((ref, id) {
   return ref.watch(postRepositoryProvider).fetchById(id);
 });
@@ -172,21 +217,76 @@ final post = ref.watch(postByIdProvider('post-123'));
 - Keep family parameters simple and serialisable (`String`, `int`, data class with `==` and `hashCode`).
 - Avoid passing full model objects as family parameters.
 
+### ProviderObserver
+
+Use `ProviderObserver` to hook into provider state changes globally — useful for logging, analytics, and crash reporting.
+
+```dart
+class AppProviderObserver extends ProviderObserver {
+  @override
+  void didUpdateProvider(
+    ProviderBase provider,
+    Object? previous,
+    Object? next,
+    ProviderContainer container,
+  ) {
+    debugPrint('[${provider.name ?? provider.runtimeType}] $previous → $next');
+  }
+
+  @override
+  void didDisposeProvider(ProviderBase provider, ProviderContainer container) {
+    debugPrint('[${provider.name ?? provider.runtimeType}] disposed');
+  }
+}
+
+// Register at app root
+ProviderScope(
+  observers: [AppProviderObserver()],
+  child: const MyApp(),
+)
+```
+
+### riverpod_lint
+
+Add `riverpod_lint` to your `dev_dependencies`. It statically catches the most common Riverpod mistakes and enforces the rules in this document automatically:
+
+- `ref.watch` used inside callbacks or event handlers
+- `ref.read` used during `build()`
+- Missing return type annotations on providers
+- Incorrect provider type choices
+- Notifiers not extending the correct base class
+
+```yaml
+# pubspec.yaml
+dev_dependencies:
+  riverpod_lint: ^2.0.0
+  custom_lint: ^0.6.0
+```
+
+```yaml
+# analysis_options.yaml
+analyzer:
+  plugins:
+    - custom_lint
+```
+
+Treat `riverpod_lint` as a required dev dependency on all projects.
+
 ---
 
-## Riverpod â State & AsyncValue
+## Riverpod — State & AsyncValue
 
 ### Handling AsyncValue in UI
 
 ```dart
-// â Use .when for the full three-state pattern
+// ✅ Use .when for the full three-state pattern
 ref.watch(userProfileProvider).when(
   data: (profile) => ProfileWidget(profile: profile),
   loading: () => const CircularProgressIndicator(),
   error: (e, st) => ErrorWidget(message: e.toString()),
 );
 
-// â Use skipLoadingOnRefresh to prevent flicker on pull-to-refresh
+// ✅ Use skipLoadingOnRefresh to prevent flicker on pull-to-refresh
 ref.watch(userProfileProvider).when(
   skipLoadingOnRefresh: true,  // keep showing data while refreshing
   data: (profile) => ProfileWidget(profile: profile),
@@ -194,8 +294,26 @@ ref.watch(userProfileProvider).when(
   error: (e, st) => ErrorWidget(message: e.toString()),
 );
 
-// â Use .valueOrNull for optional reads where null is acceptable
+// ✅ Use .valueOrNull for optional reads where null is acceptable
 final name = ref.watch(userProfileProvider).valueOrNull?.displayName;
+
+// ✅ Use .requireValue when data is guaranteed (e.g. in tests, or after
+// a .when(data:) guard). Throws if called on loading/error state.
+final profile = ref.watch(userProfileProvider).requireValue;
+```
+
+### Showing stale data during refresh
+
+Use the `previous` parameter in `.when` to keep displaying the last known data while a refresh is in progress, rather than reverting to a loading spinner.
+
+```dart
+ref.watch(userProfileProvider).when(
+  skipLoadingOnRefresh: true,
+  skipError: true,            // keep showing data if a refresh fails
+  data: (profile) => ProfileWidget(profile: profile),
+  loading: () => const CircularProgressIndicator(),
+  error: (e, st) => ErrorWidget(message: e.toString()),
+);
 ```
 
 ### Avoid overusing AsyncValue
@@ -206,7 +324,7 @@ final name = ref.watch(userProfileProvider).valueOrNull?.displayName;
 ### State classes (for Notifiers with multiple fields)
 
 ```dart
-// â Use freezed or plain immutable classes
+// ✅ Use freezed or plain immutable classes
 @freezed
 class AuthState with _$AuthState {
   const factory AuthState({
@@ -217,20 +335,88 @@ class AuthState with _$AuthState {
 }
 ```
 
-- Always make state immutable â use `copyWith`, never mutate in place.
+- Always make state immutable — use `copyWith`, never mutate in place.
 - Each distinct loading/error concern should be represented explicitly in the state.
+
+---
+
+## Riverpod — Provider Lifecycle & Invalidation
+
+Understanding when `build()` runs and how to control caching is essential for correct Riverpod usage.
+
+### When build() re-runs
+
+A provider's `build()` method is called:
+
+1. The first time it is watched.
+2. When `ref.invalidate()` or `ref.refresh()` is called on it.
+3. When any of its `ref.watch` dependencies change.
+
+It does **not** re-run just because the widget tree rebuilds.
+
+### ref.invalidate vs ref.refresh
+
+These are the two mechanisms for manually busting a provider's cache:
+
+```dart
+// ref.invalidate — marks the provider stale. The rebuild happens lazily,
+// the next time the provider is watched. Returns void.
+ref.invalidate(postsProvider);
+
+// ref.refresh — invalidates AND immediately triggers a rebuild.
+// Returns the new value synchronously (or Future/Stream).
+// Use when you need to await the result.
+final freshPosts = await ref.refresh(postsProvider.future);
+```
+
+**Rule of thumb:** use `ref.invalidate` when you want to signal staleness without caring about the result (e.g. after a delete operation). Use `ref.refresh` when you need to await the fresh data (e.g. pull-to-refresh).
+
+```dart
+// ✅ Common pattern — pull-to-refresh
+Future<void> _onRefresh() async {
+  await ref.refresh(postsProvider.future);
+}
+
+// ✅ Post-mutation invalidation
+Future<void> deletePost(String id) async {
+  await ref.read(postRepositoryProvider).delete(id);
+  ref.invalidate(postsProvider); // list will reload next time it's watched
+}
+```
+
+### Keeping providers alive
+
+By default, auto-dispose providers are destroyed when no widget is watching them. Override this for resources that are expensive to recreate or must persist across navigation.
+
+```dart
+// Option 1 — annotation (code gen)
+@Riverpod(keepAlive: true)
+AuthRepository authRepository(AuthRepositoryRef ref) {
+  return AuthRepository();
+}
+
+// Option 2 — manual keepAlive with conditional release
+@riverpod
+Future<Config> appConfig(AppConfigRef ref) async {
+  final link = ref.keepAlive();
+  // Optionally release after a timeout to allow re-fetching
+  final timer = Timer(const Duration(minutes: 5), link.close);
+  ref.onDispose(timer.cancel);
+  return ConfigService().load();
+}
+```
 
 ---
 
 ## UI Architecture
 
-### Screen â Controller pattern
+### Screen → Controller pattern
 
 ```
 Screen (ConsumerWidget)
-  âââ watches providers, handles top-level layout
-       âââ Child Widgets (pure or lightly connected)
-            âââ delegate mutations back via notifier calls
+  └── watches providers, handles top-level layout
+       └── Child Widgets (pure or lightly connected)
+            └── delegate mutations back via notifier calls
 ```
 
 - Screens are thin: they wire providers to widgets and handle navigation.
@@ -240,13 +426,13 @@ Screen (ConsumerWidget)
 ### ConsumerWidget vs ConsumerStatefulWidget
 
 ```dart
-// â Prefer ConsumerWidget when no local widget state is needed
+// ✅ Prefer ConsumerWidget when no local widget state is needed
 class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) { ... }
 }
 
-// â Use ConsumerStatefulWidget when you need initState/dispose
+// ✅ Use ConsumerStatefulWidget when you need initState/dispose
 // e.g. AnimationController, TextEditingController, focus nodes
 class SearchScreen extends ConsumerStatefulWidget {
   @override
@@ -256,10 +442,96 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 - Do not convert to `ConsumerStatefulWidget` just to store state that belongs in a provider.
 
+### setState with Riverpod
+
+`setState` is an **anti-pattern** for anything beyond trivial, purely local UI rendering state.
+
+```dart
+// ✅ setState is acceptable for ephemeral, single-widget render concerns
+// with no business logic and no interest from any other widget
+class _CardState extends ConsumerState<Card> {
+  bool _isHovered = false; // fine — hover affects only this widget's render
+
+  @override
+  Widget build(BuildContext context) { ... }
+}
+
+// ❌ Never use setState for:
+// — loading or async flags
+// — form field values with validation
+// — state that any other widget might need
+// — anything with business logic attached
+setState(() => _isLoading = true); // put this in a Notifier
+setState(() => _hasError = true);  // put this in AsyncValue state
+```
+
+**Rule:** if a second widget could ever need to read this state, or it involves business logic, it belongs in a provider. `setState` is for pure rendering concerns that are truly local and ephemeral to a single widget.
+
+Acceptable uses of `setState` alongside Riverpod:
+
+| OK to use setState for            | Instead use a provider for         |
+| --------------------------------- | ---------------------------------- |
+| Hover / focus visual state        | Loading flags                      |
+| Animation controller ticks        | Form values with validation        |
+| Scroll position (local only)      | Error state                        |
+| TextEditingController lifecycle   | Selected items / filters           |
+
+### Do not pass WidgetRef down the tree
+
+`WidgetRef` is a build-time construct tied to a specific widget's lifecycle. It is not a service and must not be passed as a constructor parameter.
+
+```dart
+// ❌ Anti-pattern — ref passed into a child or service
+class MyService {
+  final WidgetRef ref; // DO NOT do this
+  MyService(this.ref);
+}
+
+MyChildWidget(ref: ref) // DO NOT do this
+
+// ✅ Instead, pass callbacks or make the child a ConsumerWidget
+MyChildWidget(
+  onSave: () => ref.read(myProvider.notifier).save(),
+)
+
+// ✅ Or let the child watch its own providers directly
+class MyChildWidget extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final value = ref.watch(myProvider);
+    ...
+  }
+}
+```
+
+### Do not use ref in initState
+
+`ref` is not available before the widget is fully built. Accessing it in `initState` directly will throw. Use `ref.listenSelf` on the provider side, or schedule the call with `addPostFrameCallback`.
+
+```dart
+// ❌ Will throw — ref not ready in initState
+@override
+void initState() {
+  super.initState();
+  ref.read(myProvider.notifier).init(); // BAD
+}
+
+// ✅ Schedule after the first frame
+@override
+void initState() {
+  super.initState();
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    ref.read(myProvider.notifier).init();
+  });
+}
+
+// ✅ Or use ref.listenSelf in the notifier's build() instead
+```
+
 ### Listening to providers for side effects
 
 ```dart
-// â Use ref.listen for navigation, snackbars, dialogs â NOT ref.watch
+// ✅ Use ref.listen for navigation, snackbars, dialogs — NOT ref.watch
 ref.listen<AsyncValue<void>>(submitFormProvider, (_, next) {
   next.whenOrNull(
     error: (e, _) => ScaffoldMessenger.of(context).showSnackBar(...),
@@ -280,10 +552,10 @@ Never trigger navigation or show dialogs as a side effect of `build()`. Use `ref
 - Prefer extracting widgets as new classes over helper methods that return `Widget` (improves rebuilds and readability).
 
 ```dart
-// â Extracted class â rebuilds independently
+// ✅ Extracted class — rebuilds independently
 class AvatarWidget extends StatelessWidget { ... }
 
-// â Helper method â always rebuilds with parent
+// ❌ Helper method — always rebuilds with parent
 Widget _buildAvatar() => CircleAvatar(...);
 ```
 
@@ -302,18 +574,18 @@ const Text('Hello'),
 - Use `Expanded` and `Flexible` inside `Row`/`Column` only when you want the child to fill remaining space. Don't wrap everything in `Expanded` by default.
 - Avoid `Expanded` inside a `ListView` or any unbounded parent.
 - Prefer `SizedBox` over `Container` when only setting size (lighter widget).
-- Use `Padding` as a wrapper rather than adding padding to Container where possible.
+- Use `Padding` as a wrapper rather than adding padding to `Container` where possible.
 
 ### Theme over hardcoded values
 
 ```dart
-// â Use theme tokens
+// ✅ Use theme tokens
 Text(
   'Hello',
   style: Theme.of(context).textTheme.titleMedium,
 )
 
-// â Avoid hardcoded colours / sizes in widget code
+// ❌ Avoid hardcoded colours / sizes in widget code
 Text('Hello', style: TextStyle(fontSize: 18, color: Color(0xFF333333)))
 ```
 
@@ -324,17 +596,17 @@ Text('Hello', style: TextStyle(fontSize: 18, color: Color(0xFF333333)))
 
 ## Navigation
 
-- Use a single, declarative router â **go_router** is the standard choice.
+- Use a single, declarative router — **go_router** is the standard choice.
 - Define all routes in a single file (`router.dart` or `app_router.dart`).
 - Pass IDs/primitive values via path/query parameters, not full model objects.
-- Keep navigation logic out of Notifiers â handle it in the UI layer via `ref.listen`.
+- Keep navigation logic out of Notifiers — handle it in the UI layer via `ref.listen`.
 
 ```dart
-// â Navigate via GoRouter
+// ✅ Navigate via GoRouter
 context.go('/profile/$userId');
 context.push('/settings');
 
-// â Avoid Navigator.of(context).push with MaterialPageRoute inline
+// ❌ Avoid Navigator.of(context).push with MaterialPageRoute inline
 ```
 
 ---
@@ -343,11 +615,11 @@ context.push('/settings');
 
 - Define a sealed `Failure` / `AppError` type for domain-level errors.
 - Use `AsyncValue.guard()` in notifiers to safely capture exceptions into state.
-- Never swallow errors silently â always log and surface them.
+- Never swallow errors silently — always log and surface them.
 - Show user-facing errors in the UI, not raw exception messages.
 
 ```dart
-// â Sealed error type
+// ✅ Sealed error type
 sealed class AppError {
   const AppError();
 }
@@ -363,11 +635,13 @@ class UnknownError extends AppError { ... }
 - Use `select` to narrow rebuilds to only the data a widget needs:
 
 ```dart
-// â Only rebuilds when displayName changes, not the whole profile
-final name = ref.watch(userProfileProvider.select((p) => p.valueOrNull?.displayName));
+// ✅ Only rebuilds when displayName changes, not the whole profile
+final name = ref.watch(
+  userProfileProvider.select((p) => p.valueOrNull?.displayName),
+);
 ```
 
-- Avoid creating objects (lists, maps, styles) inside `build()` â move them to constants or memoize.
+- Avoid creating objects (lists, maps, styles) inside `build()` — move them to constants or memoize.
 - Use `ListView.builder` / `ListView.separated` for all lists of unknown length. Never `ListView` with `children:` for dynamic content.
 - Profile with Flutter DevTools before optimising. Don't prematurely extract widgets based on intuition alone.
 - Avoid large `Stack` hierarchies and excessive `Opacity` widgets (both are GPU-expensive).
@@ -376,7 +650,7 @@ final name = ref.watch(userProfileProvider.select((p) => p.valueOrNull?.displayN
 
 ## Testing
 
-### Unit tests â Notifiers
+### Unit tests — Notifiers
 
 ```dart
 test('updateDisplayName updates state correctly', () async {
@@ -397,6 +671,68 @@ test('updateDisplayName updates state correctly', () async {
 
 - Override dependencies with fakes/mocks in `ProviderContainer`.
 - Test notifier state transitions, not implementation details.
+
+### overrideWith vs overrideWithValue
+
+| Method                | Use for                                                        |
+| --------------------- | -------------------------------------------------------------- |
+| `overrideWithValue`   | Replacing the value directly (services, simple dependencies)   |
+| `overrideWith`        | Replacing the entire provider factory (notifiers, complex DI)  |
+
+```dart
+// overrideWithValue — replaces the resolved value
+userRepositoryProvider.overrideWithValue(FakeUserRepository())
+
+// overrideWith — replaces the provider factory; useful for notifiers
+userProfileProvider.overrideWith(() => FakeUserProfileNotifier())
+```
+
+### Testing AsyncNotifier state transitions
+
+Test the full `AsyncLoading` → `AsyncData` / `AsyncError` lifecycle, not just the final state:
+
+```dart
+test('shows loading then data', () async {
+  final container = ProviderContainer(overrides: [
+    userRepositoryProvider.overrideWithValue(SlowFakeUserRepository()),
+  ]);
+  addTearDown(container.dispose);
+
+  // Trigger build
+  container.read(userProfileProvider);
+
+  // Should be loading immediately
+  expect(container.read(userProfileProvider), isA<AsyncLoading>());
+
+  // Await completion
+  await container.read(userProfileProvider.future);
+
+  expect(
+    container.read(userProfileProvider).valueOrNull?.displayName,
+    'Test User',
+  );
+});
+```
+
+### Testing ref.listen side effects
+
+To verify side effects triggered by `ref.listen` (navigation, snackbars), use `ProviderContainer.listen` in unit tests or a fake observer in widget tests:
+
+```dart
+test('emits error state on failed submit', () async {
+  final container = ProviderContainer(overrides: [
+    submitFormProvider.overrideWith(() => FailingSubmitNotifier()),
+  ]);
+  addTearDown(container.dispose);
+
+  final states = <AsyncValue<void>>[];
+  container.listen(submitFormProvider, (_, next) => states.add(next));
+
+  await container.read(submitFormProvider.notifier).submit();
+
+  expect(states.last, isA<AsyncError>());
+});
+```
 
 ### Widget tests
 
@@ -419,7 +755,7 @@ test('updateDisplayName updates state correctly', () async {
 - Use `sealed` classes and pattern matching (Dart 3+) for exhaustive handling of sum types.
 - Avoid dynamic typing. Every variable and parameter should have an explicit or inferred static type.
 - Use `extension` methods to add functionality to existing types rather than standalone utility functions.
-- Sort imports: Dart SDK â Flutter â third-party packages â local imports, separated by blank lines.
+- Sort imports: Dart SDK → Flutter → third-party packages → local imports, separated by blank lines.
 
 ```dart
 import 'dart:async';
@@ -433,4 +769,4 @@ import '../domain/user_profile.dart';
 
 ---
 
-_Last updated: March 2026_
+_Last updated: April 2026_

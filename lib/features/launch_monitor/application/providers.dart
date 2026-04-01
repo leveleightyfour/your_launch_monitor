@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.dart';
-import 'package:omni_sniffer/features/launch_monitor/data/ble_adapter.dart';
-import 'package:omni_sniffer/features/launch_monitor/data/ble_adapter_factory.dart';
+import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/seed_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
-import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
-import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'providers.g.dart';
 
