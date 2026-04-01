@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(grep -r \"windows\\\\|windows.h\\\\|bluetooth\\\\|BLE\" /d/Dev/your_launch_monitor/windows --include=*.cpp --include=*.h)",
+      "Bash(xargs grep:*)",
+      "WebSearch"
+    ]
+  }
+}

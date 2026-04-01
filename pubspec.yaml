@@ -36,6 +36,7 @@ dependencies:
   flutter_riverpod: ^2.6.1
   riverpod_annotation: ^2.6.1
   flutter_blue_plus: ^1.35.3
+  win_ble: ^1.1.1
   google_fonts: ^6.2.1
   flutter_launcher_icons: ^0.14.3
   # Local persistence — run `flutter pub get` then `dart run build_runner build`

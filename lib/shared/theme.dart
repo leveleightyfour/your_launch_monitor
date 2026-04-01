@@ -9,8 +9,8 @@ class AppColors {
   static const border2 = Color(0xFF2A2A32);
   static const accent = Color(0xFF2DD4B0);
   static const textPrimary = Colors.white;
-  static const textMuted = Color(0xFF888888);
-  static const textDimmed = Color(0xFF444444);
+  static const textMuted = Color(0xFF9C9C9C);
+  static const textDimmed = Color(0xFF848484);
   static const errorBackground = Color(0xFF2D0A0A);
   static const errorText = Color(0xFFFCA5A5);
 

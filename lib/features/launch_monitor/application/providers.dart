@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.dart';
+import 'package:omni_sniffer/features/launch_monitor/data/ble_adapter.dart';
+import 'package:omni_sniffer/features/launch_monitor/data/ble_adapter_factory.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/seed_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
@@ -17,7 +18,8 @@ const _deviceNamePrefix = 'Square';
 
 @riverpod
 class LaunchMonitor extends _$LaunchMonitor {
-  BluetoothDevice? _device;
+  final BleAdapter _ble = createBleAdapter();
+  String? _deviceId;
   StreamSubscription? _scanSubscription;
   StreamSubscription? _shotSubscription;
   StreamSubscription? _connectionSubscription;
@@ -42,21 +44,22 @@ class LaunchMonitor extends _$LaunchMonitor {
 
     state = state.copyWith(status: LaunchMonitorStatus.scanning, error: null);
 
-    _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
-      final hasMatch = results.any(
-        (r) => r.device.platformName.startsWith(_deviceNamePrefix),
-      );
+    _scanSubscription = _ble
+        .scan(timeout: const Duration(seconds: 15))
+        .listen((devices) {
+      final match = devices
+          .where((d) => d.name.startsWith(_deviceNamePrefix))
+          .firstOrNull;
 
-      if (hasMatch) {
-        final match = results.firstWhere(
-          (r) => r.device.platformName.startsWith(_deviceNamePrefix),
-        );
-        FlutterBluePlus.stopScan();
-        _connect(match.device);
+      if (match != null) {
+        _ble.stopScan();
+        _connect(match.id);
       }
     }, onError: (e) => _setError('Scan failed: $e'));
 
-    await FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
+    // The scan stream will close after the timeout. If we're still scanning
+    // at that point, no device was found.
+    await _scanSubscription!.asFuture<void>().catchError((_) {});
 
     if (state.status == LaunchMonitorStatus.scanning) {
       _setError('Device not found');
@@ -64,7 +67,7 @@ class LaunchMonitor extends _$LaunchMonitor {
   }
 
   Future<void> disconnect() async {
-    await _device?.disconnect();
+    if (_deviceId != null) await _ble.disconnect(_deviceId!);
     _cleanup();
     state = const LaunchMonitorState();
   }
@@ -103,17 +106,17 @@ class LaunchMonitor extends _$LaunchMonitor {
     }
   }
 
-  Future<void> _connect(BluetoothDevice device) async {
+  Future<void> _connect(String deviceId) async {
     state = state.copyWith(status: LaunchMonitorStatus.connecting);
-    _device = device;
+    _deviceId = deviceId;
 
     try {
-      await device.connect(autoConnect: false);
+      await _ble.connect(deviceId);
 
-      _connectionSubscription = device.connectionState.listen((
-        connectionState,
+      _connectionSubscription = _ble.connectionStateOf(deviceId).listen((
+        connected,
       ) {
-        if (connectionState == BluetoothConnectionState.disconnected) {
+        if (!connected) {
           state = const LaunchMonitorState(
             status: LaunchMonitorStatus.disconnected,
             error: 'Device disconnected',
@@ -121,44 +124,38 @@ class LaunchMonitor extends _$LaunchMonitor {
         }
       });
 
-      await _discoverAndSubscribe(device);
+      await _discoverAndSubscribe(deviceId);
       state = state.copyWith(status: LaunchMonitorStatus.connected);
     } catch (e) {
       _setError('Connection failed: $e');
     }
   }
 
-  Future<void> _discoverAndSubscribe(BluetoothDevice device) async {
-    final services = await device.discoverServices();
+  Future<void> _discoverAndSubscribe(String deviceId) async {
+    await _performHandshakeIfRequired(deviceId);
 
-    for (final service in services) {
-      if (service.uuid.toString() != _serviceUuid) continue;
+    final stream = await _ble.subscribeToCharacteristic(
+      deviceId: deviceId,
+      serviceUuid: _serviceUuid,
+      characteristicUuid: _characteristicUuid,
+    );
 
-      for (final characteristic in service.characteristics) {
-        if (characteristic.uuid.toString() != _characteristicUuid) continue;
-
-        await _performHandshakeIfRequired(characteristic);
-        await characteristic.setNotifyValue(true);
-
-        _shotSubscription = characteristic.onValueReceived.listen((data) async {
-          final shot = await _parseAndPersistShot(data);
-          if (shot != null) {
-            state = state.copyWith(shots: [shot, ...state.shots]);
-          }
-        }, onError: (e) => _setError('Shot read error: $e'));
-
-        return;
+    _shotSubscription = stream.listen((data) async {
+      final shot = await _parseAndPersistShot(data);
+      if (shot != null) {
+        state = state.copyWith(shots: [shot, ...state.shots]);
       }
-    }
-
-    throw Exception('Required characteristic not found');
+    }, onError: (e) => _setError('Shot read error: $e'));
   }
 
-  Future<void> _performHandshakeIfRequired(
-    BluetoothCharacteristic characteristic,
-  ) async {
+  Future<void> _performHandshakeIfRequired(String deviceId) async {
     // Populate with handshake bytes once discovered via Wireshark
-    // await characteristic.write([0x01, 0x02, 0x03], withoutResponse: false);
+    // await _ble.writeCharacteristic(
+    //   deviceId: deviceId,
+    //   serviceUuid: _serviceUuid,
+    //   characteristicUuid: _characteristicUuid,
+    //   data: [0x01, 0x02, 0x03],
+    // );
   }
 
   /// Parses the BLE packet, creates a draft activity on the first shot,
@@ -213,7 +210,7 @@ class LaunchMonitor extends _$LaunchMonitor {
     _scanSubscription?.cancel();
     _shotSubscription?.cancel();
     _connectionSubscription?.cancel();
-    _device?.disconnect();
-    _device = null;
+    if (_deviceId != null) _ble.disconnect(_deviceId!);
+    _deviceId = null;
   }
 }
