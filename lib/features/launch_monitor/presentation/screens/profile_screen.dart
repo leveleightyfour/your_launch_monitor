@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -11,6 +12,8 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final prefs = ref.watch(unitPrefsProvider);
     final notifier = ref.read(unitPrefsProvider.notifier);
+    final accent = ref.watch(accentColorProvider);
+    final accentNotifier = ref.read(accentColorProvider.notifier);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -111,9 +114,12 @@ class ProfileScreen extends ConsumerWidget {
               label: 'Speed',
               options: const ['mph', 'km/h'],
               selected: prefs.speed == SpeedUnit.mph ? 0 : 1,
-              onSelect: (i) => notifier.setSpeed(
-                i == 0 ? SpeedUnit.mph : SpeedUnit.kmh,
-              ),
+              onSelect: (i) =>
+                  notifier.setSpeed(i == 0 ? SpeedUnit.mph : SpeedUnit.kmh),
+            ),
+            _AccentPickerRow(
+              current: accent,
+              onSelect: accentNotifier.setAccent,
             ),
             const SizedBox(height: 16),
             _SectionHeader('Support'),
@@ -122,11 +128,7 @@ class ProfileScreen extends ConsumerWidget {
               label: 'Help & support',
               onTap: () {},
             ),
-            _SettingsRow(
-              icon: Icons.info,
-              label: 'About',
-              onTap: () {},
-            ),
+            _SettingsRow(icon: Icons.info, label: 'About', onTap: () {}),
           ],
         ),
       ),
@@ -181,9 +183,7 @@ class _UnitToggleRow extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: AppColors.textMuted),
           const SizedBox(width: 12),
-          Expanded(
-            child: Text(label, style: AppTextStyles.sans(size: 14)),
-          ),
+          Expanded(child: Text(label, style: AppTextStyles.sans(size: 14))),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -193,17 +193,15 @@ class _UnitToggleRow extends StatelessWidget {
                   child: Container(
                     margin: EdgeInsets.only(left: i == 0 ? 0 : 6),
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 5,
-                    ),
+                        horizontal: 12, vertical: 5),
                     decoration: BoxDecoration(
                       color: i == selected
-                          ? AppColors.accent.withAlpha(30)
+                          ? context.accentSubtle
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: i == selected
-                            ? AppColors.accent
+                            ? context.accent
                             : AppColors.border2,
                       ),
                     ),
@@ -215,13 +213,65 @@ class _UnitToggleRow extends StatelessWidget {
                             ? FontWeight.w600
                             : FontWeight.w400,
                         color: i == selected
-                            ? AppColors.accent
+                            ? context.accent
                             : AppColors.textMuted,
                       ),
                     ),
                   ),
                 ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Accent colour picker ──────────────────────────────────────────────────────
+
+class _AccentPickerRow extends StatelessWidget {
+  final Color current;
+  final ValueChanged<Color> onSelect;
+
+  const _AccentPickerRow({required this.current, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.palette, size: 18, color: AppColors.textMuted),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text('Accent colour', style: AppTextStyles.sans(size: 14)),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: appAccentSwatches.map((swatch) {
+              final isSelected = swatch.color.toARGB32() == current.toARGB32();
+              return GestureDetector(
+                onTap: () => onSelect(swatch.color),
+                child: Container(
+                  width: 25,
+                  height: 25,
+                  margin: const EdgeInsets.only(left: 6),
+                  decoration: BoxDecoration(
+                    color: swatch.color,
+                    shape: BoxShape.circle,
+                    border: isSelected
+                        ? Border.all(color: Colors.white, width: 2)
+                        : null,
+                  ),
+                  child: isSelected
+                      ? const Icon(Icons.check, size: 11, color: Colors.white)
+                      : null,
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -253,9 +303,7 @@ class _SettingsRow extends StatelessWidget {
           children: [
             Icon(icon, size: 18, color: AppColors.textMuted),
             const SizedBox(width: 12),
-            Expanded(
-              child: Text(label, style: AppTextStyles.sans(size: 14)),
-            ),
+            Expanded(child: Text(label, style: AppTextStyles.sans(size: 14))),
             const Icon(
               Icons.chevron_right,
               size: 18,

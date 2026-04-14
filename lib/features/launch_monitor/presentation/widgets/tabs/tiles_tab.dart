@@ -11,8 +11,16 @@ import 'package:omni_sniffer/shared/theme.dart';
 class TilesTab extends ConsumerWidget {
   final List<ShotData> shots;
   final ShotData? selectedShot;
+  final bool showFullscreenToggle;
+  final VoidCallback? onExitFullscreen;
 
-  const TilesTab({super.key, required this.shots, this.selectedShot});
+  const TilesTab({
+    super.key,
+    required this.shots,
+    this.selectedShot,
+    this.showFullscreenToggle = true,
+    this.onExitFullscreen,
+  });
 
   // Column count: phone uses fewer cols to keep tiles readable
   static int _cols(int count, {required bool tablet}) {
@@ -40,7 +48,20 @@ class TilesTab extends ConsumerWidget {
     // Reserve space at bottom for the Customize button
     const btnAreaH = 52.0;
 
-    return Stack(
+    return Hero(
+      tag: 'tiles_fullscreen',
+      flightShuttleBuilder: (_, animation, __, fromCtx, toCtx) {
+        return Material(
+          color: AppColors.background,
+          child: AnimatedBuilder(
+            animation: animation,
+            builder: (_, __) => fromCtx.widget,
+          ),
+        );
+      },
+      child: Material(
+      color: Colors.transparent,
+      child: Stack(
       children: [
         LayoutBuilder(
           builder: (context, constraints) {
@@ -85,35 +106,76 @@ class TilesTab extends ConsumerWidget {
           },
         ),
         Positioned(
+          left: 16,
           right: 16,
           bottom: 16,
-          child: GestureDetector(
-            onTap: () => _showCustomizeSheet(context, ref, metrics),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.border2),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.tune, size: 14, color: AppColors.textMuted),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Customize',
-                    style: AppTextStyles.sans(
-                      size: 12,
-                      color: AppColors.textMuted,
-                    ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              GestureDetector(
+                onTap: onExitFullscreen ??
+                    () => Navigator.of(context).push(
+                          PageRouteBuilder<void>(
+                            transitionDuration:
+                                const Duration(milliseconds: 400),
+                            reverseTransitionDuration:
+                                const Duration(milliseconds: 300),
+                            pageBuilder: (_, __, ___) =>
+                                _FullscreenTilesPage(shots: shots, selectedShot: last),
+                            transitionsBuilder: (_, anim, __, child) => child,
+                          ),
+                        ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.border2),
                   ),
-                ],
+                  child: Icon(
+                    onExitFullscreen != null
+                        ? Icons.fullscreen_exit
+                        : Icons.fullscreen,
+                    size: 16,
+                    color: AppColors.textMuted,
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => _showCustomizeSheet(context, ref, metrics),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.border2),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.tune,
+                          size: 14, color: AppColors.textMuted),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Customize',
+                        style: AppTextStyles.sans(
+                          size: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
+      ),
+      ),
     );
   }
 
@@ -138,6 +200,30 @@ class TilesTab extends ConsumerWidget {
   }
 }
 
+// ── Fullscreen tiles page ─────────────────────────────────────────────────────
+
+class _FullscreenTilesPage extends StatelessWidget {
+  final List<ShotData> shots;
+  final ShotData? selectedShot;
+
+  const _FullscreenTilesPage({required this.shots, this.selectedShot});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: TilesTab(
+          shots: shots,
+          selectedShot: selectedShot,
+          showFullscreenToggle: false,
+          onExitFullscreen: () => Navigator.of(context).pop(),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Metric value resolution ───────────────────────────────────────────────────
 
 /// Returns the display unit label for [m] respecting [prefs].
@@ -147,6 +233,7 @@ String tileUnit(TileMetric m, UnitPrefs prefs) => switch (m) {
   TileMetric.carry ||
   TileMetric.run ||
   TileMetric.totalDistance => prefs.distLabel,
+  TileMetric.horizontalImpact || TileMetric.verticalImpact => 'mm',
   _ => m.unit,
 };
 
@@ -180,11 +267,15 @@ String metricValue(TileMetric m, ShotData? s, UnitPrefs prefs) {
     TileMetric.smashFactor => s.smashFactor.toStringAsFixed(2),
     TileMetric.dynamicLoft =>
       s.dynamicLoft != null ? '${s.dynamicLoft!.toStringAsFixed(1)}°' : '--',
+    // Combined display handled directly in _MetricTile; return horizontal only
+    // here so avg / diff calculations still work.
     TileMetric.impactLocation =>
       s.horizontalImpact != null
           ? '${s.horizontalImpact!.abs().toStringAsFixed(1)} '
                 '${s.horizontalImpact! >= 0 ? 'T' : 'H'}'
           : '--',
+    TileMetric.horizontalImpact => _fmtImpactH(s.horizontalImpact),
+    TileMetric.verticalImpact => _fmtImpactV(s.verticalImpact),
   };
 }
 
@@ -207,7 +298,19 @@ double? metricRaw(TileMetric m, ShotData? s, UnitPrefs prefs) {
     TileMetric.smashFactor => s.smashFactor,
     TileMetric.dynamicLoft => s.dynamicLoft,
     TileMetric.impactLocation => s.horizontalImpact,
+    TileMetric.horizontalImpact => s.horizontalImpact,
+    TileMetric.verticalImpact => s.verticalImpact,
   };
+}
+
+String _fmtImpactH(double? v) {
+  if (v == null) return '--';
+  return '${v.abs().toStringAsFixed(1)} ${v >= 0 ? 'T' : 'H'}';
+}
+
+String _fmtImpactV(double? v) {
+  if (v == null) return '--';
+  return '${v.abs().toStringAsFixed(1)} ${v >= 0 ? 'H' : 'L'}';
 }
 
 // ── Single metric tile ────────────────────────────────────────────────────────
@@ -228,11 +331,29 @@ class _MetricTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isImpact = metric == TileMetric.impactLocation;
+
     final currentStr = metricValue(metric, currentShot, prefs);
     final avgStr = metricValue(metric, avgShot, prefs);
 
     String footer = '';
-    if (avgShot != null && currentShot != null) {
+    if (isImpact) {
+      final hAvg = _fmtImpactH(avgShot?.horizontalImpact);
+      final vAvg = _fmtImpactV(avgShot?.verticalImpact);
+      if (avgShot != null && currentShot != null) {
+        final hDiff = currentShot!.horizontalImpact != null &&
+                avgShot!.horizontalImpact != null
+            ? '±${(currentShot!.horizontalImpact! - avgShot!.horizontalImpact!).abs().toStringAsFixed(1)}'
+            : '';
+        final vDiff = currentShot!.verticalImpact != null &&
+                avgShot!.verticalImpact != null
+            ? '±${(currentShot!.verticalImpact! - avgShot!.verticalImpact!).abs().toStringAsFixed(1)}'
+            : '';
+        footer = 'H: $hAvg $hDiff  V: $vAvg $vDiff';
+      } else if (avgShot != null) {
+        footer = 'AVG  H: $hAvg  V: $vAvg';
+      }
+    } else if (avgShot != null && currentShot != null) {
       final cur = metricRaw(metric, currentShot, prefs);
       final avg = metricRaw(metric, avgShot, prefs);
       if (cur != null && avg != null) {
@@ -246,61 +367,132 @@ class _MetricTile extends StatelessWidget {
     final unit = tileUnit(metric, prefs);
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
         color: AppColors.card,
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Stack(
         children: [
-          // Label at top
-          Text(
-            metric.label,
-            style: AppTextStyles.sans(
-              size: 13,
-              weight: FontWeight.w600,
-              color: Colors.white,
+          // Value fills the entire tile
+          Positioned.fill(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(10, 22, 10, footer.isNotEmpty ? 22 : 4),
+              child: isImpact
+                  ? _ImpactDisplay(shot: currentShot)
+                  : FittedBox(
+                      fit: BoxFit.contain,
+                      alignment: Alignment.center,
+                      child: _SplitFlapText(
+                        text: currentStr,
+                        style: AppTextStyles.mono(
+                            size: 108, weight: FontWeight.w600),
+                      ),
+                    ),
             ),
           ),
-          // Value — expands to fill all available space
-          Expanded(
-            child: SizedBox.expand(
-              child: FittedBox(
-                fit: BoxFit.contain,
-                alignment: Alignment.center,
-                child: _SplitFlapText(
-                  text: currentStr,
-                  style: AppTextStyles.mono(size: 108, weight: FontWeight.w600),
+          // Label top-left, unit top-right
+          Positioned(
+            top: 5,
+            left: 8,
+            right: 8,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    metric.label,
+                    style: AppTextStyles.sans(
+                      size: 11,
+                      weight: FontWeight.w600,
+                      color: AppColors.textMuted,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (!isImpact && unit.isNotEmpty)
+                  Text(
+                    unit,
+                    style: AppTextStyles.sans(
+                      size: 11,
+                      color: AppColors.textDimmed,
+                    ).copyWith(fontStyle: FontStyle.italic),
+                  ),
+              ],
+            ),
+          ),
+          // AVG pill pinned to bottom
+          if (footer.isNotEmpty)
+            Positioned(
+              bottom: 4,
+              left: 6,
+              right: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  footer,
+                  style: AppTextStyles.mono(size: 10, color: AppColors.textMuted),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
                 ),
               ),
             ),
-          ),
-          // Unit below value — always reserve height so all tiles scale uniformly
-          Text(
-            unit.isEmpty ? '\u00A0' : unit,
-            style: AppTextStyles.sans(
-              size: 13,
-              color: unit.isEmpty ? Colors.transparent : AppColors.textDimmed,
-            ).copyWith(fontStyle: FontStyle.italic),
-          ),
-          // AVG pill at the bottom
-          if (footer.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                footer,
-                style: AppTextStyles.mono(size: 11, color: AppColors.textMuted),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Impact location display ───────────────────────────────────────────────────
+
+class _ImpactDisplay extends StatelessWidget {
+  final ShotData? shot;
+
+  const _ImpactDisplay({this.shot});
+
+  @override
+  Widget build(BuildContext context) {
+    final hStr = _fmtImpactH(shot?.horizontalImpact);
+    final vStr = _fmtImpactV(shot?.verticalImpact);
+
+    return Column(
+      children: [
+        _ImpactValue(label: 'Horiz', value: hStr),
+        Container(height: 1, width: double.infinity, color: AppColors.border2),
+        _ImpactValue(label: 'Vert', value: vStr),
+      ],
+    );
+  }
+}
+
+class _ImpactValue extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _ImpactValue({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(label,
+              style: AppTextStyles.sans(size: 11, color: AppColors.textDimmed)),
+          const SizedBox(height: 2),
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.contain,
+              child: Text(value,
+                  style: AppTextStyles.mono(size: 108, weight: FontWeight.w600)),
             ),
-          ],
+          ),
+          Text('mm',
+              style: AppTextStyles.sans(size: 11, color: AppColors.textDimmed)
+                  .copyWith(fontStyle: FontStyle.italic)),
         ],
       ),
     );
@@ -429,6 +621,8 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
     TileMetric.smashFactor,
     TileMetric.dynamicLoft,
     TileMetric.impactLocation,
+    TileMetric.horizontalImpact,
+    TileMetric.verticalImpact,
   ];
 
   @override
@@ -454,12 +648,12 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
     final clubAvail =
         _clubMetrics.where((m) => !_selected.contains(m)).toList();
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.65,
-      minChildSize: 0.4,
-      maxChildSize: 0.9,
-      expand: false,
-      builder: (_, scrollCtrl) => Column(
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 12),
           Container(
@@ -490,9 +684,8 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
           ),
           const SizedBox(height: 4),
           const Divider(color: AppColors.border),
-          Expanded(
+          Flexible(
             child: SingleChildScrollView(
-              controller: scrollCtrl,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -566,7 +759,7 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
               width: double.infinity,
               child: FilledButton(
                 style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.accent,
+                  backgroundColor: context.accent,
                   foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -619,10 +812,11 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
                       .copyWith(fontStyle: FontStyle.italic)),
             ),
           GestureDetector(
-            onTap: () => _remove(m),
             behavior: HitTestBehavior.opaque,
+            onTapDown: (_) {},
+            onTap: () => _remove(m),
             child: const Padding(
-              padding: EdgeInsets.all(4),
+              padding: EdgeInsets.all(10),
               child: Icon(Icons.close, size: 16, color: AppColors.textDimmed),
             ),
           ),
@@ -645,6 +839,7 @@ class _AvailableChips extends StatelessWidget {
       runSpacing: 8,
       children: metrics
           .map((m) => GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () => onAdd(m),
                 child: Container(
                   padding: const EdgeInsets.symmetric(

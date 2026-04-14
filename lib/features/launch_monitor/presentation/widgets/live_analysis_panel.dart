@@ -181,19 +181,18 @@ class _ScoreRing extends StatelessWidget {
 
   const _ScoreRing({required this.score});
 
-  Color get _ringColor => switch (score) {
-        >= 80 => AppColors.accent,
-        >= 60 => const Color(0xFFF59E0B),
-        _ => const Color(0xFFEF4444),
-      };
-
   @override
   Widget build(BuildContext context) {
+    final ringColor = score >= 80
+        ? context.accent
+        : score >= 60
+            ? const Color(0xFFF59E0B)
+            : const Color(0xFFEF4444);
     return SizedBox(
       width: 72,
       height: 72,
       child: CustomPaint(
-        painter: _RingPainter(score: score, color: _ringColor),
+        painter: _RingPainter(score: score, color: ringColor),
         child: Center(
           child: Text(
             '$score',
@@ -275,8 +274,8 @@ class _MissPatternSection extends StatelessWidget {
     MissDirection.missLeft,
   ];
 
-  Color _colorFor(MissDirection d) => switch (d) {
-        MissDirection.straight => AppColors.accent,
+  Color _colorFor(MissDirection d, Color accent) => switch (d) {
+        MissDirection.straight => accent,
         MissDirection.slightRight || MissDirection.slightLeft =>
           const Color(0xFF60A5FA),
         MissDirection.missRight || MissDirection.missLeft =>
@@ -314,7 +313,7 @@ class _MissPatternSection extends StatelessWidget {
               label: miss.labelFor(dir),
               count: miss.countFor(dir),
               maxCount: maxCount,
-              color: _colorFor(dir),
+              color: _colorFor(dir, context.accent),
             ),
         ],
       ),
@@ -424,8 +423,8 @@ class _FatigueRow extends StatelessWidget {
 
   const _FatigueRow({required this.indicator});
 
-  Color get _changeColor {
-    if (indicator.isPositive) return AppColors.accent;
+  Color _changeColor(Color accent) {
+    if (indicator.isPositive) return accent;
     if (indicator.isNegative) return const Color(0xFFF59E0B);
     return AppColors.textMuted;
   }
@@ -437,6 +436,7 @@ class _FatigueRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final changeColor = _changeColor(context.accent);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(
@@ -456,12 +456,12 @@ class _FatigueRow extends StatelessWidget {
                 style: AppTextStyles.sans(
                     size: 11,
                     weight: FontWeight.w600,
-                    color: _changeColor),
+                    color: changeColor),
               ),
             ],
           ),
           const SizedBox(height: 4),
-          LayoutBuilder(builder: (context, constraints) {
+          LayoutBuilder(builder: (_, constraints) {
             return Stack(
               children: [
                 Container(
@@ -475,7 +475,7 @@ class _FatigueRow extends StatelessWidget {
                   height: 3,
                   width: constraints.maxWidth * _barFraction,
                   decoration: BoxDecoration(
-                    color: _changeColor,
+                    color: changeColor,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -522,12 +522,6 @@ class _FeedItem extends StatelessWidget {
 
   const _FeedItem({required this.event});
 
-  Color get _accentColor => switch (event.type) {
-        AnalysisEventType.warning => const Color(0xFFF59E0B),
-        AnalysisEventType.positive => AppColors.accent,
-        AnalysisEventType.info => const Color(0xFF60A5FA),
-      };
-
   IconData get _icon => switch (event.type) {
         AnalysisEventType.warning => Icons.warning_amber_rounded,
         AnalysisEventType.positive => Icons.trending_up,
@@ -536,20 +530,25 @@ class _FeedItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = switch (event.type) {
+      AnalysisEventType.warning => const Color(0xFFF59E0B),
+      AnalysisEventType.positive => context.accent,
+      AnalysisEventType.info => const Color(0xFF60A5FA),
+    };
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border(left: BorderSide(color: _accentColor, width: 2)),
+        border: Border(left: BorderSide(color: accentColor, width: 2)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
             padding: const EdgeInsets.only(top: 1, right: 8),
-            child: Icon(_icon, size: 13, color: _accentColor),
+            child: Icon(_icon, size: 13, color: accentColor),
           ),
           Expanded(
             child: Column(

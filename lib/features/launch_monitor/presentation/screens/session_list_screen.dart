@@ -50,7 +50,7 @@ class SessionListScreen extends ConsumerWidget {
                 width: double.infinity,
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.accent,
+                    backgroundColor: context.accent,
                     foregroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -190,7 +190,7 @@ class SessionListScreen extends ConsumerWidget {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: AppColors.accent,
+              backgroundColor: context.accent,
               foregroundColor: Colors.black,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
@@ -224,9 +224,9 @@ class _ActiveSessionTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AppColors.accentGhost,
+          color: context.accentGhost,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.accentMid, width: 1.5),
+          border: Border.all(color: context.accentMid, width: 1.5),
         ),
         child: Row(
           children: [
@@ -235,12 +235,12 @@ class _ActiveSessionTile extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: AppColors.accentFaint,
+                color: context.accentFaint,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.accentBorder),
+                border: Border.all(color: context.accentBorder),
               ),
-              child: const Center(
-                child: Icon(Icons.bolt_rounded, size: 18, color: AppColors.accent),
+              child: Center(
+                child: Icon(Icons.bolt_rounded, size: 18, color: context.accent),
               ),
             ),
             const SizedBox(width: 12),
@@ -263,7 +263,7 @@ class _ActiveSessionTile extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: AppColors.accent,
+                          color: context.accent,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -282,13 +282,13 @@ class _ActiveSessionTile extends StatelessWidget {
                     '$shotCount ${shotCount == 1 ? 'shot' : 'shots'} · Tap to resume',
                     style: AppTextStyles.sans(
                       size: 11,
-                      color: AppColors.accent,
+                      color: context.accent,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, size: 18, color: AppColors.accent),
+            Icon(Icons.chevron_right, size: 18, color: context.accent),
           ],
         ),
       ),
@@ -420,7 +420,7 @@ class _ConnectChip extends StatelessWidget {
                       : 'Connect',
               style: AppTextStyles.sans(
                 size: 12,
-                color: isConnected ? AppColors.accent : AppColors.textMuted,
+                color: isConnected ? context.accent : AppColors.textMuted,
               ),
             ),
           ],
