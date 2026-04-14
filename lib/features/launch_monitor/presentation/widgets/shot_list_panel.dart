@@ -17,16 +17,19 @@ enum ShotListMetric {
   clubSpeed('Club Spd', 'mph'),
   spinRate('Spin', 'rpm'),
   launchAngle('Launch Ang.', 'deg'),
-  offline('Offline', 'yds');
+  offline('Offline', 'yds'),
+  carryOffline('Carry / Offline', 'yds');
 
   const ShotListMetric(this.label, this.unit);
 
   final String label;
   final String unit;
 
+  bool get isCombined => this == carryOffline;
+
   /// Display unit label respecting [prefs].
   String displayUnit(UnitPrefs prefs) => switch (this) {
-    carry || offline => prefs.distLabel,
+    carry || offline || carryOffline => prefs.distLabel,
     ballSpeed || clubSpeed => prefs.speedLabel,
     _ => unit,
   };
@@ -51,6 +54,8 @@ enum ShotListMetric {
         return abs < 0.05
             ? '0.0 ${prefs.distLabel}'
             : '${abs.toStringAsFixed(1)} $dir ${prefs.distLabel}';
+      case carryOffline:
+        return carry.format(s, prefs);
     }
   }
 
@@ -170,7 +175,7 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                         child: Text(
                           'Cancel',
                           style: AppTextStyles.sans(
-                              size: 13, color: AppColors.accent),
+                              size: 13, color: context.accent),
                         ),
                       ),
                     ],
@@ -282,12 +287,12 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                           decoration: BoxDecoration(
                             color: _selectedIndices.isEmpty
                                 ? AppColors.card
-                                : AppColors.accentSubtle,
+                                : context.accentSubtle,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: _selectedIndices.isEmpty
                                   ? AppColors.border2
-                                  : AppColors.accent,
+                                  : context.accent,
                             ),
                           ),
                           child: Center(
@@ -297,7 +302,7 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                                 size: 13,
                                 color: _selectedIndices.isEmpty
                                     ? AppColors.textMuted
-                                    : AppColors.accent,
+                                    : context.accent,
                               ),
                             ),
                           ),
@@ -398,8 +403,8 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                 style: AppTextStyles.sans(size: 14),
               ),
               trailing: m == widget.metric
-                  ? const Icon(Icons.check,
-                      color: AppColors.accent, size: 18)
+                  ? Icon(Icons.check,
+                      color: context.accent, size: 18)
                   : null,
               onTap: () {
                 widget.onMetricChanged(m);
@@ -444,6 +449,23 @@ class ShotListClubSection extends ConsumerWidget {
     required this.onToggleIndex,
     required this.onSelectGroup,
   });
+
+  Widget _valueWidget(ShotData shot, UnitPrefs prefs) {
+    if (metric.isCombined) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(ShotListMetric.carry.format(shot, prefs),
+              style: AppTextStyles.mono(size: 11, color: Colors.white)),
+          Text(ShotListMetric.offline.format(shot, prefs),
+              style: AppTextStyles.mono(size: 10, color: AppColors.textMuted)),
+        ],
+      );
+    }
+    return Text(metric.format(shot, prefs),
+        style: AppTextStyles.mono(size: 12, color: Colors.white));
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -558,8 +580,20 @@ class ShotListClubSection extends ConsumerWidget {
                     style: AppTextStyles.mono(
                         size: 11, color: AppColors.textMuted)),
                 const Spacer(),
-                Text(avgStr,
-                    style: AppTextStyles.mono(size: 12, color: Colors.white)),
+                if (metric.isCombined)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(ShotListMetric.carry.avg(shots, prefs),
+                          style: AppTextStyles.mono(size: 11, color: Colors.white)),
+                      Text(ShotListMetric.offline.avg(shots, prefs),
+                          style: AppTextStyles.mono(size: 10, color: AppColors.textMuted)),
+                    ],
+                  )
+                else
+                  Text(avgStr,
+                      style: AppTextStyles.mono(size: 12, color: Colors.white)),
               ],
             ),
           ),
@@ -569,7 +603,7 @@ class ShotListClubSection extends ConsumerWidget {
             final shotNum = entries.length - i;
             final isSelected = e.index == selectedShotIndex;
             final isChecked = selectedIndices.contains(e.index);
-            final selColor = club?.color ?? AppColors.accent;
+            final selColor = club?.color ?? context.accent;
             final shotTags = e.shot.tagIds
                 .map((id) => tags.where((t) => t.id == id).firstOrNull)
                 .whereType<Tag>()
@@ -630,11 +664,7 @@ class ShotListClubSection extends ConsumerWidget {
                             ),
                           )),
                       const Spacer(),
-                      Text(
-                        metric.format(e.shot, prefs),
-                        style: AppTextStyles.mono(
-                            size: 12, color: Colors.white),
-                      ),
+                      _valueWidget(e.shot, prefs),
                     ],
                   ),
                 ),
@@ -697,11 +727,7 @@ class ShotListClubSection extends ConsumerWidget {
                           ),
                         )),
                     const Spacer(),
-                    Text(
-                      metric.format(e.shot, prefs),
-                      style:
-                          AppTextStyles.mono(size: 12, color: Colors.white),
-                    ),
+                    _valueWidget(e.shot, prefs),
                   ],
                 ),
               ),

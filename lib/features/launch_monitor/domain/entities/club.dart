@@ -24,8 +24,9 @@ class Club {
     if (id == 'pt') return ClubType.putter;
     // Named wedges must be checked before endsWith('w') to avoid pw/sw/lw
     // being misclassified as woods.
-    if (id == 'pw' || id == 'gw' || id == 'sw' || id == 'lw')
+    if (id == 'pw' || id == 'gw' || id == 'sw' || id == 'lw') {
       return ClubType.wedge;
+    }
     if (id.endsWith('w')) return ClubType.wood;
     if (id.endsWith('h')) return ClubType.hybrid;
     if (id.endsWith('i')) return ClubType.iron;

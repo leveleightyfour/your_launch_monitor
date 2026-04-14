@@ -94,10 +94,10 @@ class _PillNav extends StatelessWidget {
               duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               decoration: BoxDecoration(
-                color: active ? AppColors.accentSubtle : Colors.transparent,
+                color: active ? context.accentSubtle : Colors.transparent,
                 borderRadius: BorderRadius.circular(26),
                 border: Border.all(
-                  color: active ? AppColors.accentBorder : Colors.transparent,
+                  color: active ? context.accentBorder : Colors.transparent,
                 ),
               ),
               child: Row(
@@ -105,7 +105,7 @@ class _PillNav extends StatelessWidget {
                 children: [
                   Icon(
                     item.icon,
-                    color: active ? AppColors.accent : AppColors.textDimmed,
+                    color: active ? context.accent : AppColors.textDimmed,
                     size: 20,
                   ),
                   const SizedBox(width: 6),
@@ -114,7 +114,7 @@ class _PillNav extends StatelessWidget {
                     style: AppTextStyles.sans(
                       size: 13,
                       weight: active ? FontWeight.w600 : FontWeight.w400,
-                      color: active ? AppColors.accent : AppColors.textDimmed,
+                      color: active ? context.accent : AppColors.textDimmed,
                     ),
                   ),
                 ],

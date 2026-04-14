@@ -309,7 +309,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? AppColors.accent : AppColors.textMuted;
+    final color = active ? context.accent : AppColors.textMuted;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -346,7 +346,7 @@ class _NavItem extends StatelessWidget {
                 child: Container(
                   height: 2,
                   decoration: BoxDecoration(
-                    color: AppColors.accent,
+                    color: context.accent,
                     borderRadius: BorderRadius.circular(1),
                   ),
                 ),
@@ -551,17 +551,17 @@ class _PanePickerSheet extends StatelessWidget {
           return ListTile(
             leading: Icon(icon,
                 size: 18,
-                color: isSel ? AppColors.accent : AppColors.textMuted),
+                color: isSel ? context.accent : AppColors.textMuted),
             title: Text(
               label,
               style: AppTextStyles.sans(
                 size: 14,
                 weight: isSel ? FontWeight.w600 : FontWeight.w400,
-                color: isSel ? AppColors.accent : Colors.white,
+                color: isSel ? context.accent : Colors.white,
               ),
             ),
             trailing: isSel
-                ? const Icon(Icons.check, color: AppColors.accent, size: 18)
+                ? Icon(Icons.check, color: context.accent, size: 18)
                 : null,
             tileColor: Colors.transparent,
             onTap: () => onSelect(view),
@@ -678,12 +678,12 @@ class _BottomBar extends StatelessWidget {
                     height: 36,
                     decoration: BoxDecoration(
                       color: showShotList
-                          ? AppColors.accentSubtle
+                          ? context.accentSubtle
                           : AppColors.card,
                       shape: BoxShape.circle,
                       border: Border.all(
                         color: showShotList
-                            ? AppColors.accent
+                            ? context.accent
                             : AppColors.border2,
                       ),
                     ),
@@ -691,7 +691,7 @@ class _BottomBar extends StatelessWidget {
                       Icons.menu,
                       size: 16,
                       color: showShotList
-                          ? AppColors.accent
+                          ? context.accent
                           : AppColors.textMuted,
                     ),
                   ),
@@ -702,8 +702,8 @@ class _BottomBar extends StatelessWidget {
                       child: Container(
                         width: 15,
                         height: 15,
-                        decoration: const BoxDecoration(
-                          color: AppColors.accent,
+                        decoration: BoxDecoration(
+                          color: context.accent,
                           shape: BoxShape.circle,
                         ),
                         child: Center(

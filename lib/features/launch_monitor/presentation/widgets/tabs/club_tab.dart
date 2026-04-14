@@ -184,16 +184,16 @@ class _SubTab extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
-          color: active ? AppColors.accentSubtle : Colors.transparent,
+          color: active ? context.accentSubtle : Colors.transparent,
           border: Border.all(
-              color: active ? AppColors.accent : AppColors.border2),
+              color: active ? context.accent : AppColors.border2),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(label,
             style: AppTextStyles.sans(
               size: 11,
               weight: FontWeight.w400,
-              color: active ? AppColors.accent : AppColors.textMuted,
+              color: active ? context.accent : AppColors.textMuted,
             )),
       ),
     );
@@ -243,7 +243,7 @@ class _TrajPanel extends StatelessWidget {
       children: [
         Container(color: AppColors.surface),
         CustomPaint(
-          painter: _TrajPainter(shot: shot),
+          painter: _TrajPainter(shot: shot, accent: context.accent),
           child: const SizedBox.expand(),
         ),
         // Face angle — top center
@@ -334,7 +334,8 @@ class _TrajPanel extends StatelessWidget {
 
 class _TrajPainter extends CustomPainter {
   final ShotData shot;
-  const _TrajPainter({required this.shot});
+  final Color accent;
+  const _TrajPainter({required this.shot, required this.accent});
 
   static void _dashed(Canvas canvas, Offset a, Offset b, Paint p,
       {double on = 5, double off = 4}) {
@@ -412,11 +413,11 @@ class _TrajPainter extends CustomPainter {
     // Ball dot
     canvas.drawCircle(
         Offset(cx, cy), 7, Paint()..color = Colors.white.withAlpha(210));
-    canvas.drawCircle(Offset(cx, cy), 5, Paint()..color = AppColors.accent);
+    canvas.drawCircle(Offset(cx, cy), 5, Paint()..color = accent);
   }
 
   @override
-  bool shouldRepaint(_TrajPainter old) => old.shot != shot;
+  bool shouldRepaint(_TrajPainter old) => old.shot != shot || old.accent != accent;
 }
 
 // ── Loft panel (side-view launch angle + spin) ────────────────────────────────
@@ -776,6 +777,7 @@ class _ImpactSection extends StatelessWidget {
                           allShots: allShots,
                           showHeatmap: showHeatmap,
                           faceBounds: bounds,
+                          accent: context.accent,
                         ),
                         child: const SizedBox.expand(),
                       ),
@@ -825,12 +827,14 @@ class _ImpactOverlayPainter extends CustomPainter {
   final List<ShotData> allShots;
   final bool showHeatmap;
   final List<double> faceBounds;
+  final Color accent;
 
   _ImpactOverlayPainter({
     required this.shot,
     required this.allShots,
     required this.showHeatmap,
     required this.faceBounds,
+    required this.accent,
   });
 
   static const double _maxMm = 22.0;
@@ -942,23 +946,24 @@ class _ImpactOverlayPainter extends CustomPainter {
         Offset(ix, iy),
         14,
         Paint()
-          ..color = AppColors.accentSubtle
+          ..color = accent.withAlpha(30)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
     canvas.drawCircle(
         Offset(ix, iy),
         9,
         Paint()
-          ..color = AppColors.accent.withAlpha(200)
+          ..color = accent.withAlpha(200)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5);
-    canvas.drawCircle(Offset(ix, iy), 4, Paint()..color = AppColors.accent);
+    canvas.drawCircle(Offset(ix, iy), 4, Paint()..color = accent);
   }
 
   @override
   bool shouldRepaint(_ImpactOverlayPainter old) =>
       old.shot != shot ||
       old.allShots != allShots ||
-      old.showHeatmap != showHeatmap;
+      old.showHeatmap != showHeatmap ||
+      old.accent != accent;
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -994,10 +999,10 @@ class _Toggle extends StatelessWidget {
       width: 28,
       height: 16,
       decoration: BoxDecoration(
-        color: active ? AppColors.accentSubtle : AppColors.card,
+        color: active ? context.accentSubtle : AppColors.card,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-            color: active ? AppColors.accent : AppColors.border2),
+            color: active ? context.accent : AppColors.border2),
       ),
       child: Stack(
         children: [
@@ -1010,7 +1015,7 @@ class _Toggle extends StatelessWidget {
               width: 10,
               height: 10,
               decoration: BoxDecoration(
-                color: active ? AppColors.accent : AppColors.textDimmed,
+                color: active ? context.accent : AppColors.textDimmed,
                 shape: BoxShape.circle,
               ),
             ),

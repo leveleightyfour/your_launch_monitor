@@ -398,8 +398,8 @@ class _ActiveSessionTopBar extends StatelessWidget {
                     Container(
                       width: 6,
                       height: 6,
-                      decoration: const BoxDecoration(
-                        color: AppColors.accent,
+                      decoration: BoxDecoration(
+                        color: context.accent,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -490,7 +490,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? AppColors.accent : AppColors.textMuted;
+    final color = active ? context.accent : AppColors.textMuted;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -526,7 +526,7 @@ class _NavItem extends StatelessWidget {
                 child: Container(
                   height: 2,
                   decoration: BoxDecoration(
-                    color: AppColors.accent,
+                    color: context.accent,
                     borderRadius: BorderRadius.circular(1),
                   ),
                 ),
@@ -719,18 +719,18 @@ class _ActivePaneHeader extends StatelessWidget {
                 leading: Icon(
                   icon,
                   size: 18,
-                  color: isSel ? AppColors.accent : AppColors.textMuted,
+                  color: isSel ? context.accent : AppColors.textMuted,
                 ),
                 title: Text(
                   label,
                   style: AppTextStyles.sans(
                     size: 14,
                     weight: isSel ? FontWeight.w600 : FontWeight.w400,
-                    color: isSel ? AppColors.accent : Colors.white,
+                    color: isSel ? context.accent : Colors.white,
                   ),
                 ),
                 trailing: isSel
-                    ? const Icon(Icons.check, color: AppColors.accent, size: 18)
+                    ? Icon(Icons.check, color: context.accent, size: 18)
                     : null,
                 tileColor: Colors.transparent,
                 onTap: () {
@@ -816,12 +816,12 @@ class _ActiveBottomBar extends StatelessWidget {
                     height: 36,
                     decoration: BoxDecoration(
                       color: showShotList
-                          ? AppColors.accentSubtle
+                          ? context.accentSubtle
                           : AppColors.card,
                       shape: BoxShape.circle,
                       border: Border.all(
                         color: showShotList
-                            ? AppColors.accent
+                            ? context.accent
                             : AppColors.border2,
                       ),
                     ),
@@ -829,7 +829,7 @@ class _ActiveBottomBar extends StatelessWidget {
                       Icons.menu,
                       size: 16,
                       color: showShotList
-                          ? AppColors.accent
+                          ? context.accent
                           : AppColors.textMuted,
                     ),
                   ),
@@ -840,8 +840,8 @@ class _ActiveBottomBar extends StatelessWidget {
                       child: Container(
                         width: 15,
                         height: 15,
-                        decoration: const BoxDecoration(
-                          color: AppColors.accent,
+                        decoration: BoxDecoration(
+                          color: context.accent,
                           shape: BoxShape.circle,
                         ),
                         child: Center(
@@ -985,7 +985,7 @@ class _FinishConfirmDialog extends StatelessWidget {
               width: double.infinity,
               child: FilledButton(
                 style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.accent,
+                  backgroundColor: context.accent,
                   foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -1215,7 +1215,7 @@ class _SessionSummarySheet extends StatelessWidget {
                     width: double.infinity,
                     child: FilledButton(
                       style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.accent,
+                        backgroundColor: context.accent,
                         foregroundColor: Colors.black,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
@@ -1293,7 +1293,7 @@ class _ClubPickerSheet extends StatelessWidget {
                   style: AppTextStyles.sans(
                     size: 14,
                     weight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                    color: isSelected ? AppColors.accent : Colors.white,
+                    color: isSelected ? context.accent : Colors.white,
                   ),
                 ),
                 subtitle: club.manufacturer != null || club.model != null
@@ -1309,7 +1309,7 @@ class _ClubPickerSheet extends StatelessWidget {
                       )
                     : null,
                 trailing: isSelected
-                    ? const Icon(Icons.check, color: AppColors.accent, size: 18)
+                    ? Icon(Icons.check, color: context.accent, size: 18)
                     : null,
                 tileColor: Colors.transparent,
                 onTap: () => onSelect(club),

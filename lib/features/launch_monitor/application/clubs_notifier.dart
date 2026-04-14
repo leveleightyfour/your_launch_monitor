@@ -75,7 +75,9 @@ enum TileMetric {
   angleOfAttack('ANG. ATT.', 'deg'),
   smashFactor('SMASH', ''),
   dynamicLoft('DYN. LOFT', 'deg'),
-  impactLocation('IMPACT LOC.', '');
+  impactLocation('IMPACT LOC.', ''),
+  horizontalImpact('IMPACT HORIZ', 'mm'),
+  verticalImpact('IMPACT VERT', 'mm');
 
   const TileMetric(this.label, this.unit);
 

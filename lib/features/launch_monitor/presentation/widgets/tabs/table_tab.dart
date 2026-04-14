@@ -171,6 +171,17 @@ class _TableTabState extends ConsumerState<TableTab> {
                 getValue: (col) {
                   final val = sd(col).toStringAsFixed(1);
                   final unit = tableColUnit(col, prefs);
+                  if (col == TableColumn.offline) {
+                    final signed = _offlineYds(avg);
+                    final dir = signed > 0.05
+                        ? 'R'
+                        : signed < -0.05
+                            ? 'L'
+                            : '';
+                    return dir.isNotEmpty
+                        ? '$val $dir ${prefs.distLabel}'
+                        : '$val ${prefs.distLabel}';
+                  }
                   if (unit == 'deg') return '$val°';
                   if (unit.isNotEmpty) return '$val $unit';
                   return val;
@@ -382,7 +393,7 @@ class _DynamicStatsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isAvg ? Colors.white : AppColors.accent;
+    final color = isAvg ? Colors.white : context.accent;
     final size = isAvg ? 13.0 : 11.0;
 
     return Container(
@@ -438,10 +449,10 @@ class _DynamicShotRow extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.accentGhost : Colors.transparent,
+          color: isSelected ? context.accentGhost : Colors.transparent,
           border: Border(
             left: isSelected
-                ? const BorderSide(color: AppColors.accent, width: 2)
+                ? BorderSide(color: context.accent, width: 2)
                 : BorderSide.none,
             bottom: const BorderSide(color: AppColors.surface),
           ),
@@ -588,7 +599,7 @@ class _TableCustomizeSheetState extends State<_TableCustomizeSheet> {
               width: double.infinity,
               child: FilledButton(
                 style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.accent,
+                  backgroundColor: context.accent,
                   foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -659,11 +670,11 @@ class _ColSection extends StatelessWidget {
                 ),
                 decoration: BoxDecoration(
                   color: active
-                      ? AppColors.accentFaint
+                      ? context.accentFaint
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: active ? AppColors.accent : AppColors.border2,
+                    color: active ? context.accent : AppColors.border2,
                   ),
                 ),
                 child: Text(
@@ -671,7 +682,7 @@ class _ColSection extends StatelessWidget {
                   style: AppTextStyles.sans(
                     size: 12,
                     weight: FontWeight.w400,
-                    color: active ? AppColors.accent : AppColors.textMuted,
+                    color: active ? context.accent : AppColors.textMuted,
                   ),
                 ),
               ),

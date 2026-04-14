@@ -8,66 +8,131 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/dispersion_tab.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
-class MyBagScreen extends ConsumerWidget {
+class MyBagScreen extends ConsumerStatefulWidget {
   const MyBagScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        body: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: Row(
+  ConsumerState<MyBagScreen> createState() => _MyBagScreenState();
+}
+
+class _MyBagScreenState extends ConsumerState<MyBagScreen> {
+  int _tab = 0;
+
+  static const _tabs = [
+    (Icons.sports_golf, 'Clubs'),
+    (Icons.straighten, 'Distances'),
+    (Icons.scatter_plot, 'Dispersion'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Row(
+                children: [
+                  Text(
+                    'My Bag',
+                    style: AppTextStyles.sans(size: 20, weight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+            // Tab bar
+            Container(
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppColors.border)),
+                color: AppColors.background,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  for (int i = 0; i < _tabs.length; i++)
+                    _BagNavItem(
+                      icon: _tabs[i].$1,
+                      label: _tabs[i].$2,
+                      active: _tab == i,
+                      onTap: () => setState(() => _tab = i),
+                    ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: switch (_tab) {
+                1 => const _DistancesTab(),
+                2 => const _DispersionTabWrapper(),
+                _ => const _ClubsTab(),
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BagNavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _BagNavItem({
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? context.accent : AppColors.textMuted;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        height: 56,
+        child: Stack(
+          children: [
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
+                    Icon(icon, size: 18, color: color),
+                    const SizedBox(height: 4),
                     Text(
-                      'My Bag',
+                      label,
                       style: AppTextStyles.sans(
-                        size: 20,
-                        weight: FontWeight.w600,
+                        size: 10,
+                        weight: active ? FontWeight.w600 : FontWeight.w400,
+                        color: color,
                       ),
                     ),
                   ],
                 ),
               ),
-              // Tab bar
-              Container(
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: AppColors.border)),
-                ),
-                child: TabBar(
-                  indicatorColor: AppColors.accent,
-                  indicatorWeight: 2,
-                  labelColor: Colors.white,
-                  unselectedLabelColor: AppColors.textDimmed,
-                  labelStyle: AppTextStyles.sans(
-                    size: 12,
-                    weight: FontWeight.w400,
+            ),
+            if (active)
+              Positioned(
+                bottom: 0,
+                left: 8,
+                right: 8,
+                child: Container(
+                  height: 2,
+                  decoration: BoxDecoration(
+                    color: context.accent,
+                    borderRadius: BorderRadius.circular(1),
                   ),
-                  unselectedLabelStyle: AppTextStyles.sans(size: 12),
-                  tabs: const [
-                    Tab(text: 'Clubs'),
-                    Tab(text: 'Distances'),
-                    Tab(text: 'Dispersion'),
-                  ],
                 ),
               ),
-              const Expanded(
-                child: TabBarView(
-                  children: [
-                    _ClubsTab(),
-                    _DistancesTab(),
-                    _DispersionTabWrapper(),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -237,7 +302,7 @@ class _ClubsTab extends ConsumerWidget {
                     width: double.infinity,
                     child: FilledButton(
                       style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.accent,
+                        backgroundColor: context.accent,
                         foregroundColor: Colors.black,
                       ),
                       onPressed: () {
@@ -294,7 +359,7 @@ class _ClubTile extends StatelessWidget {
         style: AppTextStyles.sans(
           size: 14,
           weight: isSelected ? FontWeight.w600 : FontWeight.w400,
-          color: isSelected ? AppColors.accent : Colors.white,
+          color: isSelected ? context.accent : Colors.white,
         ),
       ),
       subtitle: (club.manufacturer != null || club.model != null)
@@ -310,7 +375,7 @@ class _ClubTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (isSelected)
-            const Icon(Icons.check, color: AppColors.accent, size: 16),
+            Icon(Icons.check, color: context.accent, size: 16),
           const SizedBox(width: 8),
           GestureDetector(
             onTap: onEdit,
@@ -373,7 +438,7 @@ class _EditField extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: AppColors.accent),
+              borderSide: BorderSide(color: context.accent),
             ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
@@ -722,7 +787,7 @@ class _AddClubsScreenState extends ConsumerState<AddClubsScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: AppColors.accent,
+                        color: context.accent,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
@@ -821,10 +886,10 @@ class _ClubCircle extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: selected
-              ? AppColors.accentGhost
+              ? context.accentGhost
               : AppColors.card,
           border: Border.all(
-            color: selected ? AppColors.accent : AppColors.border2,
+            color: selected ? context.accent : AppColors.border2,
             width: selected ? 2.0 : 1.0,
           ),
         ),
@@ -834,7 +899,7 @@ class _ClubCircle extends StatelessWidget {
             style: AppTextStyles.sans(
               size: 13,
               weight: selected ? FontWeight.w600 : FontWeight.w400,
-              color: selected ? AppColors.accent : Colors.white,
+              color: selected ? context.accent : Colors.white,
             ),
           ),
         ),

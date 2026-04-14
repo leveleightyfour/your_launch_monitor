@@ -98,7 +98,7 @@ class _TagPickerSheetState extends ConsumerState<TagPickerSheet> {
                   },
                   child: Text('Done',
                       style: AppTextStyles.sans(
-                          size: 14, color: AppColors.accent)),
+                          size: 14, color: context.accent)),
                 ),
               ],
             ),
@@ -193,11 +193,11 @@ class _TagPickerSheetState extends ConsumerState<TagPickerSheet> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.add, size: 16, color: AppColors.accent),
+                      Icon(Icons.add, size: 16, color: context.accent),
                       const SizedBox(width: 6),
                       Text('New tag',
                           style: AppTextStyles.sans(
-                              size: 13, color: AppColors.accent)),
+                              size: 13, color: context.accent)),
                     ],
                   ),
                 ),
@@ -248,7 +248,7 @@ class _TagRow extends StatelessWidget {
                   style: AppTextStyles.sans(size: 14)),
             ),
             if (active)
-              const Icon(Icons.check, size: 18, color: AppColors.accent)
+              Icon(Icons.check, size: 18, color: context.accent)
             else
               GestureDetector(
                 onTap: onDelete,
@@ -312,7 +312,7 @@ class _NewTagForm extends StatelessWidget {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AppColors.accent),
+                borderSide: BorderSide(color: context.accent),
               ),
             ),
             onSubmitted: (_) => onSubmit(),
@@ -358,7 +358,7 @@ class _NewTagForm extends StatelessWidget {
               ElevatedButton(
                 onPressed: onSubmit,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accent,
+                  backgroundColor: context.accent,
                   foregroundColor: Colors.black,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 8),

@@ -190,6 +190,11 @@ class _DispersionTabState extends ConsumerState<DispersionTab>
         LayoutBuilder(
           builder: (context, constraints) {
             final shotsMinWidth = constraints.maxWidth * 0.18;
+            // Available width shared by the two expanded stats.
+            final statWidth =
+                (constraints.maxWidth - 32 - shotsMinWidth - 16) / 2;
+            // Mono char width ≈ fontSize × 0.6; target 6 chars ("000.0 ").
+            final fontSize = (statWidth / (6 * 0.6)).clamp(18.0, 52.0);
             return Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Row(
@@ -200,6 +205,7 @@ class _DispersionTabState extends ConsumerState<DispersionTab>
                     unit: '',
                     expand: false,
                     minWidth: shotsMinWidth,
+                    fontSize: fontSize,
                   ),
                   const SizedBox(width: 16),
                   _DispStat(
@@ -208,11 +214,13 @@ class _DispersionTabState extends ConsumerState<DispersionTab>
                         ? prefs.dist(avgCarryYds).toStringAsFixed(1)
                         : '--',
                     unit: selectedShots.isEmpty ? '' : prefs.distLabel,
+                    fontSize: fontSize,
                   ),
                   _DispStat(
                     label: 'Avg Offline',
                     value: offlineStr(),
                     unit: selectedShots.isEmpty ? '' : prefs.distLabel,
+                    fontSize: fontSize,
                   ),
                 ],
               ),
@@ -232,30 +240,33 @@ class _DispersionTabState extends ConsumerState<DispersionTab>
                 )
               : Stack(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Row(
-                        children: [
-                          _YAxis(
-                            minCarry: _animMinCarry,
-                            maxCarry: _animMaxCarry,
-                            prefs: prefs,
-                          ),
-                          Expanded(
-                            child: CustomPaint(
-                              painter: _DispersionPainter(
-                                allShots: widget.allShots,
-                                clubs: widget.clubs,
-                                filterClub: _filterClub,
-                                highlightedShot: widget.highlightedShot,
-                                minCarry: _animMinCarry,
-                                maxCarry: _animMaxCarry,
-                                maxLateral: _animMaxLateral,
-                              ),
-                              child: const SizedBox.expand(),
+                    ClipRect(
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Row(
+                          children: [
+                            _YAxis(
+                              minCarry: _animMinCarry,
+                              maxCarry: _animMaxCarry,
+                              prefs: prefs,
                             ),
-                          ),
-                        ],
+                            Expanded(
+                              child: CustomPaint(
+                                painter: _DispersionPainter(
+                                  allShots: widget.allShots,
+                                  clubs: widget.clubs,
+                                  filterClub: _filterClub,
+                                  highlightedShot: widget.highlightedShot,
+                                  minCarry: _animMinCarry,
+                                  maxCarry: _animMaxCarry,
+                                  maxLateral: _animMaxLateral,
+                                  accent: context.accent,
+                                ),
+                                child: const SizedBox.expand(),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     Positioned(
@@ -291,7 +302,7 @@ class _DispersionTabState extends ConsumerState<DispersionTab>
           if (i == 0) {
             return _FilterChip(
               label: 'All',
-              color: AppColors.accent,
+              color: context.accent,
               active: _filterClub == null,
               onTap: () => setState(() => _filterClub = null),
             );
@@ -320,6 +331,7 @@ class _DispStat extends StatelessWidget {
   final String unit;
   final bool expand;
   final double minWidth;
+  final double fontSize;
 
   const _DispStat({
     required this.label,
@@ -327,6 +339,7 @@ class _DispStat extends StatelessWidget {
     required this.unit,
     this.expand = true,
     this.minWidth = 0,
+    this.fontSize = 52,
   });
 
   @override
@@ -346,7 +359,7 @@ class _DispStat extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(value, style: AppTextStyles.mono(size: 52)),
+            Text(value, style: AppTextStyles.mono(size: fontSize)),
             const SizedBox(width: 4),
             Text(
               unit,
@@ -470,7 +483,7 @@ class _ZoomControls extends StatelessWidget {
                 size: 14,
                 color: isDefault
                     ? AppColors.textDimmed
-                    : AppColors.accent,
+                    : context.accent,
               ),
             ),
           ),
@@ -556,6 +569,7 @@ class _DispersionPainter extends CustomPainter {
   final double minCarry;
   final double maxCarry;
   final double maxLateral;
+  final Color accent;
 
   _DispersionPainter({
     required this.allShots,
@@ -564,6 +578,7 @@ class _DispersionPainter extends CustomPainter {
     required this.minCarry,
     required this.maxCarry,
     required this.maxLateral,
+    required this.accent,
     this.highlightedShot,
   });
 
@@ -673,8 +688,8 @@ class _DispersionPainter extends CustomPainter {
       final hx = toX(highlightedShot!.lateralOffset);
       final hy = toY(highlightedShot!.carry);
       final ringColor = highlightedShot!.clubId != null
-          ? (clubById[highlightedShot!.clubId!]?.color ?? AppColors.accent)
-          : AppColors.accent;
+          ? (clubById[highlightedShot!.clubId!]?.color ?? accent)
+          : accent;
       canvas.drawCircle(
         Offset(hx, hy),
         14,
@@ -781,5 +796,6 @@ class _DispersionPainter extends CustomPainter {
       old.highlightedShot != highlightedShot ||
       old.minCarry != minCarry ||
       old.maxCarry != maxCarry ||
-      old.maxLateral != maxLateral;
+      old.maxLateral != maxLateral ||
+      old.accent != accent;
 }
