@@ -10,7 +10,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_moni
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/error_banner.dart';
-import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/live_analysis_panel.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_optimizer_panel.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_list_panel.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/club_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/dispersion_tab.dart';
@@ -150,8 +150,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                         ),
                         Expanded(child: content),
                         SizedBox(
-                          width: 320,
-                          child: const LiveAnalysisPanel(),
+                          width: 380,
+                          child: const ShotOptimizerPanel(),
                         ),
                       ],
                     )
