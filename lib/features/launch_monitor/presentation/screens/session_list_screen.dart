@@ -6,6 +6,7 @@ import 'package:omni_sniffer/features/launch_monitor/application/providers.dart'
 import 'package:omni_sniffer/features/launch_monitor/application/sessions_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/device_picker_sheet.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/status_indicator.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -36,7 +37,7 @@ class SessionListScreen extends ConsumerWidget {
                   const Spacer(),
                   _ConnectChip(
                     status: status,
-                    onConnect: notifier.startScan,
+                    onConnect: () => DevicePickerSheet.show(context),
                     onDisconnect: notifier.disconnect,
                   ),
                 ],

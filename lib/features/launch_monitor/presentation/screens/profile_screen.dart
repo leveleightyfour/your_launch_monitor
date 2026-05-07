@@ -117,6 +117,17 @@ class ProfileScreen extends ConsumerWidget {
               onSelect: (i) =>
                   notifier.setSpeed(i == 0 ? SpeedUnit.mph : SpeedUnit.kmh),
             ),
+            _UnitToggleRow(
+              icon: Icons.scatter_plot,
+              label: 'Dispersion',
+              options: const ['Trackman', 'PGA'],
+              selected: prefs.dispersionStandard == DispersionStandard.trackman
+                  ? 0
+                  : 1,
+              onSelect: (i) => notifier.setDispersionStandard(
+                i == 0 ? DispersionStandard.trackman : DispersionStandard.pga,
+              ),
+            ),
             _AccentPickerRow(
               current: accent,
               onSelect: accentNotifier.setAccent,

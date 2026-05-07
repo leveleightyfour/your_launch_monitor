@@ -1,10 +1,9 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/split_flap_text.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -232,7 +231,8 @@ String tileUnit(TileMetric m, UnitPrefs prefs) => switch (m) {
   TileMetric.apex ||
   TileMetric.carry ||
   TileMetric.run ||
-  TileMetric.totalDistance => prefs.distLabel,
+  TileMetric.totalDistance ||
+  TileMetric.offline => prefs.distLabel,
   TileMetric.horizontalImpact || TileMetric.verticalImpact => 'mm',
   _ => m.unit,
 };
@@ -276,6 +276,10 @@ String metricValue(TileMetric m, ShotData? s, UnitPrefs prefs) {
           : '--',
     TileMetric.horizontalImpact => _fmtImpactH(s.horizontalImpact),
     TileMetric.verticalImpact => _fmtImpactV(s.verticalImpact),
+    TileMetric.offline => () {
+        final v = prefs.dist(s.lateralOffset);
+        return '${v.abs().toStringAsFixed(1)} ${s.lateralOffset > 0 ? 'R' : s.lateralOffset < 0 ? 'L' : ''}';
+      }(),
   };
 }
 
@@ -300,6 +304,7 @@ double? metricRaw(TileMetric m, ShotData? s, UnitPrefs prefs) {
     TileMetric.impactLocation => s.horizontalImpact,
     TileMetric.horizontalImpact => s.horizontalImpact,
     TileMetric.verticalImpact => s.verticalImpact,
+    TileMetric.offline => prefs.dist(s.lateralOffset),
   };
 }
 
@@ -382,7 +387,7 @@ class _MetricTile extends StatelessWidget {
                   : FittedBox(
                       fit: BoxFit.contain,
                       alignment: Alignment.center,
-                      child: _SplitFlapText(
+                      child: SplitFlapText(
                         text: currentStr,
                         style: AppTextStyles.mono(
                             size: 108, weight: FontWeight.w600),
@@ -499,93 +504,6 @@ class _ImpactValue extends StatelessWidget {
   }
 }
 
-// ── Split-flap value animation ────────────────────────────────────────────────
-
-class _SplitFlapText extends StatefulWidget {
-  final String text;
-  final TextStyle style;
-
-  const _SplitFlapText({required this.text, required this.style});
-
-  @override
-  State<_SplitFlapText> createState() => _SplitFlapTextState();
-}
-
-class _SplitFlapTextState extends State<_SplitFlapText>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  String _from = '';
-
-  static const _duration = Duration(milliseconds: 550);
-
-  @override
-  void initState() {
-    super.initState();
-    _from = widget.text;
-    _ctrl = AnimationController(vsync: this, duration: _duration);
-  }
-
-  @override
-  void didUpdateWidget(_SplitFlapText old) {
-    super.didUpdateWidget(old);
-    if (old.text != widget.text) {
-      _from = old.text;
-      _ctrl.forward(from: 0);
-    }
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  // Returns the character to display at [index] given animation progress [t].
-  // Digits cycle through 0–9 with a left-to-right stagger; other chars flip
-  // at the halfway point of their window.
-  String _char(int index, double t) {
-    final to = widget.text;
-    final from = _from;
-    final toChar = index < to.length ? to[index] : ' ';
-    final fromChar = index < from.length ? from[index] : ' ';
-
-    if (toChar == fromChar) return toChar;
-
-    // Each character gets a staggered 70%-wide window within [0, 1].
-    final offset = (index * 0.06).clamp(0.0, 0.45);
-    final localT = ((t - offset) / 0.7).clamp(0.0, 1.0);
-
-    if (localT >= 1.0) return toChar;
-    if (localT <= 0.0) return fromChar;
-
-    final isNumeric =
-        RegExp(r'\d').hasMatch(toChar) || RegExp(r'\d').hasMatch(fromChar);
-    if (isNumeric) {
-      // Snap to final in the last 15% of the window; cycle digits before that.
-      if (localT > 0.85) return toChar;
-      return ((localT * 10).floor() % 10).toString();
-    }
-
-    return localT < 0.5 ? fromChar : toChar;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, __) {
-        final t = _ctrl.value;
-        final len = math.max(widget.text.length, _from.length);
-        final buf = StringBuffer();
-        for (var i = 0; i < len; i++) {
-          buf.write(_char(i, t));
-        }
-        return Text(buf.toString(), style: widget.style);
-      },
-    );
-  }
-}
-
 // ── Customize bottom sheet ────────────────────────────────────────────────────
 
 class _CustomizeSheet extends ConsumerStatefulWidget {
@@ -609,6 +527,7 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
     TileMetric.spinAxis,
     TileMetric.apex,
     TileMetric.carry,
+    TileMetric.offline,
     TileMetric.run,
     TileMetric.totalDistance,
   ];

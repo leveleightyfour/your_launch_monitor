@@ -10,21 +10,50 @@ enum DistanceUnit { meters, yards }
 
 enum SpeedUnit { mph, kmh }
 
+/// Statistical convention used to draw dispersion ellipses. The multiplier is
+/// applied to the σ in each axis; `1 - exp(-k²/2)` gives the % of shots
+/// expected to fall inside the ellipse for a 2D Gaussian.
+enum DispersionStandard {
+  /// Trackman default — 2σ ellipse, ~86% of shots inside.
+  trackman(2.0, 'Trackman', '86%'),
+
+  /// PGA Tour shot-dispersion convention — ~2.15σ, ~90% of shots inside.
+  pga(2.146, 'PGA', '90%');
+
+  final double sigmaMultiplier;
+  final String label;
+  final String confidenceLabel;
+
+  const DispersionStandard(
+    this.sigmaMultiplier,
+    this.label,
+    this.confidenceLabel,
+  );
+}
+
 // ── UnitPrefs ─────────────────────────────────────────────────────────────────
 
 class UnitPrefs {
   final DistanceUnit distance;
   final SpeedUnit speed;
+  final DispersionStandard dispersionStandard;
 
   const UnitPrefs({
     this.distance = DistanceUnit.meters,
     this.speed = SpeedUnit.mph,
+    this.dispersionStandard = DispersionStandard.trackman,
   });
 
-  UnitPrefs copyWith({DistanceUnit? distance, SpeedUnit? speed}) => UnitPrefs(
-    distance: distance ?? this.distance,
-    speed: speed ?? this.speed,
-  );
+  UnitPrefs copyWith({
+    DistanceUnit? distance,
+    SpeedUnit? speed,
+    DispersionStandard? dispersionStandard,
+  }) =>
+      UnitPrefs(
+        distance: distance ?? this.distance,
+        speed: speed ?? this.speed,
+        dispersionStandard: dispersionStandard ?? this.dispersionStandard,
+      );
 
   /// Display label for distance values.
   String get distLabel => distance == DistanceUnit.meters ? 'm' : 'yds';
@@ -42,6 +71,7 @@ class UnitPrefs {
   Map<String, String> toJson() => {
     'distance': distance.name,
     'speed': speed.name,
+    'dispersionStandard': dispersionStandard.name,
   };
 
   factory UnitPrefs.fromJson(Map<String, dynamic> j) => UnitPrefs(
@@ -52,6 +82,10 @@ class UnitPrefs {
     speed: SpeedUnit.values.firstWhere(
       (e) => e.name == j['speed'],
       orElse: () => SpeedUnit.mph,
+    ),
+    dispersionStandard: DispersionStandard.values.firstWhere(
+      (e) => e.name == j['dispersionStandard'],
+      orElse: () => DispersionStandard.trackman,
     ),
   );
 }
@@ -98,6 +132,11 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
 
   void setSpeed(SpeedUnit unit) {
     state = state.copyWith(speed: unit);
+    _save();
+  }
+
+  void setDispersionStandard(DispersionStandard standard) {
+    state = state.copyWith(dispersionStandard: standard);
     _save();
   }
 }

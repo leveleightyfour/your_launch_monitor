@@ -177,6 +177,34 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// Overwrites all mutable fields on a previously-inserted shot row. Used to
+  /// patch a ball-only shot with club metrics once they arrive on the BLE.
+  Future<void> updateShot(ShotData shot) {
+    if (shot.dbId == null) {
+      return Future.error(StateError('updateShot requires a dbId'));
+    }
+    return (update(shots)..where((s) => s.id.equals(shot.dbId!))).write(
+      ShotsCompanion(
+        clubId: Value(shot.clubId),
+        ballSpeed: Value(shot.ballSpeed),
+        spinRate: Value(shot.spinRate),
+        spinAxis: Value(shot.spinAxis),
+        launchDirection: Value(shot.launchDirection),
+        launchAngle: Value(shot.launchAngle),
+        clubSpeed: Value(shot.clubSpeed),
+        apex: Value(shot.apex),
+        run: Value(shot.run),
+        swingPath: Value(shot.swingPath),
+        faceAngle: Value(shot.faceAngle),
+        angleOfAttack: Value(shot.angleOfAttack),
+        dynamicLoft: Value(shot.dynamicLoft),
+        horizontalImpact: Value(shot.horizontalImpact),
+        verticalImpact: Value(shot.verticalImpact),
+        tagIds: Value(shot.tagIds.join(',')),
+      ),
+    );
+  }
+
   // ── Live-session helpers ──────────────────────────────────────────────────
 
   /// Creates a placeholder activity row for the in-progress session and returns

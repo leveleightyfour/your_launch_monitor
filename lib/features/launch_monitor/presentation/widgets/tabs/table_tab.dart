@@ -120,6 +120,73 @@ class TableTab extends ConsumerStatefulWidget {
 class _TableTabState extends ConsumerState<TableTab> {
   bool _showStats = true;
 
+  // Local mirror of widget.shots used to drive the AnimatedList. We diff
+  // against widget.shots in didUpdateWidget and replay the changes via
+  // insertItem / removeItem so new shots slide in and deletions slide out.
+  final _listKey = GlobalKey<AnimatedListState>();
+  late List<ShotData> _shots;
+
+  // Identity for diffing — dbId when persisted, the object itself otherwise
+  // (seed shots and not-yet-persisted shots fall back to instance equality).
+  Object _shotId(ShotData s) => s.dbId ?? s;
+
+  @override
+  void initState() {
+    super.initState();
+    _shots = List<ShotData>.from(widget.shots);
+  }
+
+  @override
+  void didUpdateWidget(TableTab old) {
+    super.didUpdateWidget(old);
+    _syncShots();
+  }
+
+  void _syncShots() {
+    final newIds = widget.shots.map(_shotId).toSet();
+    final oldIds = _shots.map(_shotId).toSet();
+
+    // 1. Removals — descending so indices stay valid as we splice.
+    for (var i = _shots.length - 1; i >= 0; i--) {
+      if (!newIds.contains(_shotId(_shots[i]))) {
+        final removed = _shots.removeAt(i);
+        _listKey.currentState?.removeItem(
+          i,
+          (ctx, anim) => _RowReveal(
+            entry: anim,
+            // No flash on removal — just the reverse slide/fade.
+            flashOnComplete: false,
+            child: _DynamicShotRow(
+              number: 0,
+              shot: removed,
+              columns: ref.read(selectedTableColumnsProvider),
+              prefs: ref.read(unitPrefsProvider),
+            ),
+          ),
+          duration: const Duration(milliseconds: 240),
+        );
+      }
+    }
+
+    // 2. Insertions / in-place updates.
+    for (var i = 0; i < widget.shots.length; i++) {
+      final shot = widget.shots[i];
+      final id = _shotId(shot);
+      if (!oldIds.contains(id)) {
+        _shots.insert(i, shot);
+        _listKey.currentState?.insertItem(
+          i,
+          duration: const Duration(milliseconds: 320),
+        );
+      } else {
+        // Same identity, value changed (e.g. club metrics arrived after the
+        // ball-only shot was inserted). Update in place — no animation.
+        final idx = _shots.indexWhere((s) => _shotId(s) == id);
+        if (idx != -1) _shots[idx] = shot;
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final columns = ref.watch(selectedTableColumnsProvider);
@@ -191,16 +258,25 @@ class _TableTabState extends ConsumerState<TableTab> {
             ],
             const Divider(height: 1, color: AppColors.border),
             Expanded(
-              child: ListView.builder(
-                itemCount: shots.length,
-                itemBuilder: (_, i) => _DynamicShotRow(
-                  number: shots.length - i,
-                  shot: shots[i],
-                  columns: columns,
-                  prefs: prefs,
-                  isSelected: widget.selectedIndex == i,
-                  onTap: widget.onRowTap != null ? () => widget.onRowTap!(i) : null,
-                ),
+              child: AnimatedList(
+                key: _listKey,
+                initialItemCount: _shots.length,
+                itemBuilder: (_, i, animation) {
+                  if (i >= _shots.length) return const SizedBox.shrink();
+                  return _RowReveal(
+                    entry: animation,
+                    child: _DynamicShotRow(
+                      number: _shots.length - i,
+                      shot: _shots[i],
+                      columns: columns,
+                      prefs: prefs,
+                      isSelected: widget.selectedIndex == i,
+                      onTap: widget.onRowTap != null
+                          ? () => widget.onRowTap!(i)
+                          : null,
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -627,6 +703,110 @@ class _TableCustomizeSheetState extends State<_TableCustomizeSheet> {
           _selected.add(col);
         }
       });
+}
+
+// ── Animated row reveal ───────────────────────────────────────────────────────
+//
+// Wraps each shot row with a slide-in-from-top + fade-in entry, then triggers
+// a brief accent-coloured highlight after the entry settles. Pre-existing
+// rows (mounted with [entry] already at 1.0) skip the flash.
+
+class _RowReveal extends StatefulWidget {
+  final Animation<double> entry;
+  final Widget child;
+  final bool flashOnComplete;
+
+  const _RowReveal({
+    required this.entry,
+    required this.child,
+    this.flashOnComplete = true,
+  });
+
+  @override
+  State<_RowReveal> createState() => _RowRevealState();
+}
+
+class _RowRevealState extends State<_RowReveal>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _flashCtrl;
+  bool _flashScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _flashCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+
+    if (widget.flashOnComplete) {
+      // If the entry is already complete (existing rows on first build), skip
+      // the flash. Otherwise wait for the entry to finish, then run it once.
+      if (widget.entry.value >= 1.0) {
+        _flashScheduled = true; // suppress
+      } else {
+        widget.entry.addStatusListener(_onEntryStatus);
+      }
+    }
+  }
+
+  void _onEntryStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && !_flashScheduled) {
+      _flashScheduled = true;
+      _flashCtrl.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.entry.removeStatusListener(_onEntryStatus);
+    _flashCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final slide = Tween<Offset>(
+      begin: const Offset(0, -1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: widget.entry, curve: Curves.easeOutCubic));
+
+    return SizeTransition(
+      sizeFactor: widget.entry,
+      axisAlignment: -1.0,
+      child: SlideTransition(
+        position: slide,
+        child: FadeTransition(
+          opacity: widget.entry,
+          child: AnimatedBuilder(
+            animation: _flashCtrl,
+            builder: (_, child) {
+              final flash = _flashCtrl.value;
+              // Hold full intensity briefly, then fade — ease-out to 0.
+              final intensity =
+                  flash == 0 ? 0.0 : (1.0 - flash).clamp(0.0, 1.0);
+              return Stack(
+                children: [
+                  child!,
+                  if (intensity > 0)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: ColoredBox(
+                          color: context.accent.withAlpha(
+                            (intensity * 64).round(),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ColSection extends StatelessWidget {

@@ -120,6 +120,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               status: status,
               name: widget.initialName,
               onClose: () => _confirmFinish(context),
+              onSimulateShot: () =>
+                  ref.read(launchMonitorProvider.notifier).simulateShot(),
             ),
             _ActiveNavBar(
               view: _view,
@@ -367,8 +369,14 @@ class _ActiveSessionTopBar extends StatelessWidget {
   final LaunchMonitorStatus status;
   final String? name;
   final VoidCallback onClose;
+  final VoidCallback? onSimulateShot;
 
-  const _ActiveSessionTopBar({required this.status, this.name, required this.onClose});
+  const _ActiveSessionTopBar({
+    required this.status,
+    this.name,
+    required this.onClose,
+    this.onSimulateShot,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -429,6 +437,17 @@ class _ActiveSessionTopBar extends StatelessWidget {
               },
             ),
           ),
+          if (onSimulateShot != null) ...[
+            const SizedBox(width: 8),
+            _CircleButton(
+              onTap: onSimulateShot!,
+              child: Icon(
+                Icons.bolt,
+                size: 14,
+                color: context.accent,
+              ),
+            ),
+          ],
         ],
       ),
     );

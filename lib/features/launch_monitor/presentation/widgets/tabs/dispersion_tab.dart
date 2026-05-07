@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/split_flap_text.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -261,6 +262,8 @@ class _DispersionTabState extends ConsumerState<DispersionTab>
                                   maxCarry: _animMaxCarry,
                                   maxLateral: _animMaxLateral,
                                   accent: context.accent,
+                                  sigmaMultiplier:
+                                      prefs.dispersionStandard.sigmaMultiplier,
                                 ),
                                 child: const SizedBox.expand(),
                               ),
@@ -359,7 +362,10 @@ class _DispStat extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(value, style: AppTextStyles.mono(size: fontSize)),
+            SplitFlapText(
+              text: value,
+              style: AppTextStyles.mono(size: fontSize),
+            ),
             const SizedBox(width: 4),
             Text(
               unit,
@@ -570,6 +576,7 @@ class _DispersionPainter extends CustomPainter {
   final double maxCarry;
   final double maxLateral;
   final Color accent;
+  final double sigmaMultiplier;
 
   _DispersionPainter({
     required this.allShots,
@@ -579,6 +586,7 @@ class _DispersionPainter extends CustomPainter {
     required this.maxCarry,
     required this.maxLateral,
     required this.accent,
+    required this.sigmaMultiplier,
     this.highlightedShot,
   });
 
@@ -748,8 +756,11 @@ class _DispersionPainter extends CustomPainter {
     final sigmaCarry = sd(shots.map((s) => s.carry));
     final cx = toX(avgLateral);
     final cy = toY(avgCarry);
-    final rx = (toX(avgLateral + sigmaLateral) - cx).abs() + 6;
-    final ry = (toY(avgCarry + sigmaCarry) - cy).abs() + 6;
+    // Scale by the configured statistical convention (e.g. 2σ for Trackman,
+    // 2.146σ for PGA 90% confidence). Without this we'd draw a 1σ ellipse,
+    // which only contains ~39% of points in 2D.
+    final rx = (toX(avgLateral + sigmaLateral * sigmaMultiplier) - cx).abs() + 6;
+    final ry = (toY(avgCarry + sigmaCarry * sigmaMultiplier) - cy).abs() + 6;
     final rect = Rect.fromCenter(
       center: Offset(cx, cy),
       width: rx * 2,
@@ -797,5 +808,6 @@ class _DispersionPainter extends CustomPainter {
       old.minCarry != minCarry ||
       old.maxCarry != maxCarry ||
       old.maxLateral != maxLateral ||
-      old.accent != accent;
+      old.accent != accent ||
+      old.sigmaMultiplier != sigmaMultiplier;
 }

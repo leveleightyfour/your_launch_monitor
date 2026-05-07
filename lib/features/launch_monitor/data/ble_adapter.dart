@@ -5,7 +5,16 @@ class BleScannedDevice {
   final String id;
   final String name;
 
-  const BleScannedDevice({required this.id, required this.name});
+  /// Raw manufacturer-data bytes flattened to a lower-case hex string.
+  /// Empty when the platform doesn't expose this field. Used by callers like
+  /// `detectDeviceType` to distinguish Square Golf Home vs Omni at scan time.
+  final String manufacturerDataHex;
+
+  const BleScannedDevice({
+    required this.id,
+    required this.name,
+    this.manufacturerDataHex = '',
+  });
 }
 
 /// Platform-agnostic BLE adapter interface.

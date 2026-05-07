@@ -30,9 +30,14 @@ class WinBleAdapter implements BleAdapter {
 
       final sub = WinBle.scanStream.listen((device) {
         final name = device.name.isNotEmpty ? device.name : '';
+        final mfg = StringBuffer();
+        for (final b in device.manufacturerData) {
+          mfg.write((b & 0xFF).toRadixString(16).padLeft(2, '0'));
+        }
         devices[device.address] = BleScannedDevice(
           id: device.address,
           name: name,
+          manufacturerDataHex: mfg.toString(),
         );
         controller.add(devices.values.toList());
       });

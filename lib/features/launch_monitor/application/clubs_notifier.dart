@@ -77,7 +77,8 @@ enum TileMetric {
   dynamicLoft('DYN. LOFT', 'deg'),
   impactLocation('IMPACT LOC.', ''),
   horizontalImpact('IMPACT HORIZ', 'mm'),
-  verticalImpact('IMPACT VERT', 'mm');
+  verticalImpact('IMPACT VERT', 'mm'),
+  offline('OFFLINE', 'yds');
 
   const TileMetric(this.label, this.unit);
 

@@ -16,9 +16,26 @@ class FlutterBluePlusAdapter implements BleAdapter {
           .map((r) => BleScannedDevice(
                 id: r.device.remoteId.str,
                 name: r.device.platformName,
+                manufacturerDataHex: _flattenManufacturerData(
+                  r.advertisementData.manufacturerData,
+                ),
               ))
           .toList(),
     );
+  }
+
+  static String _flattenManufacturerData(Map<int, List<int>> data) {
+    if (data.isEmpty) return '';
+    final buf = StringBuffer();
+    for (final entry in data.entries) {
+      // Manufacturer ID is 2 bytes little-endian by BLE convention.
+      buf.write((entry.key & 0xFF).toRadixString(16).padLeft(2, '0'));
+      buf.write(((entry.key >> 8) & 0xFF).toRadixString(16).padLeft(2, '0'));
+      for (final b in entry.value) {
+        buf.write((b & 0xFF).toRadixString(16).padLeft(2, '0'));
+      }
+    }
+    return buf.toString();
   }
 
   @override

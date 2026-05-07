@@ -6,7 +6,14 @@
       "Bash(grep -r \"windows\\\\|windows.h\\\\|bluetooth\\\\|BLE\" /d/Dev/your_launch_monitor/windows --include=*.cpp --include=*.h)",
       "Bash(xargs grep:*)",
       "WebSearch",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash([ -d \"/Users/adentutton/Dev/leveleightyfour/$dir\" ])",
+      "Read(//Users/adentutton/Dev/leveleightyfour/**)",
+      "Read(//Users/adentutton/**)",
+      "Bash(flutter test *)"
+    ],
+    "additionalDirectories": [
+      "/Users/adentutton/Dev/leveleightyfour/your_launch_monitor/lib/features/launch_monitor/data"
     ]
   }
 }
