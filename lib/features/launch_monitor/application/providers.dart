@@ -11,6 +11,7 @@ import 'package:omni_sniffer/features/launch_monitor/data/seed_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/constants.dart'
     as sg;
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/launch_monitor_service.dart';
+import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/log.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/notifications.dart'
     as sg;
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
@@ -125,8 +126,10 @@ class LaunchMonitor extends _$LaunchMonitor {
   ) async {
     if (state.status == LaunchMonitorStatus.connecting ||
         state.status == LaunchMonitorStatus.connected) {
+      lmLog('bridge', 'connectToDevice ignored — status=${state.status.name}');
       return;
     }
+    lmLog('bridge', 'connectToDevice id=$deviceId type=${type.name}');
     await _ble.stopScan();
     state = state.copyWith(status: LaunchMonitorStatus.connecting, error: null);
     _deviceId = deviceId;
@@ -256,6 +259,19 @@ class LaunchMonitor extends _$LaunchMonitor {
     final club = ref.read(activeClubProvider);
     final shot = _ballToShotData(ball, club?.id);
     final dbReady = await _persistShot(shot);
+    lmLog(
+      'bridge',
+      'BALL → ShotData '
+          'club=${club?.id ?? "—"} '
+          'ballSpeed=${dbReady.ballSpeed.toStringAsFixed(2)}mph '
+          '(${ball.ballSpeedMps.toStringAsFixed(2)}m/s × $_mpsToMph) '
+          'spin=${dbReady.spinRate.toStringAsFixed(0)}rpm '
+          'axis=${dbReady.spinAxis.toStringAsFixed(1)}° '
+          'launch=${dbReady.launchAngle.toStringAsFixed(1)}°/'
+          '${dbReady.launchDirection.toStringAsFixed(1)}° '
+          'estClubSpeed=${dbReady.clubSpeed.toStringAsFixed(2)}mph '
+          'dbId=${dbReady.dbId}',
+    );
 
     _pendingShotInList = dbReady;
     state = state.copyWith(shots: [dbReady, ...state.shots]);
@@ -264,15 +280,34 @@ class LaunchMonitor extends _$LaunchMonitor {
     // a stale ball metrics packet doesn't get patched by a much later club
     // packet (defensive — the device usually replies in <100ms).
     _pendingShotTimer?.cancel();
-    _pendingShotTimer =
-        Timer(const Duration(milliseconds: 1500), () => _pendingShotInList = null);
+    _pendingShotTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (_pendingShotInList != null) {
+        lmLog('bridge', 'club metrics timeout — keeping ball-only shot');
+        _pendingShotInList = null;
+      }
+    });
   }
 
   Future<void> _onClubMetrics(sg.ClubMetrics club) async {
     final pending = _pendingShotInList;
-    if (pending == null) return;
+    if (pending == null) {
+      lmLog('bridge', 'CLUB ignored — no pending shot to merge into');
+      return;
+    }
 
     final enriched = pending.copyWith().mergeClubMetrics(club);
+    lmLog(
+      'bridge',
+      'CLUB → merged into shot dbId=${pending.dbId} '
+          'clubSpeed=${enriched.clubSpeed.toStringAsFixed(2)}mph '
+          'path=${enriched.swingPath?.toStringAsFixed(2) ?? "—"}° '
+          'face=${enriched.faceAngle?.toStringAsFixed(2) ?? "—"}° '
+          'attack=${enriched.angleOfAttack?.toStringAsFixed(2) ?? "—"}° '
+          'loft=${enriched.dynamicLoft?.toStringAsFixed(2) ?? "—"}° '
+          'iH=${enriched.horizontalImpact?.toStringAsFixed(2) ?? "—"} '
+          'iV=${enriched.verticalImpact?.toStringAsFixed(2) ?? "—"}',
+    );
+
     // Replace the head of the list with the enriched copy.
     final shots = List<ShotData>.from(state.shots);
     if (shots.isNotEmpty && identical(shots.first, pending)) {
@@ -287,7 +322,9 @@ class LaunchMonitor extends _$LaunchMonitor {
     if (enriched.dbId != null) {
       try {
         await ref.read(appDatabaseProvider).updateShot(enriched);
-      } catch (_) {}
+      } catch (e) {
+        lmWarn('bridge', 'updateShot DB write failed: $e');
+      }
     }
 
     _pendingShotInList = null;

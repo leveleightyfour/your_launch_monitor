@@ -299,7 +299,7 @@ class _ActiveSessionTile extends StatelessWidget {
 
 // ── Activity tile ─────────────────────────────────────────────────────────────
 
-class _SessionTile extends StatelessWidget {
+class _SessionTile extends ConsumerWidget {
   final Session session;
 
   const _SessionTile({required this.session});
@@ -314,69 +314,226 @@ class _SessionTile extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
       onTap: () => context.push('/session/${session.id}', extra: session),
       child: Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          // Icon
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.border2),
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.sports_golf,
-                size: 18,
-                color: AppColors.textDimmed,
+        padding: const EdgeInsets.fromLTRB(14, 14, 4, 14),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            // Icon
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border2),
+              ),
+              child: const Center(
+                child: Icon(
+                  Icons.sports_golf,
+                  size: 18,
+                  color: AppColors.textDimmed,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  session.name,
-                  style: AppTextStyles.sans(
-                    size: 14,
-                    weight: FontWeight.w400,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    session.name.isEmpty ? 'Untitled session' : session.name,
+                    style: AppTextStyles.sans(
+                      size: 14,
+                      weight: FontWeight.w400,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${session.shotCount} ${session.shotCount == 1 ? 'shot' : 'shots'} · ${_formatDate(session.createdAt)}',
-                  style: AppTextStyles.sans(
-                    size: 11,
-                    color: AppColors.textMuted,
+                  const SizedBox(height: 2),
+                  Text(
+                    '${session.shotCount} ${session.shotCount == 1 ? 'shot' : 'shots'} · ${_formatDate(session.createdAt)}',
+                    style: AppTextStyles.sans(
+                      size: 11,
+                      color: AppColors.textMuted,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+            _SessionActionsMenu(
+              session: session,
+              onRename: () => _promptRename(context, ref),
+              onDelete: () => _promptDelete(context, ref),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _promptRename(BuildContext context, WidgetRef ref) async {
+    final ctrl = TextEditingController(text: session.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Rename session',
+          style: AppTextStyles.sans(size: 17, weight: FontWeight.w600),
+        ),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          style: AppTextStyles.sans(size: 15),
+          decoration: InputDecoration(
+            hintText: 'Session name',
+            hintStyle: AppTextStyles.sans(size: 15, color: AppColors.textMuted),
+            filled: true,
+            fillColor: AppColors.card,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           ),
-          const Icon(
-            Icons.chevron_right,
-            size: 18,
-            color: AppColors.textDimmed,
+          onSubmitted: (_) => Navigator.pop(ctx, ctrl.text),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel',
+                style: AppTextStyles.sans(color: AppColors.textMuted)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: context.accent,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: Text('Save',
+                style: AppTextStyles.sans(
+                    weight: FontWeight.w600, color: Colors.black)),
           ),
         ],
       ),
-    ),
+    );
+    if (newName == null) return;
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty || trimmed == session.name) return;
+    await ref
+        .read(sessionsProvider.notifier)
+        .renameSession(session.id, trimmed);
+  }
+
+  Future<void> _promptDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Delete session',
+          style: AppTextStyles.sans(size: 17, weight: FontWeight.w600),
+        ),
+        content: Text(
+          'This permanently removes "${session.name.isEmpty ? 'Untitled session' : session.name}" and all of its shots. This cannot be undone.',
+          style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: AppTextStyles.sans(color: AppColors.textMuted)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete',
+                style: AppTextStyles.sans(weight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.read(sessionsProvider.notifier).removeSession(session.id);
+  }
+}
+
+class _SessionActionsMenu extends StatelessWidget {
+  final Session session;
+  final VoidCallback onRename;
+  final VoidCallback onDelete;
+
+  const _SessionActionsMenu({
+    required this.session,
+    required this.onRename,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<_SessionAction>(
+      icon: const Icon(Icons.more_vert, size: 18, color: AppColors.textDimmed),
+      tooltip: 'Session actions',
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      padding: EdgeInsets.zero,
+      onSelected: (action) {
+        switch (action) {
+          case _SessionAction.rename:
+            onRename();
+            break;
+          case _SessionAction.delete:
+            onDelete();
+            break;
+        }
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: _SessionAction.rename,
+          child: Row(
+            children: [
+              Icon(Icons.edit_outlined, size: 16, color: context.accent),
+              const SizedBox(width: 10),
+              Text('Rename', style: AppTextStyles.sans(size: 13)),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: _SessionAction.delete,
+          child: Row(
+            children: [
+              const Icon(Icons.delete_outline,
+                  size: 16, color: Color(0xFFEF4444)),
+              const SizedBox(width: 10),
+              Text('Delete',
+                  style: AppTextStyles.sans(
+                      size: 13, color: const Color(0xFFEF4444))),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
+
+enum _SessionAction { rename, delete }
 
 // ── BLE connect chip ──────────────────────────────────────────────────────────
 

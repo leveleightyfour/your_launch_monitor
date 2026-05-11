@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import '../ble_adapter.dart';
 import 'commands.dart';
 import 'constants.dart';
+import 'log.dart';
 import 'notifications.dart';
 
 /// Inferred service UUIDs — the Go reference does not hard-code a service
@@ -115,12 +116,16 @@ class LaunchMonitorService {
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   Future<void> connect() async {
+    lmLog('conn', 'connect() deviceId=$deviceId type=${deviceType.name}');
     _connectionCtrl.add(LmConnectionStatus.connecting);
     try {
       await _ble.connect(deviceId);
+      lmLog('conn', 'BLE link established');
 
       _connSub = _ble.connectionStateOf(deviceId).listen((connected) {
         _connected = connected;
+        lmLog('conn',
+            connected ? 'state → connected' : 'state → disconnected');
         _connectionCtrl.add(connected
             ? LmConnectionStatus.connected
             : LmConnectionStatus.disconnected);
@@ -128,6 +133,7 @@ class LaunchMonitorService {
       });
 
       // Subscribe to the protocol notification characteristic.
+      lmLog('conn', 'subscribing notify char $notificationCharUuid');
       final notifyStream = await _ble.subscribeToCharacteristic(
         deviceId: deviceId,
         serviceUuid: primaryServiceUuid,
@@ -136,12 +142,13 @@ class LaunchMonitorService {
       _notifySub = notifyStream.listen(
         _handleNotificationBytes,
         onError: (Object e, StackTrace s) {
-          if (kDebugMode) debugPrint('LM notification error: $e');
+          lmWarn('notify', 'stream error: $e');
         },
       );
 
       // Subscribe to the standard battery-level characteristic.
       try {
+        lmLog('conn', 'subscribing battery char $batteryLevelCharUuid');
         final batteryStream = await _ble.subscribeToCharacteristic(
           deviceId: deviceId,
           serviceUuid: batteryServiceUuid,
@@ -150,15 +157,17 @@ class LaunchMonitorService {
         _batterySub = batteryStream.listen((data) {
           if (data.isEmpty) return;
           final pct = data[0];
+          lmLog('notify', '<- battery $pct%');
           _batteryCtrl.add(pct);
           _eventCtrl.add(LmBatteryEvent(pct));
         });
-      } catch (_) {
-        // Battery service is optional — some hosts don't expose it.
+      } catch (e) {
+        lmLog('conn', 'no battery service exposed ($e)');
       }
 
       _connected = true;
       _connectionCtrl.add(LmConnectionStatus.connected);
+      lmLog('conn', 'ready — starting heartbeat');
 
       _startHeartbeat();
 
@@ -166,13 +175,15 @@ class LaunchMonitorService {
         // Don't await — fire-and-forget, matches the Go init sequence.
         unawaited(_sendOmniInitSequence());
       }
-    } catch (e) {
+    } catch (e, s) {
+      lmWarn('conn', 'connect failed: $e\n$s');
       _connectionCtrl.add(LmConnectionStatus.error);
       rethrow;
     }
   }
 
   Future<void> disconnect() async {
+    lmLog('conn', 'disconnect()');
     _stopHeartbeat();
     await _notifySub?.cancel();
     await _batterySub?.cancel();
@@ -183,7 +194,9 @@ class LaunchMonitorService {
     _connected = false;
     try {
       await _ble.disconnect(deviceId);
-    } catch (_) {}
+    } catch (e) {
+      lmWarn('conn', 'platform disconnect threw: $e');
+    }
     _connectionCtrl.add(LmConnectionStatus.disconnected);
   }
 
@@ -205,43 +218,70 @@ class LaunchMonitorService {
   Future<void> activateBallDetection({
     SpinMode spinMode = SpinMode.standard,
   }) =>
-      _send(detectBallCommand(_nextSeq(), DetectBallMode.activate, spinMode));
+      _send(
+        detectBallCommand(_nextSeq(), DetectBallMode.activate, spinMode),
+        label: 'activateBallDetection(spin=${spinMode.name})',
+      );
 
   Future<void> deactivateBallDetection() => _send(
-      detectBallCommand(_nextSeq(), DetectBallMode.deactivate, SpinMode.standard));
+        detectBallCommand(
+            _nextSeq(), DetectBallMode.deactivate, SpinMode.standard),
+        label: 'deactivateBallDetection',
+      );
 
   Future<void> selectClub(ClubCode club, Handedness handedness) {
     final cmd = deviceType == SquareGolfDeviceType.omni
         ? omniClubCommand(_nextSeq(), club, handedness)
         : clubCommand(_nextSeq(), club, handedness);
-    return _send(cmd);
+    return _send(
+      cmd,
+      label: 'selectClub(${club.regularCode}, ${handedness.name})',
+    );
   }
 
-  Future<void> requestClubMetrics() =>
-      _send(requestClubMetricsCommand(_nextSeq()));
+  Future<void> requestClubMetrics() => _send(
+        requestClubMetricsCommand(_nextSeq()),
+        label: 'requestClubMetrics',
+      );
 
-  Future<void> setOmniHandedness(Handedness handedness) =>
-      _send(omniSetHandedCommand(_nextSeq(), handedness));
+  Future<void> setOmniHandedness(Handedness handedness) => _send(
+        omniSetHandedCommand(_nextSeq(), handedness),
+        label: 'omniSetHanded(${handedness.name})',
+      );
 
   Future<void> setOmniUnits({
     required OmniSpeedUnit speed,
     required OmniDistanceUnit distance,
   }) =>
-      _send(omniSetUnitsCommand(_nextSeq(), speed, distance));
+      _send(
+        omniSetUnitsCommand(_nextSeq(), speed, distance),
+        label: 'omniSetUnits(${speed.name}, ${distance.name})',
+      );
 
-  Future<void> setOmniGreenSpeed(int greenSpeedIndex) =>
-      _send(omniSetGreenSpeedCommand(_nextSeq(), greenSpeedIndex));
+  Future<void> setOmniGreenSpeed(int greenSpeedIndex) => _send(
+        omniSetGreenSpeedCommand(_nextSeq(), greenSpeedIndex),
+        label: 'omniSetGreenSpeed($greenSpeedIndex)',
+      );
 
-  Future<void> setOmniCarryAdjustment(int adjustment) =>
-      _send(omniSetCarryDistanceAdjustmentCommand(_nextSeq(), adjustment));
+  Future<void> setOmniCarryAdjustment(int adjustment) => _send(
+        omniSetCarryDistanceAdjustmentCommand(_nextSeq(), adjustment),
+        label: 'omniSetCarryAdjustment($adjustment)',
+      );
 
-  Future<void> startAlignment() => _send(startAlignmentCommand(_nextSeq()));
+  Future<void> startAlignment() => _send(
+        startAlignmentCommand(_nextSeq()),
+        label: 'startAlignment',
+      );
 
-  Future<void> stopAlignment(double targetAngle) =>
-      _send(stopAlignmentCommand(_nextSeq(), targetAngle));
+  Future<void> stopAlignment(double targetAngle) => _send(
+        stopAlignmentCommand(_nextSeq(), targetAngle),
+        label: 'stopAlignment($targetAngle°)',
+      );
 
-  Future<void> cancelAlignment(double targetAngle) =>
-      _send(cancelAlignmentCommand(_nextSeq(), targetAngle));
+  Future<void> cancelAlignment(double targetAngle) => _send(
+        cancelAlignmentCommand(_nextSeq(), targetAngle),
+        label: 'cancelAlignment($targetAngle°)',
+      );
 
   // ── Internal: command sending ──────────────────────────────────────────────
 
@@ -250,34 +290,46 @@ class LaunchMonitorService {
     return _sequence;
   }
 
-  Future<void> _send(Uint8List command) async {
+  Future<void> _send(Uint8List command, {String? label}) async {
     if (!_connected) {
       throw StateError('LaunchMonitorService is not connected');
     }
-    await _ble.writeCharacteristic(
-      deviceId: deviceId,
-      serviceUuid: primaryServiceUuid,
-      characteristicUuid: commandCharUuid,
-      data: command,
-      withResponse: true,
-    );
+    final tag = label ?? 'cmd';
+    final isHeartbeat = label == 'heartbeat';
+    if (!isHeartbeat || kLmLogHeartbeats) {
+      lmLog('cmd', '-> ${lmHex(command)}${label != null ? '  ($label)' : ''}');
+    }
+    try {
+      await _ble.writeCharacteristic(
+        deviceId: deviceId,
+        serviceUuid: primaryServiceUuid,
+        characteristicUuid: commandCharUuid,
+        data: command,
+        withResponse: true,
+      );
+    } catch (e) {
+      lmWarn(tag, 'write failed: $e');
+      rethrow;
+    }
   }
 
   // ── Internal: heartbeat ────────────────────────────────────────────────────
 
   void _startHeartbeat() {
     _stopHeartbeat();
+    lmLog('hb', 'heartbeat scheduled every ${_heartbeatInterval.inSeconds}s');
     _heartbeat = Timer.periodic(_heartbeatInterval, (_) async {
       if (!_connected) return;
       try {
-        await _send(heartbeatCommand(_nextSeq()));
+        await _send(heartbeatCommand(_nextSeq()), label: 'heartbeat');
       } catch (e) {
-        if (kDebugMode) debugPrint('LM heartbeat failed: $e');
+        lmWarn('hb', 'heartbeat failed: $e');
       }
     });
   }
 
   void _stopHeartbeat() {
+    if (_heartbeat != null) lmLog('hb', 'heartbeat stopped');
     _heartbeat?.cancel();
     _heartbeat = null;
   }
@@ -285,26 +337,43 @@ class LaunchMonitorService {
   // ── Internal: Omni init ────────────────────────────────────────────────────
 
   Future<void> _sendOmniInitSequence() async {
+    lmLog('init', 'Omni init sequence starting');
     // Default values — caller is expected to push their own settings via the
     // dedicated setter methods after connection. These keep the device alive
     // until the first user-triggered config arrives.
-    final commands = <Uint8List>[
-      omniSetUnitsCommand(
-          _nextSeq(), OmniSpeedUnit.mph, OmniDistanceUnit.yardsFeet),
-      omniSetCarryDistanceAdjustmentCommand(_nextSeq(), 0),
-      omniSetGreenSpeedCommand(_nextSeq(), 2), // index 2 = 10
-      omniSetHandedCommand(_nextSeq(), Handedness.rightHanded),
+    final steps = <(String, Uint8List)>[
+      (
+        'SetUnits(mph, yardsFeet)',
+        omniSetUnitsCommand(
+            _nextSeq(), OmniSpeedUnit.mph, OmniDistanceUnit.yardsFeet),
+      ),
+      (
+        'SetCarryDistanceAdjustment(0)',
+        omniSetCarryDistanceAdjustmentCommand(_nextSeq(), 0),
+      ),
+      (
+        'SetGreenSpeed(idx=2 → 10)',
+        omniSetGreenSpeedCommand(_nextSeq(), 2),
+      ),
+      (
+        'SetHanded(right)',
+        omniSetHandedCommand(_nextSeq(), Handedness.rightHanded),
+      ),
     ];
 
-    for (final cmd in commands) {
-      if (!_connected) return;
+    for (final (name, cmd) in steps) {
+      if (!_connected) {
+        lmLog('init', 'aborting — disconnected');
+        return;
+      }
       try {
-        await _send(cmd);
+        await _send(cmd, label: 'init: $name');
       } catch (e) {
-        if (kDebugMode) debugPrint('LM Omni init step failed: $e');
+        lmWarn('init', '$name failed: $e');
       }
       await Future<void>.delayed(_initStepDelay);
     }
+    lmLog('init', 'Omni init sequence complete');
   }
 
   // ── Internal: notification routing ─────────────────────────────────────────
@@ -312,6 +381,7 @@ class LaunchMonitorService {
   void _handleNotificationBytes(List<int> bytes) {
     if (bytes.isEmpty) return;
     final list = bytesToHexList(Uint8List.fromList(bytes));
+    final hex = lmHexList(list);
     _eventCtrl.add(LmRawEvent(list));
 
     final kind = classify(list);
@@ -319,33 +389,83 @@ class LaunchMonitorService {
       switch (kind) {
         case NotificationKind.sensor:
           final s = parseSensorData(list);
+          lmLog(
+            'notify',
+            '<- $hex  → SENSOR ready=${s.ballReady} '
+                'detected=${s.ballDetected} '
+                'pos=(${s.positionX}, ${s.positionY}, ${s.positionZ})',
+          );
           _sensorCtrl.add(s);
           _eventCtrl.add(LmSensorEvent(s));
           break;
         case NotificationKind.ballMetrics:
           // Dedupe like the Go reference: identical raw bytes → same shot.
           final raw = list.join(' ');
-          if (raw == _lastBallRaw) return;
+          if (raw == _lastBallRaw) {
+            lmLog('notify', '<- $hex  → BALL (duplicate, ignored)');
+            return;
+          }
           _lastBallRaw = raw;
           var b = parseShotBallMetrics(list);
           if (deviceType == SquareGolfDeviceType.omni) {
             b = applyOmniBallValidityBitmask(b);
           }
+          lmLog(
+            'notify',
+            '<- $hex  → BALL '
+                'speed=${b.ballSpeedMps.toStringAsFixed(2)}m/s '
+                'launch=${b.verticalAngle.toStringAsFixed(1)}°/'
+                '${b.horizontalAngle.toStringAsFixed(1)}° '
+                'spin=${b.totalSpinRpm}rpm@'
+                '${b.spinAxis.toStringAsFixed(1)}° '
+                '(back=${b.backspinRpm} side=${b.sidespinRpm}) '
+                'valid[s=${b.isBallSpeedValid} t=${b.isTotalSpinValid} '
+                'a=${b.isSpinAxisValid} b=${b.isBackspinValid} '
+                'sd=${b.isSidespinValid}] '
+                'mask=${b.validityBitmask}',
+          );
           _ballCtrl.add(b);
           _eventCtrl.add(LmBallMetricsEvent(b));
           // Auto-request club metrics after a fresh shot.
-          unawaited(_send(requestClubMetricsCommand(_nextSeq()))
+          unawaited(_send(requestClubMetricsCommand(_nextSeq()),
+                  label: 'auto requestClubMetrics')
               .catchError((Object _) {}));
           break;
         case NotificationKind.clubMetrics:
           final c = deviceType == SquareGolfDeviceType.omni
               ? parseOmniShotClubMetrics(list)
               : parseShotClubMetrics(list);
+          lmLog(
+            'notify',
+            '<- $hex  → CLUB(${deviceType.name}) '
+                'path=${c.pathAngle.toStringAsFixed(2)}° '
+                'face=${c.faceAngle.toStringAsFixed(2)}° '
+                'attack=${c.attackAngle.toStringAsFixed(2)}° '
+                'loft=${c.dynamicLoftAngle.toStringAsFixed(2)}°'
+                '${deviceType == SquareGolfDeviceType.omni ? ' '
+                    'iH=${c.impactHorizontal.toStringAsFixed(2)} '
+                    'iV=${c.impactVertical.toStringAsFixed(2)} '
+                    'speed=${c.clubSpeed.toStringAsFixed(2)} '
+                    'smash=${c.smashFactor.toStringAsFixed(2)}' : ''} '
+                'valid[p=${c.isPathAngleValid} f=${c.isFaceAngleValid} '
+                'a=${c.isAttackAngleValid} l=${c.isDynamicLoftValid}'
+                '${deviceType == SquareGolfDeviceType.omni ? ' '
+                    'iH=${c.isImpactHorizontalValid} '
+                    'iV=${c.isImpactVerticalValid} '
+                    'cs=${c.isClubSpeedValid} '
+                    'sf=${c.isSmashFactorValid}' : ''}]',
+          );
           _clubCtrl.add(c);
           _eventCtrl.add(LmClubMetricsEvent(c));
           break;
         case NotificationKind.alignment:
           final a = parseAlignmentData(list);
+          lmLog(
+            'notify',
+            '<- $hex  → ALIGN '
+                'angle=${a.aimAngle.toStringAsFixed(2)}° '
+                'aligned=${a.isAligned}',
+          );
           _alignmentCtrl.add(a);
           _eventCtrl.add(LmAlignmentEvent(a));
           break;
@@ -364,6 +484,10 @@ class LaunchMonitorService {
             '06' => LaunchMonitorStatus.done,
             _ => null,
           };
+          lmLog(
+            'notify',
+            '<- $hex  → STATUS ${status?.name ?? "unknown(${list[statusIdx]})"}',
+          );
           if (status != null) {
             _statusCtrl.add(status);
             _eventCtrl.add(LmStatusEvent(status));
@@ -372,6 +496,7 @@ class LaunchMonitorService {
         case NotificationKind.battery:
           if (list.length >= 3) {
             final pct = int.tryParse(list[2], radix: 16);
+            lmLog('notify', '<- $hex  → BATTERY ${pct ?? "?"}%');
             if (pct != null) {
               _batteryCtrl.add(pct);
               _eventCtrl.add(LmBatteryEvent(pct));
@@ -379,13 +504,17 @@ class LaunchMonitorService {
           }
           break;
         case NotificationKind.charge:
+          lmLog('notify', '<- $hex  → CHARGE (not yet decoded)');
+          break;
         case NotificationKind.osVersion:
+          lmLog('notify', '<- $hex  → OS_VERSION (not yet decoded)');
+          break;
         case NotificationKind.unknown:
-          // Not yet routed to a typed stream — raw event still emitted.
+          lmLog('notify', '<- $hex  → UNKNOWN');
           break;
       }
-    } catch (e) {
-      if (kDebugMode) debugPrint('LM parse error ($kind): $e');
+    } catch (e, s) {
+      lmWarn('notify', 'parse error ($kind): $e\nframe=$hex\n$s');
     }
   }
 }

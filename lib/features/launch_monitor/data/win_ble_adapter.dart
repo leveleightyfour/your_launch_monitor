@@ -5,6 +5,7 @@ import 'package:win_ble/win_ble.dart';
 import 'package:win_ble/win_file.dart';
 
 import 'ble_adapter.dart';
+import 'squaregolf/log.dart';
 
 /// BLE adapter backed by [WinBle] for Windows desktop builds.
 class WinBleAdapter implements BleAdapter {
@@ -26,6 +27,7 @@ class WinBleAdapter implements BleAdapter {
 
     () async {
       await _ensureInitialised();
+      lmLog('scan', 'WinBle.startScanning timeout=${timeout.inSeconds}s');
       WinBle.startScanning();
 
       final sub = WinBle.scanStream.listen((device) {
@@ -33,6 +35,10 @@ class WinBleAdapter implements BleAdapter {
         final mfg = StringBuffer();
         for (final b in device.manufacturerData) {
           mfg.write((b & 0xFF).toRadixString(16).padLeft(2, '0'));
+        }
+        if (name.startsWith('SquareGolf')) {
+          lmLog('scan',
+              'found name="$name" id=${device.address} mfg=$mfg');
         }
         devices[device.address] = BleScannedDevice(
           id: device.address,
@@ -61,14 +67,17 @@ class WinBleAdapter implements BleAdapter {
   @override
   Future<void> stopScan() async {
     await _ensureInitialised();
+    lmLog('scan', 'WinBle.stopScanning');
     WinBle.stopScanning();
   }
 
   @override
   Future<void> connect(String deviceId) async {
     await _ensureInitialised();
+    lmLog('conn', 'WinBle.connect $deviceId');
     await WinBle.connect(deviceId);
     _connectedDeviceAddress = deviceId;
+    lmLog('conn', 'WinBle.connect → ok');
   }
 
   @override
@@ -85,6 +94,7 @@ class WinBleAdapter implements BleAdapter {
     required String characteristicUuid,
   }) async {
     await _ensureInitialised();
+    lmLog('conn', 'subscribe $characteristicUuid (svc=$serviceUuid)');
 
     await WinBle.subscribeToCharacteristic(
       address: deviceId,
@@ -117,6 +127,7 @@ class WinBleAdapter implements BleAdapter {
 
   @override
   Future<void> disconnect(String deviceId) async {
+    lmLog('conn', 'WinBle.disconnect $deviceId');
     await WinBle.disconnect(deviceId);
     _connectedDeviceAddress = null;
   }

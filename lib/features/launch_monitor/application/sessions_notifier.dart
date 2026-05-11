@@ -53,6 +53,27 @@ class SessionsNotifier extends Notifier<List<Session>> {
     state = state.where((a) => a.id != id).toList();
   }
 
+  /// Renames a stored session in the DB and patches the in-memory list.
+  Future<void> renameSession(String id, String newName) async {
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) return;
+    final numId = int.tryParse(id);
+    if (numId != null) {
+      await ref.read(appDatabaseProvider).finalizeSession(numId, trimmed);
+    }
+    state = [
+      for (final s in state)
+        s.id == id
+            ? Session(
+                id: s.id,
+                name: trimmed,
+                createdAt: s.createdAt,
+                shots: s.shots,
+              )
+            : s,
+    ];
+  }
+
   /// Permanently deletes shots by their DB IDs and patches in-memory state.
   Future<void> deleteShots(List<int> shotDbIds) async {
     final db = ref.read(appDatabaseProvider);
