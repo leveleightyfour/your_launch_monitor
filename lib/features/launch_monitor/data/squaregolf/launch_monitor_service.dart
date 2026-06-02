@@ -1,11 +1,13 @@
 /// High-level service that wraps the [BleAdapter] with the Square Golf
-/// protocol — handles connection lifecycle, heartbeat, the Omni init handshake,
-/// and decodes incoming notifications into typed streams.
+/// protocol — handles connection lifecycle, post-connect reads, the heartbeat,
+/// capacitor-charge polling, the Omni init handshake, a serialized command
+/// queue, and decodes incoming notifications into typed streams.
 ///
 /// Ported from `squaregolf-connector` (Go) — see `internal/core/launch_monitor.go`.
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -14,15 +16,6 @@ import 'commands.dart';
 import 'constants.dart';
 import 'log.dart';
 import 'notifications.dart';
-
-/// Inferred service UUIDs — the Go reference does not hard-code a service
-/// because it discovers everything and matches by characteristic UUID. These
-/// follow the standard Nordic-style convention where a service UUID shares a
-/// prefix with its characteristics. If a real device exposes them under a
-/// different service, swap [primaryServiceUuid] / [batteryServiceUuid].
-const String primaryServiceUuid = '86602100-6b7e-439a-bdd1-489a3213e9bb';
-const String deviceInfoServiceUuid = '86602000-6b7e-439a-bdd1-489a3213e9bb';
-const String batteryServiceUuid = '0000180f-0000-1000-8000-00805f9b34fb';
 
 /// Typed packet emitted on [LaunchMonitorService.notifications].
 sealed class LmEvent {
@@ -59,9 +52,37 @@ class LmBatteryEvent extends LmEvent {
   const LmBatteryEvent(this.percent);
 }
 
+class LmCapacitorEvent extends LmEvent {
+  final bool ready;
+  const LmCapacitorEvent(this.ready);
+}
+
 class LmRawEvent extends LmEvent {
   final List<String> bytes;
   const LmRawEvent(this.bytes);
+}
+
+/// Firmware versions read from the device-info characteristic (JSON).
+class FirmwareVersions {
+  final String? launcher;
+  final String? mmi;
+  final String? lm;
+
+  const FirmwareVersions({this.launcher, this.mmi, this.lm});
+
+  /// The primary "firmware version" is the `lm` field.
+  String? get primary => lm;
+
+  @override
+  String toString() => 'FirmwareVersions(launcher: $launcher, mmi: $mmi, lm: $lm)';
+}
+
+/// One queued outbound command awaiting serialized execution.
+class _QueuedCommand {
+  final Uint8List bytes;
+  final String label;
+  final Completer<void> completer;
+  _QueuedCommand(this.bytes, this.label, this.completer);
 }
 
 class LaunchMonitorService {
@@ -72,8 +93,17 @@ class LaunchMonitorService {
   /// Heartbeat cadence — matches the Go reference.
   static const Duration _heartbeatInterval = Duration(seconds: 5);
 
-  /// Inter-command spacing for the Omni init burst (Go uses ~150ms/cmd).
-  static const Duration _initStepDelay = Duration(milliseconds: 150);
+  /// Capacitor-charge polling cadence.
+  static const Duration _chargePollInterval = Duration(seconds: 3);
+
+  /// Inter-command spacing on the serialized queue (Go uses ~150ms/cmd).
+  static const Duration _commandSpacing = Duration(milliseconds: 150);
+
+  /// Per-command execution timeout while draining the queue.
+  static const Duration _commandTimeout = Duration(seconds: 5);
+
+  /// Omni club-metrics retry window (1s, then 1s more).
+  static const Duration _clubMetricsRetry = Duration(seconds: 1);
 
   // ── Streams ────────────────────────────────────────────────────────────────
 
@@ -85,6 +115,7 @@ class LaunchMonitorService {
   final _alignmentCtrl = StreamController<AlignmentData>.broadcast();
   final _statusCtrl = StreamController<LaunchMonitorStatus>.broadcast();
   final _batteryCtrl = StreamController<int>.broadcast();
+  final _capacitorCtrl = StreamController<bool>.broadcast();
 
   Stream<LmConnectionStatus> get connectionStatus => _connectionCtrl.stream;
   Stream<LmEvent> get notifications => _eventCtrl.stream;
@@ -94,6 +125,16 @@ class LaunchMonitorService {
   Stream<AlignmentData> get alignment => _alignmentCtrl.stream;
   Stream<LaunchMonitorStatus> get monitorStatus => _statusCtrl.stream;
   Stream<int> get batteryLevel => _batteryCtrl.stream;
+  Stream<bool> get capacitorReadyStream => _capacitorCtrl.stream;
+
+  // ── Device info (populated during connect) ──────────────────────────────────
+
+  String? serialNumber;
+  int? batteryPercent;
+  FirmwareVersions firmware = const FirmwareVersions();
+  String? osVersion;
+
+  bool get capacitorReady => _capacitorReady;
 
   // ── Internal state ─────────────────────────────────────────────────────────
 
@@ -101,17 +142,41 @@ class LaunchMonitorService {
   StreamSubscription<List<int>>? _batterySub;
   StreamSubscription<bool>? _connSub;
   Timer? _heartbeat;
+  Timer? _chargeTimer;
+  Timer? _clubRetry1;
+  Timer? _clubRetry2;
   int _sequence = 0;
   bool _connected = false;
+  bool _capacitorReady = false;
   String? _lastBallRaw; // dedupe (matches Go behaviour)
+  bool _awaitingClubMetrics = false;
+
+  // Ball-detection / arming state (for idle-recovery + putter handling).
+  bool _detectActive = false;
+  SpinMode _currentSpin = SpinMode.advanced;
+  ClubCode _currentClub = ClubCodes.driver;
+  Handedness _currentHand = Handedness.rightHanded;
+  int _idleStatusCount = 0;
+
+  /// Optional starting handedness. The reference only sends SetHanded during
+  /// the Omni init burst when handedness is *known*; null means "skip it".
+  final Handedness? _initialHandedness;
+
+  // Serialized command queue.
+  final List<_QueuedCommand> _queue = [];
+  bool _queueProcessing = false;
 
   LaunchMonitorService({
     required BleAdapter ble,
     required this.deviceId,
     required this.deviceType,
-  }) : _ble = ble;
+    Handedness? initialHandedness,
+  })  : _ble = ble,
+        _initialHandedness = initialHandedness;
 
   bool get isConnected => _connected;
+
+  bool get _isPutter => _currentClub.regularCode == ClubCodes.putter.regularCode;
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -122,21 +187,38 @@ class LaunchMonitorService {
       await _ble.connect(deviceId);
       lmLog('conn', 'BLE link established');
 
+      // Discover all services/characteristics up front; everything is matched
+      // by characteristic UUID (no hard-coded service UUID).
+      await _ble.discoverServices(deviceId);
+
       _connSub = _ble.connectionStateOf(deviceId).listen((connected) {
         _connected = connected;
         lmLog('conn',
             connected ? 'state → connected' : 'state → disconnected');
-        _connectionCtrl.add(connected
-            ? LmConnectionStatus.connected
-            : LmConnectionStatus.disconnected);
-        if (!connected) _stopHeartbeat();
+        if (!connected) {
+          _connectionCtrl.add(LmConnectionStatus.disconnected);
+          _stopHeartbeat();
+          _stopChargePolling();
+        }
       });
+
+      // ── Post-connect reads (in reference order) ──────────────────────────
+      serialNumber = await _readSerialWithRetry();
+      lmLog('conn', 'serial=${serialNumber ?? "?"}');
+
+      batteryPercent = await _readBatteryLevel();
+      if (batteryPercent != null) {
+        _batteryCtrl.add(batteryPercent!);
+        _eventCtrl.add(LmBatteryEvent(batteryPercent!));
+      }
+
+      firmware = await _readFirmware();
+      lmLog('conn', 'firmware=$firmware');
 
       // Subscribe to the protocol notification characteristic.
       lmLog('conn', 'subscribing notify char $notificationCharUuid');
       final notifyStream = await _ble.subscribeToCharacteristic(
         deviceId: deviceId,
-        serviceUuid: primaryServiceUuid,
         characteristicUuid: notificationCharUuid,
       );
       _notifySub = notifyStream.listen(
@@ -146,30 +228,31 @@ class LaunchMonitorService {
         },
       );
 
-      // Subscribe to the standard battery-level characteristic.
+      // Subscribe to the standard battery-level characteristic (non-fatal).
       try {
         lmLog('conn', 'subscribing battery char $batteryLevelCharUuid');
         final batteryStream = await _ble.subscribeToCharacteristic(
           deviceId: deviceId,
-          serviceUuid: batteryServiceUuid,
           characteristicUuid: batteryLevelCharUuid,
         );
         _batterySub = batteryStream.listen((data) {
           if (data.isEmpty) return;
           final pct = data[0];
           lmLog('notify', '<- battery $pct%');
+          batteryPercent = pct;
           _batteryCtrl.add(pct);
           _eventCtrl.add(LmBatteryEvent(pct));
         });
       } catch (e) {
-        lmLog('conn', 'no battery service exposed ($e)');
+        lmLog('conn', 'battery notify unavailable, continuing ($e)');
       }
 
       _connected = true;
       _connectionCtrl.add(LmConnectionStatus.connected);
-      lmLog('conn', 'ready — starting heartbeat');
+      lmLog('conn', 'ready — starting heartbeat + charge polling');
 
       _startHeartbeat();
+      _startChargePolling();
 
       if (deviceType == SquareGolfDeviceType.omni) {
         // Don't await — fire-and-forget, matches the Go init sequence.
@@ -184,7 +267,27 @@ class LaunchMonitorService {
 
   Future<void> disconnect() async {
     lmLog('conn', 'disconnect()');
+    // Pre-disconnect hook: leave the device in a clean state by deactivating
+    // ball detection first (best-effort, short timeout).
+    if (_connected) {
+      try {
+        await _ble
+            .writeCharacteristic(
+              deviceId: deviceId,
+              characteristicUuid: commandCharUuid,
+              data: detectBallCommand(
+                  _nextSeq(), DetectBallMode.deactivate, _currentSpin),
+              withResponse: true,
+            )
+            .timeout(const Duration(seconds: 2));
+      } catch (e) {
+        lmLog('conn', 'pre-disconnect deactivate skipped: $e');
+      }
+    }
+
     _stopHeartbeat();
+    _stopChargePolling();
+    _cancelClubMetricsRetry();
     await _notifySub?.cancel();
     await _batterySub?.cancel();
     await _connSub?.cancel();
@@ -192,6 +295,14 @@ class LaunchMonitorService {
     _batterySub = null;
     _connSub = null;
     _connected = false;
+    _detectActive = false;
+    _idleStatusCount = 0;
+    _drainQueue();
+
+    // Reset derived state.
+    _capacitorReady = false;
+    _lastBallRaw = null;
+
     try {
       await _ble.disconnect(deviceId);
     } catch (e) {
@@ -210,26 +321,124 @@ class LaunchMonitorService {
     await _alignmentCtrl.close();
     await _statusCtrl.close();
     await _batteryCtrl.close();
+    await _capacitorCtrl.close();
+  }
+
+  // ── Post-connect reads ───────────────────────────────────────────────────
+
+  Future<String?> _readSerialWithRetry() async {
+    for (var attempt = 1; attempt <= 5; attempt++) {
+      try {
+        final bytes = await _ble.readCharacteristic(
+          deviceId: deviceId,
+          characteristicUuid: serialNumberCharUuid,
+        );
+        final value = _decodeText(bytes);
+        if (value.isNotEmpty) return value;
+      } catch (e) {
+        lmLog('conn', 'serial read attempt $attempt failed: $e');
+      }
+      await Future<void>.delayed(const Duration(seconds: 1));
+    }
+    lmWarn('conn', 'serial number unavailable after 5 attempts');
+    return null;
+  }
+
+  Future<int?> _readBatteryLevel() async {
+    try {
+      final bytes = await _ble.readCharacteristic(
+        deviceId: deviceId,
+        characteristicUuid: batteryLevelCharUuid,
+      );
+      if (bytes.isNotEmpty) return bytes[0];
+    } catch (e) {
+      lmLog('conn', 'battery read failed: $e');
+    }
+    return null;
+  }
+
+  Future<FirmwareVersions> _readFirmware() async {
+    try {
+      final bytes = await _ble.readCharacteristic(
+        deviceId: deviceId,
+        characteristicUuid: firmwareVersionCharUuid,
+      );
+      final text = _decodeText(bytes);
+      final json = jsonDecode(text);
+      if (json is Map) {
+        return FirmwareVersions(
+          launcher: json['launcher']?.toString(),
+          mmi: json['mmi']?.toString(),
+          lm: json['lm']?.toString(),
+        );
+      }
+    } catch (e) {
+      lmWarn('conn', 'firmware read/parse failed: $e');
+    }
+    return const FirmwareVersions();
+  }
+
+  String _decodeText(List<int> bytes) {
+    try {
+      return utf8.decode(bytes, allowMalformed: true).replaceAll(' ', '').trim();
+    } catch (_) {
+      return '';
+    }
   }
 
   // ── Public commands ────────────────────────────────────────────────────────
 
-  /// Activate ball detection. Optionally specify [spinMode].
+  /// Activate ball detection. Defaults to advanced spin (matches reference).
   Future<void> activateBallDetection({
-    SpinMode spinMode = SpinMode.standard,
-  }) =>
-      _send(
-        detectBallCommand(_nextSeq(), DetectBallMode.activate, spinMode),
-        label: 'activateBallDetection(spin=${spinMode.name})',
-      );
+    SpinMode spinMode = SpinMode.advanced,
+  }) {
+    _currentSpin = spinMode;
+    _detectActive = true;
+    _idleStatusCount = 0;
+    return _send(
+      detectBallCommand(_nextSeq(), DetectBallMode.activate, spinMode),
+      label: 'activateBallDetection(spin=${spinMode.name})',
+    );
+  }
 
-  Future<void> deactivateBallDetection() => _send(
-        detectBallCommand(
-            _nextSeq(), DetectBallMode.deactivate, SpinMode.standard),
-        label: 'deactivateBallDetection',
-      );
+  Future<void> deactivateBallDetection() {
+    _detectActive = false;
+    _idleStatusCount = 0;
+    return _send(
+      detectBallCommand(_nextSeq(), DetectBallMode.deactivate, _currentSpin),
+      label: 'deactivateBallDetection',
+    );
+  }
+
+  /// Arm for a shot: select [club] + [handedness], then activate detection.
+  /// Matches the reference's two-step activate sequence (§6).
+  Future<void> armBallDetection({
+    ClubCode? club,
+    Handedness? handedness,
+    SpinMode spinMode = SpinMode.advanced,
+  }) async {
+    await selectClub(
+      club ?? _currentClub,
+      handedness ?? _currentHand,
+    );
+    await activateBallDetection(spinMode: spinMode);
+  }
+
+  /// Enter alignment mode (red LED aim calibration, §6): select the alignment
+  /// stick, wait ~1s, then activate detect-ball mode 2.
+  Future<void> enterAlignmentMode({Handedness? handedness}) async {
+    await selectClub(ClubCodes.alignmentStick, handedness ?? _currentHand);
+    await Future<void>.delayed(const Duration(seconds: 1));
+    await _send(
+      detectBallCommand(
+          _nextSeq(), DetectBallMode.activateAlignmentMode, SpinMode.advanced),
+      label: 'enterAlignmentMode',
+    );
+  }
 
   Future<void> selectClub(ClubCode club, Handedness handedness) {
+    _currentClub = club;
+    _currentHand = handedness;
     final cmd = deviceType == SquareGolfDeviceType.omni
         ? omniClubCommand(_nextSeq(), club, handedness)
         : clubCommand(_nextSeq(), club, handedness);
@@ -244,10 +453,13 @@ class LaunchMonitorService {
         label: 'requestClubMetrics',
       );
 
-  Future<void> setOmniHandedness(Handedness handedness) => _send(
-        omniSetHandedCommand(_nextSeq(), handedness),
-        label: 'omniSetHanded(${handedness.name})',
-      );
+  Future<void> setOmniHandedness(Handedness handedness) {
+    _currentHand = handedness;
+    return _send(
+      omniSetHandedCommand(_nextSeq(), handedness),
+      label: 'omniSetHanded(${handedness.name})',
+    );
+  }
 
   Future<void> setOmniUnits({
     required OmniSpeedUnit speed,
@@ -283,34 +495,69 @@ class LaunchMonitorService {
         label: 'cancelAlignment($targetAngle°)',
       );
 
-  // ── Internal: command sending ──────────────────────────────────────────────
+  // ── Internal: command queue (serialized, 150ms spacing) ────────────────────
 
   int _nextSeq() {
     _sequence = (_sequence + 1) & 0xFF;
     return _sequence;
   }
 
-  Future<void> _send(Uint8List command, {String? label}) async {
+  Future<void> _send(Uint8List command, {String? label}) {
     if (!_connected) {
-      throw StateError('LaunchMonitorService is not connected');
+      return Future.error(
+          StateError('LaunchMonitorService is not connected'));
     }
-    final tag = label ?? 'cmd';
-    final isHeartbeat = label == 'heartbeat';
-    if (!isHeartbeat || kLmLogHeartbeats) {
-      lmLog('cmd', '-> ${lmHex(command)}${label != null ? '  ($label)' : ''}');
-    }
+    final completer = Completer<void>();
+    _queue.add(_QueuedCommand(command, label ?? 'cmd', completer));
+    unawaited(_processQueue());
+    // Mirror the Go reference's 5s execution budget.
+    return completer.future.timeout(_commandTimeout);
+  }
+
+  Future<void> _processQueue() async {
+    if (_queueProcessing) return;
+    _queueProcessing = true;
     try {
-      await _ble.writeCharacteristic(
-        deviceId: deviceId,
-        serviceUuid: primaryServiceUuid,
-        characteristicUuid: commandCharUuid,
-        data: command,
-        withResponse: true,
-      );
-    } catch (e) {
-      lmWarn(tag, 'write failed: $e');
-      rethrow;
+      while (_queue.isNotEmpty) {
+        final item = _queue.removeAt(0);
+        if (!_connected) {
+          item.completer.completeError(
+              StateError('disconnected before command executed'));
+          continue;
+        }
+        final isHeartbeat = item.label == 'heartbeat';
+        if (!isHeartbeat || kLmLogHeartbeats) {
+          lmLog('cmd', '-> ${lmHex(item.bytes)}  (${item.label})');
+        }
+        try {
+          await _ble
+              .writeCharacteristic(
+                deviceId: deviceId,
+                characteristicUuid: commandCharUuid,
+                data: item.bytes,
+                withResponse: true,
+              )
+              .timeout(_commandTimeout);
+          if (!item.completer.isCompleted) item.completer.complete();
+        } catch (e) {
+          lmWarn(item.label, 'write failed: $e');
+          if (!item.completer.isCompleted) item.completer.completeError(e);
+        }
+        // Spacing between writes — the device drops commands sent too fast.
+        await Future<void>.delayed(_commandSpacing);
+      }
+    } finally {
+      _queueProcessing = false;
     }
+  }
+
+  void _drainQueue() {
+    for (final item in _queue) {
+      if (!item.completer.isCompleted) {
+        item.completer.completeError(StateError('command queue drained'));
+      }
+    }
+    _queue.clear();
   }
 
   // ── Internal: heartbeat ────────────────────────────────────────────────────
@@ -318,6 +565,9 @@ class LaunchMonitorService {
   void _startHeartbeat() {
     _stopHeartbeat();
     lmLog('hb', 'heartbeat scheduled every ${_heartbeatInterval.inSeconds}s');
+    // Reference sends one immediately, then on the ticker.
+    unawaited(_send(heartbeatCommand(_nextSeq()), label: 'heartbeat')
+        .catchError((Object _) {}));
     _heartbeat = Timer.periodic(_heartbeatInterval, (_) async {
       if (!_connected) return;
       try {
@@ -334,18 +584,42 @@ class LaunchMonitorService {
     _heartbeat = null;
   }
 
+  // ── Internal: capacitor charge polling ──────────────────────────────────────
+
+  void _startChargePolling() {
+    _stopChargePolling();
+    _capacitorReady = false;
+    lmLog('chg', 'charge polling every ${_chargePollInterval.inSeconds}s');
+    unawaited(_send(getChargeCommand(_nextSeq()), label: 'getCharge')
+        .catchError((Object _) {}));
+    _chargeTimer = Timer.periodic(_chargePollInterval, (_) async {
+      if (!_connected || _capacitorReady) return;
+      try {
+        await _send(getChargeCommand(_nextSeq()), label: 'getCharge');
+      } catch (e) {
+        lmWarn('chg', 'getCharge failed: $e');
+      }
+    });
+  }
+
+  void _stopChargePolling() {
+    if (_chargeTimer != null) lmLog('chg', 'charge polling stopped');
+    _chargeTimer?.cancel();
+    _chargeTimer = null;
+  }
+
   // ── Internal: Omni init ────────────────────────────────────────────────────
 
   Future<void> _sendOmniInitSequence() async {
     lmLog('init', 'Omni init sequence starting');
-    // Default values — caller is expected to push their own settings via the
-    // dedicated setter methods after connection. These keep the device alive
-    // until the first user-triggered config arrives.
+    final handed = _initialHandedness;
+    // Reference defaults: m/s, meters, carry 0, stimp 10 (idx 2). SetHanded
+    // is only sent when handedness is known.
     final steps = <(String, Uint8List)>[
       (
-        'SetUnits(mph, yardsFeet)',
+        'SetUnits(m/s, meters)',
         omniSetUnitsCommand(
-            _nextSeq(), OmniSpeedUnit.mph, OmniDistanceUnit.yardsFeet),
+            _nextSeq(), OmniSpeedUnit.metersPerSecond, OmniDistanceUnit.meters),
       ),
       (
         'SetCarryDistanceAdjustment(0)',
@@ -355,10 +629,11 @@ class LaunchMonitorService {
         'SetGreenSpeed(idx=2 → 10)',
         omniSetGreenSpeedCommand(_nextSeq(), 2),
       ),
-      (
-        'SetHanded(right)',
-        omniSetHandedCommand(_nextSeq(), Handedness.rightHanded),
-      ),
+      if (handed != null)
+        (
+          'SetHanded(${handed.name})',
+          omniSetHandedCommand(_nextSeq(), handed),
+        ),
     ];
 
     for (final (name, cmd) in steps) {
@@ -371,9 +646,38 @@ class LaunchMonitorService {
       } catch (e) {
         lmWarn('init', '$name failed: $e');
       }
-      await Future<void>.delayed(_initStepDelay);
     }
     lmLog('init', 'Omni init sequence complete');
+  }
+
+  // ── Internal: club-metrics retry (Omni) ─────────────────────────────────────
+
+  void _scheduleClubMetricsRetry() {
+    if (deviceType != SquareGolfDeviceType.omni) return;
+    _cancelClubMetricsRetry();
+    _awaitingClubMetrics = true;
+    _clubRetry1 = Timer(_clubMetricsRetry, () {
+      if (!_awaitingClubMetrics || !_connected) return;
+      lmLog('club', 'no club metrics after 1s — re-requesting');
+      unawaited(_send(requestClubMetricsCommand(_nextSeq()),
+              label: 'retry requestClubMetrics')
+          .catchError((Object _) {}));
+      _clubRetry2 = Timer(_clubMetricsRetry, () {
+        if (!_awaitingClubMetrics) return;
+        lmLog('club', 'club metrics timed out — emitting empty result');
+        _awaitingClubMetrics = false;
+        final empty = ClubMetrics(rawData: const []);
+        _clubCtrl.add(empty);
+        _eventCtrl.add(LmClubMetricsEvent(empty));
+      });
+    });
+  }
+
+  void _cancelClubMetricsRetry() {
+    _clubRetry1?.cancel();
+    _clubRetry2?.cancel();
+    _clubRetry1 = null;
+    _clubRetry2 = null;
   }
 
   // ── Internal: notification routing ─────────────────────────────────────────
@@ -409,6 +713,15 @@ class LaunchMonitorService {
           var b = parseShotBallMetrics(list);
           if (deviceType == SquareGolfDeviceType.omni) {
             b = applyOmniBallValidityBitmask(b);
+            // Putter + Omni: spin fields are not measured.
+            if (_isPutter) {
+              b = b.copyWith(
+                isTotalSpinValid: false,
+                isSpinAxisValid: false,
+                isBackspinValid: false,
+                isSidespinValid: false,
+              );
+            }
           }
           lmLog(
             'notify',
@@ -426,15 +739,20 @@ class LaunchMonitorService {
           );
           _ballCtrl.add(b);
           _eventCtrl.add(LmBallMetricsEvent(b));
-          // Auto-request club metrics after a fresh shot.
+          // Auto-request club metrics after a fresh shot, with Omni retry.
+          _scheduleClubMetricsRetry();
           unawaited(_send(requestClubMetricsCommand(_nextSeq()),
                   label: 'auto requestClubMetrics')
               .catchError((Object _) {}));
           break;
         case NotificationKind.clubMetrics:
-          final c = deviceType == SquareGolfDeviceType.omni
+          _awaitingClubMetrics = false;
+          _cancelClubMetricsRetry();
+          var c = deviceType == SquareGolfDeviceType.omni
               ? parseOmniShotClubMetrics(list)
               : parseShotClubMetrics(list);
+          // Putter: club metrics are not measured — force all fields invalid.
+          if (_isPutter) c = ClubMetrics(rawData: c.rawData);
           lmLog(
             'notify',
             '<- $hex  → CLUB(${deviceType.name}) '
@@ -484,6 +802,15 @@ class LaunchMonitorService {
             '06' => LaunchMonitorStatus.done,
             _ => null,
           };
+          // Omni: sync handedness from byte[6] (00=right, 01=left).
+          if (deviceType == SquareGolfDeviceType.omni && list.length > 6) {
+            final hb = list[6];
+            if (hb == '00') {
+              _currentHand = Handedness.rightHanded;
+            } else if (hb == '01') {
+              _currentHand = Handedness.leftHanded;
+            }
+          }
           lmLog(
             'notify',
             '<- $hex  → STATUS ${status?.name ?? "unknown(${list[statusIdx]})"}',
@@ -491,23 +818,42 @@ class LaunchMonitorService {
           if (status != null) {
             _statusCtrl.add(status);
             _eventCtrl.add(LmStatusEvent(status));
+            _handleOmniIdleRecovery(status);
           }
           break;
         case NotificationKind.battery:
-          if (list.length >= 3) {
-            final pct = int.tryParse(list[2], radix: 16);
+          // 91 frame: byte[1] = level, byte[2] (if present) = charging status.
+          if (list.length >= 2) {
+            final pct = int.tryParse(list[1], radix: 16);
             lmLog('notify', '<- $hex  → BATTERY ${pct ?? "?"}%');
             if (pct != null) {
+              batteryPercent = pct;
               _batteryCtrl.add(pct);
               _eventCtrl.add(LmBatteryEvent(pct));
             }
           }
           break;
         case NotificationKind.charge:
-          lmLog('notify', '<- $hex  → CHARGE (not yet decoded)');
+          // byte[3] == 01 ⇒ capacitor ready.
+          final ready = list.length > 3 && list[3] == '01';
+          lmLog('notify', '<- $hex  → CHARGE ready=$ready');
+          if (ready && !_capacitorReady) {
+            _capacitorReady = true;
+            _stopChargePolling();
+            _capacitorCtrl.add(true);
+            _eventCtrl.add(const LmCapacitorEvent(true));
+          }
           break;
         case NotificationKind.osVersion:
-          lmLog('notify', '<- $hex  → OS_VERSION (not yet decoded)');
+          // version = "{int(byte[2])}.{int(byte[3])}"
+          if (list.length > 3) {
+            final major = int.tryParse(list[2], radix: 16);
+            final minor = int.tryParse(list[3], radix: 16);
+            if (major != null && minor != null) {
+              osVersion = '$major.$minor';
+              lmLog('notify', '<- $hex  → OS_VERSION $osVersion');
+            }
+          }
           break;
         case NotificationKind.unknown:
           lmLog('notify', '<- $hex  → UNKNOWN');
@@ -515,6 +861,28 @@ class LaunchMonitorService {
       }
     } catch (e, s) {
       lmWarn('notify', 'parse error ($kind): $e\nframe=$hex\n$s');
+    }
+  }
+
+  /// Omni idle-recovery: if detect mode is active and the device reports
+  /// none/idle on two consecutive status packets, re-arm by re-sending the
+  /// detect-ball activate command. Any non-idle status resets the counter.
+  void _handleOmniIdleRecovery(LaunchMonitorStatus status) {
+    if (deviceType != SquareGolfDeviceType.omni || !_detectActive) return;
+    final isIdle = status == LaunchMonitorStatus.none ||
+        status == LaunchMonitorStatus.idle;
+    if (!isIdle) {
+      _idleStatusCount = 0;
+      return;
+    }
+    _idleStatusCount++;
+    if (_idleStatusCount >= 2) {
+      _idleStatusCount = 0;
+      lmLog('detect', 'idle x2 — re-arming ball detection');
+      unawaited(_send(
+        detectBallCommand(_nextSeq(), DetectBallMode.activate, _currentSpin),
+        label: 're-arm detectBall',
+      ).catchError((Object _) {}));
     }
   }
 }
