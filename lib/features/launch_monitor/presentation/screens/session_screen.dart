@@ -47,6 +47,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final status = ref.watch(launchMonitorProvider.select((s) => s.status));
     final allShots = ref.watch(launchMonitorProvider.select((s) => s.shots));
     final error = ref.watch(launchMonitorProvider.select((s) => s.error));
+    final battery =
+        ref.watch(launchMonitorProvider.select((s) => s.batteryPercent));
+    final capacitorReady =
+        ref.watch(launchMonitorProvider.select((s) => s.capacitorReady));
+    final detecting =
+        ref.watch(launchMonitorProvider.select((s) => s.detecting));
     final notifier = ref.read(launchMonitorProvider.notifier);
     // activeClub: sets which club new shots are tagged with (bottom pill)
     final activeClub = ref.watch(activeClubProvider);
@@ -119,6 +125,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             _ActiveSessionTopBar(
               status: status,
               name: widget.initialName,
+              batteryPercent: battery,
+              capacitorReady: capacitorReady,
+              detecting: detecting,
+              onToggleArm: status == LaunchMonitorStatus.connected
+                  ? () => detecting
+                      ? notifier.disarmBallDetection()
+                      : notifier.armBallDetection()
+                  : null,
               onClose: () => _confirmFinish(context),
               onSimulateShot: () =>
                   ref.read(launchMonitorProvider.notifier).simulateShot(),
@@ -368,12 +382,20 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
 class _ActiveSessionTopBar extends StatelessWidget {
   final LaunchMonitorStatus status;
   final String? name;
+  final int? batteryPercent;
+  final bool capacitorReady;
+  final bool detecting;
+  final VoidCallback? onToggleArm;
   final VoidCallback onClose;
   final VoidCallback? onSimulateShot;
 
   const _ActiveSessionTopBar({
     required this.status,
     this.name,
+    this.batteryPercent,
+    this.capacitorReady = false,
+    this.detecting = false,
+    this.onToggleArm,
     required this.onClose,
     this.onSimulateShot,
   });
@@ -424,6 +446,38 @@ class _ActiveSessionTopBar extends StatelessWidget {
               ],
             ),
           ),
+          if (status == LaunchMonitorStatus.connected) ...[
+            if (batteryPercent != null) ...[
+              _BatteryChip(percent: batteryPercent!),
+              const SizedBox(width: 8),
+            ],
+            // Capacitor charging indicator — shown until the cap is ready.
+            if (!capacitorReady) ...[
+              const _CircleButton(
+                onTap: null,
+                child: Icon(
+                  Icons.battery_charging_full,
+                  size: 14,
+                  color: Colors.orange,
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            // Arm / disarm ball detection.
+            _CircleButton(
+              onTap: onToggleArm,
+              child: Icon(
+                detecting ? Icons.gps_fixed : Icons.gps_not_fixed,
+                size: 14,
+                color: !capacitorReady
+                    ? AppColors.textDimmed
+                    : detecting
+                        ? context.accent
+                        : AppColors.textMuted,
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           _CircleButton(
             onTap: () {},
             child: Icon(
@@ -940,7 +994,7 @@ class _ActiveBottomBar extends StatelessWidget {
 // ── Circle button ──────────────────────────────────────────────────────────────
 
 class _CircleButton extends StatelessWidget {
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Widget child;
 
   const _CircleButton({required this.onTap, required this.child});
@@ -959,6 +1013,39 @@ class _CircleButton extends StatelessWidget {
         ),
         child: Center(child: child),
       ),
+    );
+  }
+}
+
+// ── Battery chip ───────────────────────────────────────────────────────────────
+
+class _BatteryChip extends StatelessWidget {
+  final int percent;
+
+  const _BatteryChip({required this.percent});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = percent <= 15
+        ? Colors.red
+        : percent <= 30
+            ? Colors.orange
+            : AppColors.textMuted;
+    final icon = percent <= 15
+        ? Icons.battery_alert
+        : percent >= 95
+            ? Icons.battery_full
+            : Icons.battery_std;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 2),
+        Text(
+          '$percent%',
+          style: AppTextStyles.sans(size: 11, color: color),
+        ),
+      ],
     );
   }
 }

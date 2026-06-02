@@ -9,6 +9,11 @@ import 'squaregolf/log.dart';
 class FlutterBluePlusAdapter implements BleAdapter {
   BluetoothDevice? _device;
 
+  /// Discovered characteristics, keyed by normalised characteristic UUID.
+  /// Populated by [discoverServices] — the reference matches by characteristic
+  /// UUID alone, so we never assume which service holds a characteristic.
+  final Map<String, BluetoothCharacteristic> _chars = {};
+
   @override
   Stream<List<BleScannedDevice>> scan({Duration timeout = const Duration(seconds: 15)}) {
     lmLog('scan', 'startScan timeout=${timeout.inSeconds}s');
@@ -58,6 +63,7 @@ class FlutterBluePlusAdapter implements BleAdapter {
   Future<void> connect(String deviceId) async {
     lmLog('conn', 'BLE.connect $deviceId');
     _device = BluetoothDevice.fromId(deviceId);
+    _chars.clear();
     await _device!.connect(autoConnect: false);
     lmLog('conn', 'BLE.connect → ok');
   }
@@ -71,59 +77,72 @@ class FlutterBluePlusAdapter implements BleAdapter {
   }
 
   @override
-  Future<Stream<List<int>>> subscribeToCharacteristic({
-    required String deviceId,
-    required String serviceUuid,
-    required String characteristicUuid,
-  }) async {
+  Future<void> discoverServices(String deviceId) async {
     final device = _device ?? BluetoothDevice.fromId(deviceId);
-    lmLog('conn', 'discoverServices() for subscribe $characteristicUuid');
+    lmLog('conn', 'discoverServices()');
     final services = await device.discoverServices();
-    lmLog('conn',
-        'discovered ${services.length} services: ${services.map((s) => s.uuid.toString()).join(", ")}');
-
+    _chars.clear();
     for (final service in services) {
-      if (service.uuid.toString() != serviceUuid) continue;
       for (final char in service.characteristics) {
-        if (char.uuid.toString() != characteristicUuid) continue;
-        await char.setNotifyValue(true);
-        lmLog('conn', 'subscribed $characteristicUuid');
-        return char.onValueReceived;
+        _chars[normalizeUuid(char.uuid.toString())] = char;
       }
     }
+    lmLog(
+      'conn',
+      'discovered ${services.length} services / ${_chars.length} characteristics: '
+          '${_chars.keys.join(", ")}',
+    );
+  }
 
-    lmWarn('conn',
-        'characteristic $characteristicUuid not found under $serviceUuid');
-    throw Exception('Characteristic $characteristicUuid not found');
+  Future<BluetoothCharacteristic> _characteristic(
+    String deviceId,
+    String characteristicUuid,
+  ) async {
+    if (_chars.isEmpty) await discoverServices(deviceId);
+    final key = normalizeUuid(characteristicUuid);
+    final char = _chars[key];
+    if (char == null) {
+      lmWarn('conn', 'characteristic $characteristicUuid not found');
+      throw Exception('Characteristic $characteristicUuid not found');
+    }
+    return char;
+  }
+
+  @override
+  Future<Stream<List<int>>> subscribeToCharacteristic({
+    required String deviceId,
+    required String characteristicUuid,
+  }) async {
+    final char = await _characteristic(deviceId, characteristicUuid);
+    await char.setNotifyValue(true);
+    lmLog('conn', 'subscribed $characteristicUuid');
+    return char.onValueReceived;
+  }
+
+  @override
+  Future<List<int>> readCharacteristic({
+    required String deviceId,
+    required String characteristicUuid,
+  }) async {
+    final char = await _characteristic(deviceId, characteristicUuid);
+    return char.read();
   }
 
   @override
   Future<void> writeCharacteristic({
     required String deviceId,
-    required String serviceUuid,
     required String characteristicUuid,
     required List<int> data,
     bool withResponse = true,
   }) async {
-    final device = _device ?? BluetoothDevice.fromId(deviceId);
-    final services = await device.discoverServices();
-
-    for (final service in services) {
-      if (service.uuid.toString() != serviceUuid) continue;
-      for (final char in service.characteristics) {
-        if (char.uuid.toString() != characteristicUuid) continue;
-        await char.write(data, withoutResponse: !withResponse);
-        return;
-      }
-    }
-
-    lmWarn('conn', 'write target $characteristicUuid not found');
-    throw Exception('Characteristic $characteristicUuid not found');
+    final char = await _characteristic(deviceId, characteristicUuid);
+    await char.write(data, withoutResponse: !withResponse);
   }
 
   @override
   Future<void> disconnect(String deviceId) async {
     lmLog('conn', 'BLE.disconnect $deviceId');
+    _chars.clear();
     await _device?.disconnect();
     _device = null;
   }
@@ -131,6 +150,7 @@ class FlutterBluePlusAdapter implements BleAdapter {
   @override
   Future<void> dispose() async {
     lmLog('conn', 'BLE.dispose');
+    _chars.clear();
     await _device?.disconnect();
     _device = null;
   }

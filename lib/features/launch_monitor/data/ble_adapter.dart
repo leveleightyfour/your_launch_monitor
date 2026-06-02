@@ -20,6 +20,12 @@ class BleScannedDevice {
 /// Platform-agnostic BLE adapter interface.
 ///
 /// Mobile / macOS use [FlutterBluePlusAdapter]; Windows uses [WinBleAdapter].
+///
+/// The Square Golf reference connector does **not** hard-code a service UUID:
+/// after connecting it discovers *all* services/characteristics and then looks
+/// up the ones it needs by their **characteristic UUID** alone. The methods
+/// below therefore take only a [characteristicUuid] — implementations must
+/// discover all services (see [discoverServices]) and match by characteristic.
 abstract class BleAdapter {
   /// Discover nearby BLE devices. Each emission is the latest scan batch.
   Stream<List<BleScannedDevice>> scan({Duration timeout});
@@ -33,18 +39,30 @@ abstract class BleAdapter {
   /// Stream that emits `false` when the connected device disconnects.
   Stream<bool> connectionStateOf(String deviceId);
 
-  /// Discover services, then subscribe to notifications on [characteristicUuid]
-  /// within [serviceUuid]. Returns a stream of raw byte packets.
+  /// Discover *all* services and characteristics and cache them keyed by
+  /// characteristic UUID. Must be called (or implicitly triggered) before any
+  /// read/write/subscribe. Matches the reference's "discover everything, then
+  /// match by characteristic UUID" model.
+  Future<void> discoverServices(String deviceId);
+
+  /// Subscribe to notifications on [characteristicUuid] (matched across all
+  /// discovered services). Returns a stream of raw byte packets.
   Future<Stream<List<int>>> subscribeToCharacteristic({
     required String deviceId,
-    required String serviceUuid,
     required String characteristicUuid,
   });
 
-  /// Write bytes to a characteristic.
+  /// Read the current value of [characteristicUuid] (matched across all
+  /// discovered services).
+  Future<List<int>> readCharacteristic({
+    required String deviceId,
+    required String characteristicUuid,
+  });
+
+  /// Write bytes to [characteristicUuid] (matched across all discovered
+  /// services).
   Future<void> writeCharacteristic({
     required String deviceId,
-    required String serviceUuid,
     required String characteristicUuid,
     required List<int> data,
     bool withResponse = true,
@@ -55,4 +73,19 @@ abstract class BleAdapter {
 
   /// Tear down the adapter entirely.
   Future<void> dispose();
+}
+
+/// Normalises a BLE UUID string for comparison: lower-cases it and expands
+/// 16-bit (`2a19`) or 32-bit short forms to the full 128-bit Bluetooth base
+/// UUID. This lets us match regardless of whether the platform reports short
+/// or long UUIDs.
+String normalizeUuid(String uuid) {
+  final u = uuid.toLowerCase().trim();
+  if (u.length == 4) {
+    return '0000$u-0000-1000-8000-00805f9b34fb';
+  }
+  if (u.length == 8) {
+    return '$u-0000-1000-8000-00805f9b34fb';
+  }
+  return u;
 }
