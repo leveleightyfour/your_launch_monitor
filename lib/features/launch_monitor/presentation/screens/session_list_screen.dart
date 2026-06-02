@@ -37,7 +37,19 @@ class SessionListScreen extends ConsumerWidget {
                   const Spacer(),
                   _ConnectChip(
                     status: status,
-                    onConnect: () => DevicePickerSheet.show(context),
+                    onConnect: () async {
+                      await DevicePickerSheet.show(context);
+                      // The picker's own dispose calls stopScan but the
+                      // mutation can race with route transition teardown,
+                      // leaving the chip stuck on "Scanning…". Force-reset
+                      // here once the modal has fully closed.
+                      final s = ref.read(launchMonitorProvider).status;
+                      if (s == LaunchMonitorStatus.scanning) {
+                        await ref
+                            .read(launchMonitorProvider.notifier)
+                            .stopScan();
+                      }
+                    },
                     onDisconnect: notifier.disconnect,
                   ),
                 ],
