@@ -14,9 +14,12 @@ import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/launch_moni
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/log.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/notifications.dart'
     as sg;
+import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/commands.dart'
+    as sg;
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
+import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 
 part 'providers.g.dart';
 
@@ -47,7 +50,15 @@ class LaunchMonitor extends _$LaunchMonitor {
   StreamSubscription? _connectionSubscription;
   StreamSubscription? _ballSub;
   StreamSubscription? _clubSub;
+  StreamSubscription? _capacitorSub;
+  StreamSubscription? _deviceBatterySub;
   LaunchMonitorService? _service;
+
+  /// Connected device type — drives whether Omni-only commands are sent.
+  sg.SquareGolfDeviceType _connectedType = sg.SquareGolfDeviceType.unknown;
+
+  /// Player handedness sent with club-select / detect commands.
+  sg.Handedness _handedness = sg.Handedness.rightHanded;
 
   /// DB row ID for the in-progress session (created on first shot).
   int? _draftSessionId;
@@ -64,6 +75,24 @@ class LaunchMonitor extends _$LaunchMonitor {
   @override
   LaunchMonitorState build() {
     ref.onDispose(_cleanup);
+
+    // When the active club changes while connected, push the new club to the
+    // device (re-arming if detection is currently active).
+    ref.listen(activeClubProvider, (_, next) {
+      if (next == null) return;
+      if (state.status != LaunchMonitorStatus.connected) return;
+      unawaited(
+        state.detecting ? _autoArm() : _pushClubSelection(next),
+      );
+    });
+
+    // When unit prefs change while connected to an Omni, re-send the units.
+    ref.listen(unitPrefsProvider, (_, next) {
+      if (state.status != LaunchMonitorStatus.connected) return;
+      if (_connectedType != sg.SquareGolfDeviceType.omni) return;
+      unawaited(_pushOmniUnits(next));
+    });
+
     // Pre-seed with sample shots so the UI has data to render during development.
     return LaunchMonitorState(shots: List.from(activeSeedShots));
   }
@@ -134,12 +163,16 @@ class LaunchMonitor extends _$LaunchMonitor {
     state = state.copyWith(status: LaunchMonitorStatus.connecting, error: null);
     _deviceId = deviceId;
 
+    final resolvedType = type == sg.SquareGolfDeviceType.unknown
+        ? sg.SquareGolfDeviceType.home
+        : type;
+    _connectedType = resolvedType;
+
     final svc = LaunchMonitorService(
       ble: _ble,
       deviceId: deviceId,
-      deviceType: type == sg.SquareGolfDeviceType.unknown
-          ? sg.SquareGolfDeviceType.home
-          : type,
+      deviceType: resolvedType,
+      initialHandedness: _handedness,
     );
     _service = svc;
 
@@ -149,7 +182,12 @@ class LaunchMonitor extends _$LaunchMonitor {
           state = state.copyWith(status: LaunchMonitorStatus.connected);
           break;
         case sg.LmConnectionStatus.disconnected:
-          state = state.copyWith(status: LaunchMonitorStatus.disconnected);
+          // Reset live device state on an unexpected drop.
+          state = state.copyWith(
+            status: LaunchMonitorStatus.disconnected,
+            capacitorReady: false,
+            detecting: false,
+          );
           break;
         case sg.LmConnectionStatus.connecting:
         case sg.LmConnectionStatus.scanning:
@@ -160,12 +198,112 @@ class LaunchMonitor extends _$LaunchMonitor {
 
     _ballSub = svc.ballMetrics.listen(_onBallMetrics);
     _clubSub = svc.clubMetrics.listen(_onClubMetrics);
+    _capacitorSub = svc.capacitorReadyStream.listen((ready) {
+      state = state.copyWith(capacitorReady: ready);
+      // Auto-arm once the capacitor is charged so the session goes live.
+      if (ready && !state.detecting) unawaited(_autoArm());
+    });
+    _deviceBatterySub = svc.batteryLevel.listen((pct) {
+      state = state.copyWith(batteryPercent: pct);
+    });
 
     try {
       await svc.connect();
+      // Surface the device info read during the connect handshake. Set the
+      // status explicitly here too — the connection-status stream listener may
+      // not have flipped it yet, and the pushes below guard on `connected`.
+      state = state.copyWith(
+        status: LaunchMonitorStatus.connected,
+        isOmni: resolvedType == sg.SquareGolfDeviceType.omni,
+        serialNumber: svc.serialNumber,
+        firmwareVersion: svc.firmware.primary,
+        batteryPercent: svc.batteryPercent,
+        capacitorReady: svc.capacitorReady,
+      );
+      // Push the current club + units so the device starts in the right state.
+      final club = ref.read(activeClubProvider);
+      if (club != null) await _pushClubSelection(club);
+      if (resolvedType == sg.SquareGolfDeviceType.omni) {
+        await _pushOmniUnits(ref.read(unitPrefsProvider));
+      }
+      // If the capacitor was already charged, arm immediately (otherwise the
+      // capacitor-ready stream will trigger arming when it finishes charging).
+      if (svc.capacitorReady) unawaited(_autoArm());
     } catch (e) {
       await _disposeService();
       _setError('Connection failed: $e');
+    }
+  }
+
+  // ── Ball-detection arming ──────────────────────────────────────────────────
+
+  /// Arm ball detection for the active club (select club → activate detection).
+  Future<void> armBallDetection() => _autoArm();
+
+  /// Stop ball detection.
+  Future<void> disarmBallDetection() async {
+    final svc = _service;
+    if (svc == null || state.status != LaunchMonitorStatus.connected) return;
+    try {
+      await svc.deactivateBallDetection();
+      state = state.copyWith(detecting: false);
+    } catch (e) {
+      lmWarn('bridge', 'disarm failed: $e');
+    }
+  }
+
+  /// Set player handedness; re-sent to the device when connected (Omni).
+  void setHandedness(sg.Handedness handedness) {
+    _handedness = handedness;
+    final svc = _service;
+    if (svc != null &&
+        state.status == LaunchMonitorStatus.connected &&
+        _connectedType == sg.SquareGolfDeviceType.omni) {
+      unawaited(svc.setOmniHandedness(handedness));
+    }
+  }
+
+  Future<void> _autoArm() async {
+    final svc = _service;
+    if (svc == null || state.status != LaunchMonitorStatus.connected) return;
+    final club = ref.read(activeClubProvider);
+    try {
+      await svc.armBallDetection(
+        club: club == null ? null : _clubCodeFor(club),
+        handedness: _handedness,
+        spinMode: sg.SpinMode.advanced,
+      );
+      state = state.copyWith(detecting: true);
+    } catch (e) {
+      lmWarn('bridge', 'arm failed: $e');
+    }
+  }
+
+  Future<void> _pushClubSelection(Club club) async {
+    final svc = _service;
+    if (svc == null || state.status != LaunchMonitorStatus.connected) return;
+    try {
+      await svc.selectClub(_clubCodeFor(club), _handedness);
+    } catch (e) {
+      lmWarn('bridge', 'club select failed: $e');
+    }
+  }
+
+  Future<void> _pushOmniUnits(UnitPrefs prefs) async {
+    final svc = _service;
+    if (svc == null || state.status != LaunchMonitorStatus.connected) return;
+    // The device only reports m/s on the wire — these units affect its own
+    // display. Map the app prefs to the nearest supported device units.
+    final speed = prefs.speed == SpeedUnit.kmh
+        ? sg.OmniSpeedUnit.metersPerSecond
+        : sg.OmniSpeedUnit.mph;
+    final distance = prefs.distance == DistanceUnit.meters
+        ? sg.OmniDistanceUnit.meters
+        : sg.OmniDistanceUnit.yardsYards;
+    try {
+      await svc.setOmniUnits(speed: speed, distance: distance);
+    } catch (e) {
+      lmWarn('bridge', 'set units failed: $e');
     }
   }
 
@@ -420,10 +558,15 @@ class LaunchMonitor extends _$LaunchMonitor {
     _pendingShotInList = null;
     await _ballSub?.cancel();
     await _clubSub?.cancel();
+    await _capacitorSub?.cancel();
+    await _deviceBatterySub?.cancel();
     await _connectionSubscription?.cancel();
     _ballSub = null;
     _clubSub = null;
+    _capacitorSub = null;
+    _deviceBatterySub = null;
     _connectionSubscription = null;
+    _connectedType = sg.SquareGolfDeviceType.unknown;
     final svc = _service;
     _service = null;
     if (svc != null) {
@@ -468,4 +611,66 @@ extension on ShotData {
       tagIds: tagIds,
     );
   }
+}
+
+/// Maps an app [Club] to the closest Square Golf protocol [sg.ClubCode]. The
+/// protocol only models a fixed set of clubs (driver, 3/5/7 wood, 4–9 iron,
+/// PW/AW/SW, putter), so app clubs outside that set are mapped to the nearest
+/// equivalent. The mapping matters most for the putter (spin is forced
+/// invalid) and the alignment stick.
+sg.ClubCode _clubCodeFor(Club club) {
+  switch (club.type) {
+    case ClubType.putter:
+      return sg.ClubCodes.putter;
+    case ClubType.wood:
+    case ClubType.miniDriver:
+      if (club.id == 'dr' || club.id == 'mdr') return sg.ClubCodes.driver;
+      final n = int.tryParse(club.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 3;
+      if (n <= 3) return sg.ClubCodes.wood3;
+      if (n <= 5) return sg.ClubCodes.wood5;
+      return sg.ClubCodes.wood7;
+    case ClubType.hybrid:
+      final n = int.tryParse(club.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 4;
+      return _ironCode(n);
+    case ClubType.iron:
+      final n = int.tryParse(club.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 7;
+      return _ironCode(n);
+    case ClubType.wedge:
+      return _wedgeCode(club.id);
+  }
+}
+
+sg.ClubCode _ironCode(int n) {
+  switch (n.clamp(4, 9)) {
+    case 4:
+      return sg.ClubCodes.iron4;
+    case 5:
+      return sg.ClubCodes.iron5;
+    case 6:
+      return sg.ClubCodes.iron6;
+    case 7:
+      return sg.ClubCodes.iron7;
+    case 8:
+      return sg.ClubCodes.iron8;
+    default:
+      return sg.ClubCodes.iron9;
+  }
+}
+
+sg.ClubCode _wedgeCode(String id) {
+  switch (id) {
+    case 'pw':
+      return sg.ClubCodes.pitchingWedge;
+    case 'gw':
+      return sg.ClubCodes.approachWedge;
+    case 'sw':
+      return sg.ClubCodes.sandWedge;
+    case 'lw':
+      return sg.ClubCodes.sandWedge;
+  }
+  // Degree wedges (e.g. "52deg"): bucket by loft.
+  final loft = int.tryParse(id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 56;
+  if (loft <= 48) return sg.ClubCodes.pitchingWedge;
+  if (loft <= 53) return sg.ClubCodes.approachWedge;
+  return sg.ClubCodes.sandWedge;
 }
