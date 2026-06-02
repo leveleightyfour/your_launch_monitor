@@ -53,6 +53,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         ref.watch(launchMonitorProvider.select((s) => s.capacitorReady));
     final detecting =
         ref.watch(launchMonitorProvider.select((s) => s.detecting));
+    final ballDetected =
+        ref.watch(launchMonitorProvider.select((s) => s.ballDetected));
+    final ballReady =
+        ref.watch(launchMonitorProvider.select((s) => s.ballReady));
     final notifier = ref.read(launchMonitorProvider.notifier);
     // activeClub: sets which club new shots are tagged with (bottom pill)
     final activeClub = ref.watch(activeClubProvider);
@@ -128,6 +132,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               batteryPercent: battery,
               capacitorReady: capacitorReady,
               detecting: detecting,
+              ballDetected: ballDetected,
+              ballReady: ballReady,
               onToggleArm: status == LaunchMonitorStatus.connected
                   ? () => detecting
                       ? notifier.disarmBallDetection()
@@ -385,6 +391,8 @@ class _ActiveSessionTopBar extends StatelessWidget {
   final int? batteryPercent;
   final bool capacitorReady;
   final bool detecting;
+  final bool ballDetected;
+  final bool ballReady;
   final VoidCallback? onToggleArm;
   final VoidCallback onClose;
   final VoidCallback? onSimulateShot;
@@ -395,6 +403,8 @@ class _ActiveSessionTopBar extends StatelessWidget {
     this.batteryPercent,
     this.capacitorReady = false,
     this.detecting = false,
+    this.ballDetected = false,
+    this.ballReady = false,
     this.onToggleArm,
     required this.onClose,
     this.onSimulateShot,
@@ -475,6 +485,13 @@ class _ActiveSessionTopBar extends StatelessWidget {
                         ? context.accent
                         : AppColors.textMuted,
               ),
+            ),
+            const SizedBox(width: 8),
+            // Ball ready / not-ready indicator.
+            _BallReadyIndicator(
+              detecting: detecting,
+              ballDetected: ballDetected,
+              ballReady: ballReady,
             ),
             const SizedBox(width: 8),
           ],
@@ -1012,6 +1029,68 @@ class _CircleButton extends StatelessWidget {
           border: Border.all(color: AppColors.border2),
         ),
         child: Center(child: child),
+      ),
+    );
+  }
+}
+
+// ── Ball ready indicator ─────────────────────────────────────────────────────
+
+/// Small circular indicator for ball state:
+/// - grey  : detection not armed
+/// - red   : armed, no ball detected
+/// - amber : ball detected but not in a ready position
+/// - green : ball detected and ready to hit
+class _BallReadyIndicator extends StatelessWidget {
+  final bool detecting;
+  final bool ballDetected;
+  final bool ballReady;
+
+  const _BallReadyIndicator({
+    required this.detecting,
+    required this.ballDetected,
+    required this.ballReady,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, tooltip) = !detecting
+        ? (AppColors.textDimmed, 'Detection off')
+        : ballReady
+            ? (Colors.green, 'Ball ready')
+            : ballDetected
+                ? (Colors.orange, 'Ball detected — not ready')
+                : (Colors.red, 'No ball detected');
+
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.border2),
+        ),
+        child: Center(
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              boxShadow: detecting && ballReady
+                  ? [
+                      BoxShadow(
+                        color: color.withAlpha(153),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+          ),
+        ),
       ),
     );
   }

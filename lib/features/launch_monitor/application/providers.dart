@@ -50,6 +50,7 @@ class LaunchMonitor extends _$LaunchMonitor {
   StreamSubscription? _connectionSubscription;
   StreamSubscription? _ballSub;
   StreamSubscription? _clubSub;
+  StreamSubscription? _sensorSub;
   StreamSubscription? _capacitorSub;
   StreamSubscription? _deviceBatterySub;
   LaunchMonitorService? _service;
@@ -187,6 +188,8 @@ class LaunchMonitor extends _$LaunchMonitor {
             status: LaunchMonitorStatus.disconnected,
             capacitorReady: false,
             detecting: false,
+            ballDetected: false,
+            ballReady: false,
           );
           break;
         case sg.LmConnectionStatus.connecting:
@@ -198,6 +201,12 @@ class LaunchMonitor extends _$LaunchMonitor {
 
     _ballSub = svc.ballMetrics.listen(_onBallMetrics);
     _clubSub = svc.clubMetrics.listen(_onClubMetrics);
+    _sensorSub = svc.sensorData.listen((s) {
+      state = state.copyWith(
+        ballDetected: s.ballDetected,
+        ballReady: s.ballReady,
+      );
+    });
     _capacitorSub = svc.capacitorReadyStream.listen((ready) {
       state = state.copyWith(capacitorReady: ready);
       // Auto-arm once the capacitor is charged so the session goes live.
@@ -558,11 +567,13 @@ class LaunchMonitor extends _$LaunchMonitor {
     _pendingShotInList = null;
     await _ballSub?.cancel();
     await _clubSub?.cancel();
+    await _sensorSub?.cancel();
     await _capacitorSub?.cancel();
     await _deviceBatterySub?.cancel();
     await _connectionSubscription?.cancel();
     _ballSub = null;
     _clubSub = null;
+    _sensorSub = null;
     _capacitorSub = null;
     _deviceBatterySub = null;
     _connectionSubscription = null;

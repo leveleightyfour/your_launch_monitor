@@ -26,6 +26,12 @@ class LaunchMonitorState {
   /// Whether ball detection is currently armed.
   final bool detecting;
 
+  /// Whether the device currently sees a ball in the hitting area.
+  final bool ballDetected;
+
+  /// Whether the detected ball is in a valid position and ready to hit.
+  final bool ballReady;
+
   const LaunchMonitorState({
     this.status = LaunchMonitorStatus.disconnected,
     this.shots = const [],
@@ -36,6 +42,8 @@ class LaunchMonitorState {
     this.firmwareVersion,
     this.capacitorReady = false,
     this.detecting = false,
+    this.ballDetected = false,
+    this.ballReady = false,
   });
 
   ShotData? get lastShot => shots.isEmpty ? null : shots.first;
@@ -50,6 +58,8 @@ class LaunchMonitorState {
     String? firmwareVersion,
     bool? capacitorReady,
     bool? detecting,
+    bool? ballDetected,
+    bool? ballReady,
   }) {
     return LaunchMonitorState(
       status: status ?? this.status,
@@ -61,6 +71,8 @@ class LaunchMonitorState {
       firmwareVersion: firmwareVersion ?? this.firmwareVersion,
       capacitorReady: capacitorReady ?? this.capacitorReady,
       detecting: detecting ?? this.detecting,
+      ballDetected: ballDetected ?? this.ballDetected,
+      ballReady: ballReady ?? this.ballReady,
     );
   }
 }
