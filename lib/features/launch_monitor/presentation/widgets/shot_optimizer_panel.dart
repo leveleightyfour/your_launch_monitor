@@ -9,7 +9,11 @@ import 'package:omni_sniffer/shared/theme.dart';
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 class ShotOptimizerPanel extends ConsumerWidget {
-  const ShotOptimizerPanel({super.key});
+  /// Drawn when the panel sits as a docked side panel; disable when the
+  /// panel fills the screen as its own tab.
+  final bool showLeftBorder;
+
+  const ShotOptimizerPanel({super.key, this.showLeftBorder = true});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -18,9 +22,11 @@ class ShotOptimizerPanel extends ConsumerWidget {
     final prefs = ref.watch(unitPrefsProvider);
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.background,
-        border: Border(left: BorderSide(color: AppColors.border)),
+        border: showLeftBorder
+            ? const Border(left: BorderSide(color: AppColors.border))
+            : null,
       ),
       child: analysis == null
           ? const _EmptyState()
