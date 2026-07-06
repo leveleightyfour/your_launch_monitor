@@ -20,9 +20,9 @@ import 'package:omni_sniffer/shared/theme.dart';
 
 // ── View enums ─────────────────────────────────────────────────────────────────
 
-enum _ActiveView { split, tiles, dispersion, club, table }
+enum _ActiveView { split, tiles, dispersion, club, table, optimizer }
 
-enum _ActivePaneView { tiles, dispersion, club, table }
+enum _ActivePaneView { tiles, dispersion, club, table, optimizer }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 
@@ -119,6 +119,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         onRowTap: (i) =>
             ref.read(selectedShotIndexProvider.notifier).state = i,
       ),
+      _ActiveView.optimizer =>
+        const ShotOptimizerPanel(showLeftBorder: false),
     };
 
     return Scaffold(
@@ -539,6 +541,7 @@ class _ActiveNavBar extends StatelessWidget {
     (_ActiveView.dispersion, Icons.scatter_plot, 'Dispersion'),
     (_ActiveView.club, Icons.sports_golf, 'Club'),
     (_ActiveView.table, Icons.table_rows, 'Table'),
+    (_ActiveView.optimizer, Icons.tune, 'Optimizer'),
   ];
 
   @override
@@ -681,6 +684,8 @@ class _ActiveSplitView extends StatelessWidget {
           selectedIndex: selectedShotIndex,
           onRowTap: (i) => onShotSelected(selectedShotIndex == i ? null : i),
         );
+      case _ActivePaneView.optimizer:
+        return const ShotOptimizerPanel(showLeftBorder: false);
     }
   }
 
@@ -732,6 +737,7 @@ class _ActivePaneHeader extends StatelessWidget {
     (_ActivePaneView.dispersion, Icons.scatter_plot, 'Dispersion'),
     (_ActivePaneView.club, Icons.sports_golf, 'Club'),
     (_ActivePaneView.table, Icons.table_rows, 'Table'),
+    (_ActivePaneView.optimizer, Icons.tune, 'Optimizer'),
   ];
 
   String get _label => _options.firstWhere((o) => o.$1 == current).$3;
