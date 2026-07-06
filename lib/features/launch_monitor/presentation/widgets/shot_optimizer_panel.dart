@@ -82,12 +82,13 @@ class _OptimizerContent extends StatelessWidget {
         _SummarySection(analysis: analysis, prefs: prefs),
         const Divider(height: 1, color: AppColors.border),
         if (analysis.diagnostics.isNotEmpty) ...[
-          _DiagnosticsSection(diagnostics: analysis.diagnostics),
+          _DiagnosticsSection(
+              diagnostics: analysis.diagnostics, prefs: prefs),
           const Divider(height: 1, color: AppColors.border),
         ],
         if (analysis.recommendations.isNotEmpty) ...[
           _RecommendationsSection(
-              recommendations: analysis.recommendations),
+              recommendations: analysis.recommendations, prefs: prefs),
           const Divider(height: 1, color: AppColors.border),
         ],
         if (sessionSummary != null)
@@ -263,8 +264,9 @@ class _MiniStat extends StatelessWidget {
 
 class _DiagnosticsSection extends StatelessWidget {
   final List<Diagnostic> diagnostics;
+  final UnitPrefs prefs;
 
-  const _DiagnosticsSection({required this.diagnostics});
+  const _DiagnosticsSection({required this.diagnostics, required this.prefs});
 
   @override
   Widget build(BuildContext context) {
@@ -281,7 +283,8 @@ class _DiagnosticsSection extends StatelessWidget {
                 color: AppColors.textDimmed),
           ),
           const SizedBox(height: 8),
-          for (final diag in diagnostics) _DiagnosticTile(diagnostic: diag),
+          for (final diag in diagnostics)
+            _DiagnosticTile(diagnostic: diag, prefs: prefs),
         ],
       ),
     );
@@ -290,18 +293,19 @@ class _DiagnosticsSection extends StatelessWidget {
 
 class _DiagnosticTile extends StatelessWidget {
   final Diagnostic diagnostic;
+  final UnitPrefs prefs;
 
-  const _DiagnosticTile({required this.diagnostic});
+  const _DiagnosticTile({required this.diagnostic, required this.prefs});
 
   Color get _severityColor => switch (diagnostic.severity) {
-        'critical' => const Color(0xFFEF4444),
-        'high' => const Color(0xFFF59E0B),
+        Severity.critical => const Color(0xFFEF4444),
+        Severity.high => const Color(0xFFF59E0B),
         _ => const Color(0xFF60A5FA),
       };
 
   IconData get _icon => switch (diagnostic.severity) {
-        'critical' => Icons.error_outline,
-        'high' => Icons.warning_amber_rounded,
+        Severity.critical => Icons.error_outline,
+        Severity.high => Icons.warning_amber_rounded,
         _ => Icons.info_outline,
       };
 
@@ -336,7 +340,7 @@ class _DiagnosticTile extends StatelessWidget {
                 ),
               ),
               Text(
-                diagnostic.severity.toUpperCase(),
+                diagnostic.severity.name.toUpperCase(),
                 style: AppTextStyles.sans(
                     size: 9,
                     weight: FontWeight.w600,
@@ -388,7 +392,7 @@ class _DiagnosticTile extends StatelessWidget {
               diagnostic.estimatedYardsLost! > 1.0) ...[
             const SizedBox(height: 4),
             Text(
-              '~${diagnostic.estimatedYardsLost!.toStringAsFixed(0)} yards lost',
+              '~${prefs.dist(diagnostic.estimatedYardsLost!).toStringAsFixed(0)} ${prefs.distLabel} lost',
               style: AppTextStyles.sans(
                   size: 10,
                   weight: FontWeight.w600,
@@ -438,8 +442,12 @@ class _DiagnosticTile extends StatelessWidget {
 
 class _RecommendationsSection extends StatelessWidget {
   final List<Recommendation> recommendations;
+  final UnitPrefs prefs;
 
-  const _RecommendationsSection({required this.recommendations});
+  const _RecommendationsSection({
+    required this.recommendations,
+    required this.prefs,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -457,7 +465,7 @@ class _RecommendationsSection extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           for (final rec in recommendations.take(3))
-            _RecommendationTile(recommendation: rec),
+            _RecommendationTile(recommendation: rec, prefs: prefs),
         ],
       ),
     );
@@ -466,8 +474,12 @@ class _RecommendationsSection extends StatelessWidget {
 
 class _RecommendationTile extends StatelessWidget {
   final Recommendation recommendation;
+  final UnitPrefs prefs;
 
-  const _RecommendationTile({required this.recommendation});
+  const _RecommendationTile({
+    required this.recommendation,
+    required this.prefs,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -521,7 +533,7 @@ class _RecommendationTile extends StatelessWidget {
               recommendation.expectedGainYards! > 1.0) ...[
             const SizedBox(height: 4),
             Text(
-              'Estimated gain: +${recommendation.expectedGainYards!.toStringAsFixed(0)} yards',
+              'Estimated gain: +${prefs.dist(recommendation.expectedGainYards!).toStringAsFixed(0)} ${prefs.distLabel}',
               style: AppTextStyles.sans(
                   size: 10,
                   weight: FontWeight.w600,
@@ -590,6 +602,41 @@ class _SessionSummarySection extends StatelessWidget {
               ],
             ),
           ),
+          if (summary.topIssueMetric != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border2),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.insights,
+                      size: 13, color: Color(0xFFF59E0B)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Top issue: ${_DiagnosticTile._humanizeMetric(summary.topIssueMetric!)}'
+                      ' (${summary.topIssueCount}× this session)',
+                      style: AppTextStyles.sans(
+                          size: 10, color: AppColors.textMuted),
+                    ),
+                  ),
+                  if (summary.totalYardsLost > 1)
+                    Text(
+                      '~${prefs.dist(summary.totalYardsLost).toStringAsFixed(0)} ${prefs.distLabel} lost',
+                      style: AppTextStyles.sans(
+                          size: 10,
+                          weight: FontWeight.w600,
+                          color: const Color(0xFFF59E0B)),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
