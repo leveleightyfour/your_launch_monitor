@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:omni_sniffer/features/launch_monitor/application/providers.dart';
+import 'package:omni_sniffer/features/launch_monitor/data/last_device_provider.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/constants.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -69,8 +70,12 @@ class _DevicePickerSheetState extends ConsumerState<DevicePickerSheet> {
 
   @override
   void dispose() {
+    // Don't touch `ref` here — Riverpod forbids it during teardown
+    // (Bad state: "Cannot use ref after the widget was disposed"). The
+    // chip's onConnect handler in session_list_screen.dart awaits the
+    // modal close and resets scan state explicitly, which is the canonical
+    // path. We only clean up our local stream subscription here.
     _sub?.cancel();
-    ref.read(launchMonitorProvider.notifier).stopScan();
     super.dispose();
   }
 
@@ -79,7 +84,15 @@ class _DevicePickerSheetState extends ConsumerState<DevicePickerSheet> {
     final notifier = ref.read(launchMonitorProvider.notifier);
     if (!mounted) return;
     Navigator.of(context).pop();
-    await notifier.connectToDevice(device.id, device.type);
+    await notifier.connectToDevice(
+      device.id,
+      device.type,
+      deviceName: device.name,
+    );
+  }
+
+  Future<void> _forgetSavedDevice() async {
+    await ref.read(launchMonitorProvider.notifier).forgetLastDevice();
   }
 
   @override
@@ -156,6 +169,46 @@ class _DevicePickerSheetState extends ConsumerState<DevicePickerSheet> {
                           _DeviceTile(device: _devices[i], onTap: _selectDevice),
                     ),
             ),
+            // Forget action — only when a previous device was remembered.
+            Consumer(builder: (ctx, ref, _) {
+              final last = ref.watch(lastDeviceProvider);
+              if (last == null) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Auto-reconnect: ${last.name.isEmpty ? last.id : last.name}',
+                        style: AppTextStyles.sans(
+                          size: 11,
+                          color: AppColors.textMuted,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _forgetSavedDevice,
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFEF4444),
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        'Forget',
+                        style: AppTextStyles.sans(
+                          size: 12,
+                          weight: FontWeight.w600,
+                          color: const Color(0xFFEF4444),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
           ],
         ),
       ),

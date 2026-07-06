@@ -1431,6 +1431,54 @@ class _SessionSummarySheet extends StatelessWidget {
 
 // ── Club picker sheet ──────────────────────────────────────────────────────────
 
+/// Sort key for the active-club picker.
+///
+/// Groups (driver → mini → woods → hybrids → irons → wedges → putter), then
+/// sorts within each group by the leading number / loft so 3w comes before
+/// 5w, 4i before 7i, and 52° before 60°.
+int _clubSortKey(Club c) {
+  const int dr = 0;
+  const int mini = 100;
+  const int wood = 200;
+  const int hybrid = 300;
+  const int iron = 400;
+  const int wedge = 500;
+  const int putter = 999;
+
+  if (c.id == 'dr') return dr;
+  if (c.id == 'mdr') return mini;
+
+  // Pull a numeric sub-key from the id (e.g. "3w" → 3, "52deg" → 52, "7i" → 7).
+  final m = RegExp(r'(\d+)').firstMatch(c.id);
+  final n = m == null ? 99 : int.tryParse(m.group(1)!) ?? 99;
+
+  return switch (c.type) {
+    ClubType.wood => wood + n,
+    ClubType.miniDriver => mini,
+    ClubType.hybrid => hybrid + n,
+    ClubType.iron => iron + n,
+    ClubType.wedge => wedge + _wedgeSubKey(c.id, n),
+    ClubType.putter => putter,
+  };
+}
+
+/// Named wedges (PW/GW/SW/LW) get fixed slots before any degree-marked wedges
+/// so the picker reads pw → gw → sw → lw → 50° → 52° … in the wedge group.
+int _wedgeSubKey(String id, int extractedNumber) {
+  switch (id.toLowerCase()) {
+    case 'pw':
+      return 1;
+    case 'gw':
+      return 2;
+    case 'sw':
+      return 3;
+    case 'lw':
+      return 4;
+    default:
+      return 100 + extractedNumber;
+  }
+}
+
 class _ClubPickerSheet extends StatelessWidget {
   final List<Club> clubs;
   final Club? selected;
@@ -1444,6 +1492,8 @@ class _ClubPickerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sorted = [...clubs]
+      ..sort((a, b) => _clubSortKey(a).compareTo(_clubSortKey(b)));
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1458,11 +1508,11 @@ class _ClubPickerSheet extends StatelessWidget {
         Flexible(
           child: ListView.separated(
             shrinkWrap: true,
-            itemCount: clubs.length,
+            itemCount: sorted.length,
             separatorBuilder: (_, __) =>
                 const Divider(height: 1, color: AppColors.border),
             itemBuilder: (_, i) {
-              final club = clubs[i];
+              final club = sorted[i];
               final isSelected = club.id == selected?.id;
               return ListTile(
                 leading: Container(

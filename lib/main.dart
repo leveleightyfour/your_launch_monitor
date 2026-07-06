@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:omni_sniffer/features/launch_monitor/data/last_device_provider.dart';
 import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
 import 'package:omni_sniffer/shared/providers/router.dart';
 import 'package:omni_sniffer/shared/theme.dart';
@@ -18,7 +19,10 @@ void main() async {
     // user's response.
     unawaited(_primeBlePermissions());
   }
-  await AccentColorNotifier.preload();
+  await Future.wait([
+    AccentColorNotifier.preload(),
+    LastDeviceNotifier.preload(),
+  ]);
   runApp(const ProviderScope(child: OmniSnifferApp()));
 }
 

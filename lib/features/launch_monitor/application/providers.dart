@@ -7,6 +7,7 @@ import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.
 import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/ble_adapter.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/ble_adapter_factory.dart';
+import 'package:omni_sniffer/features/launch_monitor/data/last_device_provider.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/seed_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/constants.dart'
     as sg;
@@ -22,8 +23,6 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.d
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 
 part 'providers.g.dart';
-
-const _deviceNamePrefix = sg.bluetoothDevicePrefix;
 
 /// m/s → mph constant for protocol-unit conversions.
 const double _mpsToMph = 2.23694;
@@ -53,6 +52,12 @@ class LaunchMonitor extends _$LaunchMonitor {
   StreamSubscription? _sensorSub;
   StreamSubscription? _capacitorSub;
   StreamSubscription? _deviceBatterySub;
+  StreamSubscription? _putterModeSub;
+
+  /// Club id the user had active when the device entered putting mode; used
+  /// to restore it when the device returns to swing mode. Null when no
+  /// putter-mode session is in progress.
+  String? _preputterClubId;
   LaunchMonitorService? _service;
 
   /// Connected device type — drives whether Omni-only commands are sent.
@@ -94,9 +99,40 @@ class LaunchMonitor extends _$LaunchMonitor {
       unawaited(_pushOmniUnits(next));
     });
 
-    // Pre-seed with sample shots so the UI has data to render during development.
-    return LaunchMonitorState(shots: List.from(activeSeedShots));
+    // Attempt a silent reconnect to the last successfully-connected device
+    // if the user has the pref enabled. Deferred so BT permissions have a
+    // moment to settle and the UI has had a chance to mount.
+    unawaited(_maybeAutoReconnect());
+
+    // No automatic seeding — the active session starts empty. The simulate
+    // button still uses the seed pools as shot templates via [simulateShot].
+    return const LaunchMonitorState(shots: []);
   }
+
+  /// Silent reconnect attempt to the last successfully-connected device.
+  /// Fails open: a missing/disabled pref, a dead device, or any platform
+  /// error just leaves the chip in its disconnected state — no banner.
+  Future<void> _maybeAutoReconnect() async {
+    // Let BT permissions / adapter init finish before kicking a connect.
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+
+    if (state.status != LaunchMonitorStatus.disconnected) return;
+
+    final prefs = ref.read(unitPrefsProvider);
+    if (!prefs.autoReconnect) return;
+
+    final last = ref.read(lastDeviceProvider);
+    if (last == null) return;
+
+    lmLog('bridge',
+        'auto-reconnect attempt to ${last.name} (${last.id}, ${last.type.name})');
+    await _connectToDeviceInternal(last.id, last.type, silent: true);
+  }
+
+  /// Clears the persisted last-connected-device record. Triggered from the
+  /// "Forget device" action in the picker.
+  Future<void> forgetLastDevice() =>
+      ref.read(lastDeviceProvider.notifier).forget();
 
   // ── Public connection API ────────────────────────────────────────────────
 
@@ -118,14 +154,22 @@ class LaunchMonitor extends _$LaunchMonitor {
     state = state.copyWith(status: LaunchMonitorStatus.scanning, error: null);
 
     return raw.map((devices) {
-      return devices
-          .where((d) => d.name.startsWith(_deviceNamePrefix))
-          .map((d) => DiscoveredSquareGolfDevice(
-                id: d.id,
-                name: d.name,
-                type: sg.detectDeviceType(d.manufacturerDataHex),
-              ))
-          .toList();
+      return devices.where((d) {
+        // Permissive while we triage the Omni's actual advertised name —
+        // include anything that looks plausibly Square Golf by name OR by
+        // Omni manufacturer-data magic.
+        final lower = d.name.toLowerCase();
+        return lower.contains('square') ||
+            lower.contains('omni') ||
+            lower.contains('sg') ||
+            d.manufacturerDataHex
+                .toUpperCase()
+                .contains(sg.omniManufacturerDataHex.toUpperCase());
+      }).map((d) => DiscoveredSquareGolfDevice(
+            id: d.id,
+            name: d.name,
+            type: sg.detectDeviceType(d.manufacturerDataHex),
+          )).toList();
     }).handleError((Object e) {
       _setError('Scan failed: $e');
     });
@@ -150,16 +194,38 @@ class LaunchMonitor extends _$LaunchMonitor {
   /// Connect to a specific device discovered via [scanForDevices], using the
   /// real Square Golf protocol (heartbeat, Omni init burst if applicable, and
   /// typed metric streams).
+  ///
+  /// Triggered from the picker on user tap. The picker passes the
+  /// human-readable name from the scan so we can persist it for the
+  /// auto-reconnect on next launch.
   Future<void> connectToDevice(
     String deviceId,
-    sg.SquareGolfDeviceType type,
-  ) async {
+    sg.SquareGolfDeviceType type, {
+    String? deviceName,
+  }) =>
+      _connectToDeviceInternal(
+        deviceId,
+        type,
+        deviceName: deviceName,
+        silent: false,
+      );
+
+  Future<void> _connectToDeviceInternal(
+    String deviceId,
+    sg.SquareGolfDeviceType type, {
+    String? deviceName,
+    bool silent = false,
+  }) async {
     if (state.status == LaunchMonitorStatus.connecting ||
         state.status == LaunchMonitorStatus.connected) {
       lmLog('bridge', 'connectToDevice ignored — status=${state.status.name}');
       return;
     }
-    lmLog('bridge', 'connectToDevice id=$deviceId type=${type.name}');
+    lmLog(
+      'bridge',
+      'connectToDevice id=$deviceId type=${type.name}'
+          '${silent ? ' (silent reconnect)' : ''}',
+    );
     await _ble.stopScan();
     state = state.copyWith(status: LaunchMonitorStatus.connecting, error: null);
     _deviceId = deviceId;
@@ -215,6 +281,7 @@ class LaunchMonitor extends _$LaunchMonitor {
     _deviceBatterySub = svc.batteryLevel.listen((pct) {
       state = state.copyWith(batteryPercent: pct);
     });
+    _putterModeSub = svc.putterModeStream.listen(_onDevicePutterMode);
 
     try {
       await svc.connect();
@@ -238,9 +305,26 @@ class LaunchMonitor extends _$LaunchMonitor {
       // If the capacitor was already charged, arm immediately (otherwise the
       // capacitor-ready stream will trigger arming when it finishes charging).
       if (svc.capacitorReady) unawaited(_autoArm());
+
+      // Remember the device so the next app launch can auto-reconnect.
+      unawaited(
+        ref.read(lastDeviceProvider.notifier).save(
+              LastConnectedDevice(
+                id: deviceId,
+                name: deviceName ?? '',
+                type: resolvedType,
+              ),
+            ),
+      );
     } catch (e) {
       await _disposeService();
-      _setError('Connection failed: $e');
+      if (silent) {
+        // Auto-reconnect: drop quietly back to disconnected, no banner.
+        lmLog('bridge', 'silent reconnect failed: $e');
+        state = state.copyWith(status: LaunchMonitorStatus.disconnected);
+      } else {
+        _setError('Connection failed: $e');
+      }
     }
   }
 
@@ -401,6 +485,45 @@ class LaunchMonitor extends _$LaunchMonitor {
   }
 
   // ── Internal: bridging service streams to ShotData ───────────────────────
+
+  /// Reacts to the device's physical putt/swing mode switch.
+  ///
+  /// * `true` — the device is in putting mode. Stash whatever club the user
+  ///   had active and switch the app's active club to the putter so new
+  ///   shots get tagged correctly.
+  /// * `false` — the device is back to swing mode. Restore the previously
+  ///   stashed club; if nothing was stashed (or that club no longer exists
+  ///   in the bag), fall back to driver, then any club at all.
+  void _onDevicePutterMode(bool putterMode) {
+    final clubs = ref.read(clubsProvider);
+    if (clubs.isEmpty) return;
+    final activeNotifier = ref.read(activeClubProvider.notifier);
+    final active = ref.read(activeClubProvider);
+
+    if (putterMode) {
+      if (active?.id == 'pt') return; // already on putter
+      _preputterClubId = active?.id;
+      final putter = clubs.where((c) => c.id == 'pt').firstOrNull;
+      if (putter == null) {
+        lmLog('bridge',
+            'device entered putter mode but no putter in clubs list');
+        return;
+      }
+      lmLog('bridge',
+          'device → putter mode, switching active club from ${active?.id} → pt');
+      activeNotifier.state = putter;
+    } else {
+      if (active?.id != 'pt') return; // user already moved off putter
+      final restoreId = _preputterClubId ?? 'dr';
+      final club = clubs.where((c) => c.id == restoreId).firstOrNull ??
+          clubs.where((c) => c.id == 'dr').firstOrNull ??
+          clubs.first;
+      lmLog('bridge',
+          'device → swing mode, restoring active club to ${club.id}');
+      activeNotifier.state = club;
+      _preputterClubId = null;
+    }
+  }
 
   Future<void> _onBallMetrics(sg.BallMetrics ball) async {
     final club = ref.read(activeClubProvider);
@@ -570,13 +693,16 @@ class LaunchMonitor extends _$LaunchMonitor {
     await _sensorSub?.cancel();
     await _capacitorSub?.cancel();
     await _deviceBatterySub?.cancel();
+    await _putterModeSub?.cancel();
     await _connectionSubscription?.cancel();
     _ballSub = null;
     _clubSub = null;
     _sensorSub = null;
     _capacitorSub = null;
     _deviceBatterySub = null;
+    _putterModeSub = null;
     _connectionSubscription = null;
+    _preputterClubId = null;
     _connectedType = sg.SquareGolfDeviceType.unknown;
     final svc = _service;
     _service = null;

@@ -28,12 +28,19 @@ class FlutterBluePlusAdapter implements BleAdapter {
                 ),
               ))
           .toList();
-      // Log only Square Golf candidates so the scan doesn't drown the log.
+      // Log every device while we're hunting for the Omni's advertised name.
+      // Tighten this back to a prefix filter once we know what it actually
+      // calls itself.
       for (final d in mapped) {
-        if (d.name.startsWith('SquareGolf')) {
-          lmLog('scan',
-              'found name="${d.name}" id=${d.id} mfg=${d.manufacturerDataHex}');
-        }
+        final isCandidate = d.name.toLowerCase().contains('square') ||
+            d.name.toLowerCase().contains('omni') ||
+            d.name.toLowerCase().contains('sg') ||
+            d.manufacturerDataHex.toUpperCase().contains('3033303041');
+        lmLog(
+          'scan',
+          '${isCandidate ? '★ ' : '  '}name="${d.name}" id=${d.id} '
+              'mfg=${d.manufacturerDataHex}',
+        );
       }
       return mapped;
     });

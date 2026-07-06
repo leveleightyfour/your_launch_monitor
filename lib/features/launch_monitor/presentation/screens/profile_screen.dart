@@ -128,6 +128,13 @@ class ProfileScreen extends ConsumerWidget {
                 i == 0 ? DispersionStandard.trackman : DispersionStandard.pga,
               ),
             ),
+            _UnitToggleRow(
+              icon: Icons.autorenew,
+              label: 'Auto-reconnect',
+              options: const ['Off', 'On'],
+              selected: prefs.autoReconnect ? 1 : 0,
+              onSelect: (i) => notifier.setAutoReconnect(i == 1),
+            ),
             _AccentPickerRow(
               current: accent,
               onSelect: accentNotifier.setAccent,

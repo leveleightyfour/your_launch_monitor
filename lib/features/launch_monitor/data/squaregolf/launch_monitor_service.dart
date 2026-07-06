@@ -116,6 +116,7 @@ class LaunchMonitorService {
   final _statusCtrl = StreamController<LaunchMonitorStatus>.broadcast();
   final _batteryCtrl = StreamController<int>.broadcast();
   final _capacitorCtrl = StreamController<bool>.broadcast();
+  final _putterModeCtrl = StreamController<bool>.broadcast();
 
   Stream<LmConnectionStatus> get connectionStatus => _connectionCtrl.stream;
   Stream<LmEvent> get notifications => _eventCtrl.stream;
@@ -126,6 +127,23 @@ class LaunchMonitorService {
   Stream<LaunchMonitorStatus> get monitorStatus => _statusCtrl.stream;
   Stream<int> get batteryLevel => _batteryCtrl.stream;
   Stream<bool> get capacitorReadyStream => _capacitorCtrl.stream;
+
+  /// Fires `true` when the device enters putting mode and `false` when it
+  /// exits. Backed by byte[4] of the Omni `11 03` status frame (the
+  /// `omniClubSelection` byte per the Go connector). Only emits on changes.
+  Stream<bool> get putterModeStream => _putterModeCtrl.stream;
+
+  /// Device-side club selection byte (the value at `bytesList[4]` of the
+  /// latest Omni status frame). Exposed so we can compare with the value the
+  /// app last sent and avoid command loops.
+  String? get omniClubSelectionByte => _lastOmniClubSelection;
+  String? _lastOmniClubSelection;
+  bool? _lastEmittedPutterMode;
+
+  /// Byte value of [`bytesList[4]`] that indicates putting mode on the
+  /// Omni — first guess based on the putter club code prefix (`01`). If
+  /// device logs show a different value, swap this constant.
+  static const String _kOmniPutterModeByte = '01';
 
   // ── Device info (populated during connect) ──────────────────────────────────
 
@@ -148,8 +166,24 @@ class LaunchMonitorService {
   int _sequence = 0;
   bool _connected = false;
   bool _capacitorReady = false;
-  String? _lastBallRaw; // dedupe (matches Go behaviour)
+  /// Last ball-metrics frame's data bytes (everything after the sequence
+  /// byte at index 2) joined with spaces. Used to dedupe re-emissions of
+  /// the same physical shot — byte[2] is a sequence/validity counter that
+  /// changes between two frames for the same swing, so comparing the full
+  /// frame misses duplicates.
+  String? _lastBallDataKey;
+
+  /// Wall-clock timestamp of the most recent accepted ball-metrics frame.
+  /// Any frame inside [_ballDedupeWindow] of it is treated as a duplicate
+  /// even if the bytes differ slightly (e.g. validity flags re-settling).
+  DateTime? _lastBallAt;
+  static const Duration _ballDedupeWindow = Duration(milliseconds: 250);
   bool _awaitingClubMetrics = false;
+
+  /// Unique 1-byte headers we've already logged as "UNKNOWN". A high-rate
+  /// chatter frame like `71 …` (Omni keep-alive) is logged once per session
+  /// and then suppressed so a real shot's `11 02` isn't lost in the noise.
+  final Set<String> _seenUnknownHeaders = <String>{};
 
   // Ball-detection / arming state (for idle-recovery + putter handling).
   bool _detectActive = false;
@@ -301,7 +335,10 @@ class LaunchMonitorService {
 
     // Reset derived state.
     _capacitorReady = false;
-    _lastBallRaw = null;
+    _lastBallDataKey = null;
+    _lastBallAt = null;
+    _lastOmniClubSelection = null;
+    _lastEmittedPutterMode = null;
 
     try {
       await _ble.disconnect(deviceId);
@@ -322,6 +359,7 @@ class LaunchMonitorService {
     await _statusCtrl.close();
     await _batteryCtrl.close();
     await _capacitorCtrl.close();
+    await _putterModeCtrl.close();
   }
 
   // ── Post-connect reads ───────────────────────────────────────────────────
@@ -703,13 +741,27 @@ class LaunchMonitorService {
           _eventCtrl.add(LmSensorEvent(s));
           break;
         case NotificationKind.ballMetrics:
-          // Dedupe like the Go reference: identical raw bytes → same shot.
-          final raw = list.join(' ');
-          if (raw == _lastBallRaw) {
-            lmLog('notify', '<- $hex  → BALL (duplicate, ignored)');
+          // Two-layer dedupe — the device fires more than one ball-metrics
+          // frame per swing, with the sequence byte at index 2 advancing
+          // and validity flags occasionally re-settling between them.
+          // 1. Time window: anything within 250 ms of the previous shot is
+          //    treated as a re-emission, regardless of bytes.
+          // 2. Data-only key: bytes after index 2 only — masks both the
+          //    sequence byte and any bitmask flicker on the same swing.
+          final now = DateTime.now();
+          final dataKey = list.skip(3).join(' ');
+          final tooSoon = _lastBallAt != null &&
+              now.difference(_lastBallAt!) < _ballDedupeWindow;
+          if (tooSoon || dataKey == _lastBallDataKey) {
+            lmLog(
+              'notify',
+              '<- $hex  → BALL (duplicate, ignored — '
+                  '${tooSoon ? "within window" : "same data"})',
+            );
             return;
           }
-          _lastBallRaw = raw;
+          _lastBallDataKey = dataKey;
+          _lastBallAt = now;
           var b = parseShotBallMetrics(list);
           if (deviceType == SquareGolfDeviceType.omni) {
             b = applyOmniBallValidityBitmask(b);
@@ -811,9 +863,30 @@ class LaunchMonitorService {
               _currentHand = Handedness.leftHanded;
             }
           }
+          // Omni: byte[4] is the device-side club selection (per the Go
+          // connector's `omniClubSelection`). When it matches the putter
+          // code, the device is in putting mode — emit a transition event
+          // so the bridge can swap the active club.
+          String? clubSelByte;
+          String? sensorByte;
+          if (deviceType == SquareGolfDeviceType.omni) {
+            if (list.length > 4) clubSelByte = list[4];
+            if (list.length > 7) sensorByte = list[7];
+            if (clubSelByte != null &&
+                clubSelByte != _lastOmniClubSelection) {
+              _lastOmniClubSelection = clubSelByte;
+              final isPutterMode = clubSelByte == _kOmniPutterModeByte;
+              if (_lastEmittedPutterMode != isPutterMode) {
+                _lastEmittedPutterMode = isPutterMode;
+                _putterModeCtrl.add(isPutterMode);
+              }
+            }
+          }
           lmLog(
             'notify',
-            '<- $hex  → STATUS ${status?.name ?? "unknown(${list[statusIdx]})"}',
+            '<- $hex  → STATUS ${status?.name ?? "unknown(${list[statusIdx]})"}'
+                '${clubSelByte != null ? ' clubSel=$clubSelByte' : ''}'
+                '${sensorByte != null ? ' sensor=$sensorByte' : ''}',
           );
           if (status != null) {
             _statusCtrl.add(status);
@@ -856,7 +929,14 @@ class LaunchMonitorService {
           }
           break;
         case NotificationKind.unknown:
-          lmLog('notify', '<- $hex  → UNKNOWN');
+          // Log each unique header byte once per session, then suppress.
+          // Catches genuinely-new frame types while filtering out the
+          // Omni's `71 …` keep-alive chatter.
+          final header = list.isNotEmpty ? list[0] : '';
+          if (_seenUnknownHeaders.add(header)) {
+            lmLog('notify',
+                '<- $hex  → UNKNOWN (first seen — further $header frames suppressed)');
+          }
           break;
       }
     } catch (e, s) {

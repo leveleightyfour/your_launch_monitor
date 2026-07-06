@@ -41,10 +41,16 @@ class WinBleAdapter implements BleAdapter {
         for (final b in device.manufacturerData) {
           mfg.write((b & 0xFF).toRadixString(16).padLeft(2, '0'));
         }
-        if (name.startsWith('SquareGolf')) {
-          lmLog('scan',
-              'found name="$name" id=${device.address} mfg=$mfg');
-        }
+        final mfgStr = mfg.toString();
+        final lower = name.toLowerCase();
+        final isCandidate = lower.contains('square') ||
+            lower.contains('omni') ||
+            lower.contains('sg') ||
+            mfgStr.toUpperCase().contains('3033303041');
+        lmLog(
+          'scan',
+          '${isCandidate ? '★ ' : '  '}name="$name" id=${device.address} mfg=$mfgStr',
+        );
         devices[device.address] = BleScannedDevice(
           id: device.address,
           name: name,

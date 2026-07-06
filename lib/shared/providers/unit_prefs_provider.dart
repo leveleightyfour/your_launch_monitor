@@ -38,21 +38,28 @@ class UnitPrefs {
   final SpeedUnit speed;
   final DispersionStandard dispersionStandard;
 
+  /// When `true`, the app silently reconnects to the last known launch
+  /// monitor on startup.
+  final bool autoReconnect;
+
   const UnitPrefs({
     this.distance = DistanceUnit.meters,
     this.speed = SpeedUnit.mph,
     this.dispersionStandard = DispersionStandard.trackman,
+    this.autoReconnect = true,
   });
 
   UnitPrefs copyWith({
     DistanceUnit? distance,
     SpeedUnit? speed,
     DispersionStandard? dispersionStandard,
+    bool? autoReconnect,
   }) =>
       UnitPrefs(
         distance: distance ?? this.distance,
         speed: speed ?? this.speed,
         dispersionStandard: dispersionStandard ?? this.dispersionStandard,
+        autoReconnect: autoReconnect ?? this.autoReconnect,
       );
 
   /// Display label for distance values.
@@ -68,10 +75,11 @@ class UnitPrefs {
   /// Convert a value stored in mph to the display unit.
   double spd(double mph) => speed == SpeedUnit.kmh ? mph * 1.60934 : mph;
 
-  Map<String, String> toJson() => {
+  Map<String, dynamic> toJson() => {
     'distance': distance.name,
     'speed': speed.name,
     'dispersionStandard': dispersionStandard.name,
+    'autoReconnect': autoReconnect,
   };
 
   factory UnitPrefs.fromJson(Map<String, dynamic> j) => UnitPrefs(
@@ -87,6 +95,7 @@ class UnitPrefs {
       (e) => e.name == j['dispersionStandard'],
       orElse: () => DispersionStandard.trackman,
     ),
+    autoReconnect: j['autoReconnect'] as bool? ?? true,
   );
 }
 
@@ -137,6 +146,11 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
 
   void setDispersionStandard(DispersionStandard standard) {
     state = state.copyWith(dispersionStandard: standard);
+    _save();
+  }
+
+  void setAutoReconnect(bool enabled) {
+    state = state.copyWith(autoReconnect: enabled);
     _save();
   }
 }
