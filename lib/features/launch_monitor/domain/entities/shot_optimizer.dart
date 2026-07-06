@@ -3,6 +3,11 @@ import 'dart:math' as math;
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 
+// ── Severity ─────────────────────────────────────────────────────────────────
+
+/// Ordered most → least severe so [Severity.index] doubles as a sort rank.
+enum Severity { critical, high, medium, low }
+
 // ── Diagnostic ───────────────────────────────────────────────────────────────
 
 class Diagnostic {
@@ -10,7 +15,7 @@ class Diagnostic {
   final double measured;
   final double minOptimal;
   final double maxOptimal;
-  final String severity; // 'critical', 'high', 'medium', 'low'
+  final Severity severity;
   final List<String> possibleRootCauses;
   /// Estimated yards lost due to this inefficiency.
   final double? estimatedYardsLost;
@@ -69,7 +74,7 @@ class ShotAnalysis {
   });
 
   List<Diagnostic> get criticalIssues =>
-      diagnostics.where((d) => d.severity == 'critical').toList();
+      diagnostics.where((d) => d.severity == Severity.critical).toList();
 
   List<Diagnostic> get outOfRangeMetrics =>
       diagnostics.where((d) => d.isOutOfRange).toList();
@@ -151,15 +156,22 @@ class OptimalRanges {
   }
 
   /// Returns the optimal spin rate range for wedges.
-  /// PW ~10,000, GW/SW/LW higher. Degree wedges scale with loft.
+  /// PW ~10,000, GW/SW/LW higher. Degree wedges scale with loft:
+  /// target ≈ 5,000 + 100 rpm per degree of loft (±1,000 rpm window).
   static (double, double) _wedgeSpinRange(String? clubId) {
     if (clubId == null) return (8500.0, 11000.0);
+    final loftMatch = RegExp(r'^(\d+)deg$').firstMatch(clubId);
+    if (loftMatch != null) {
+      final loft = double.parse(loftMatch.group(1)!);
+      final target = (5000.0 + loft * 100.0).clamp(9000.0, 11500.0);
+      return (target - 1000, target + 1000);
+    }
     return switch (clubId) {
       'pw' => (8500.0, 10500.0),
       'gw' => (9000.0, 11000.0),
       'sw' => (9500.0, 11500.0),
       'lw' => (10000.0, 12000.0),
-      _ => (8500.0, 11000.0), // degree wedges
+      _ => (8500.0, 11000.0),
     };
   }
 
@@ -171,7 +183,7 @@ class OptimalRanges {
     String? clubId,
   }) {
     // Driver uses speed-aware windows.
-    if (clubId == 'dr' || (clubType == ClubType.wood && clubId == 'dr')) {
+    if (clubId == 'dr') {
       final band = _driverSpeedBand(clubSpeed ?? 95.0);
       final bandRanges = _driverBySpeed[band]!;
       if (bandRanges.containsKey(metric)) return bandRanges[metric]!;
@@ -204,12 +216,17 @@ class OptimalRanges {
 class ShotOptimizer {
   ShotAnalysis analyze(ShotData shot, ClubType clubType, {String? clubId}) {
     final diagnostics = _generateDiagnostics(shot, clubType, clubId);
-    final recommendations = _generateRecommendations(diagnostics, shot, clubType);
+    final recommendations =
+        _generateRecommendations(diagnostics, shot, clubType, clubId);
 
-    // Estimate optimal carry and gap.
-    final optimalCarry = _estimateOptimalCarry(shot, clubType);
-    final carryGap =
-        optimalCarry != null ? (optimalCarry - shot.carry).clamp(0.0, 999.0) : null;
+    // Estimate optimal carry and gap. The carry model is coarse, so only
+    // report a gap when diagnostics actually found something to fix —
+    // otherwise the "potential gain" is just model noise.
+    final optimalCarry = _estimateOptimalCarry(shot, clubType, clubId);
+    final hasIssues = diagnostics.any((d) => d.isOutOfRange);
+    final carryGap = optimalCarry != null && hasIssues
+        ? (optimalCarry - shot.carry).clamp(0.0, 999.0)
+        : null;
 
     final summary = _generateSummary(diagnostics, recommendations, carryGap);
     return ShotAnalysis(
@@ -239,13 +256,17 @@ class ShotOptimizer {
       clubType, 'smashFactor', clubSpeed: speed, clubId: clubId,
     );
     if (smash > 0 && (smash < smashMin || smash > smashMax)) {
-      final yardsLost = smash < smashMin ? (smashMin - smash) * 50.0 : 0.0;
+      // Lost ball speed = smash deficit × club speed; each mph of ball
+      // speed is worth roughly [_carryYardsPerBallMph] yards of carry.
+      final yardsLost = smash < smashMin
+          ? (smashMin - smash) * speed * _carryYardsPerBallMph(clubType)
+          : 0.0;
       diagnostics.add(Diagnostic(
         metric: 'smashFactor',
         measured: smash,
         minOptimal: smashMin,
         maxOptimal: smashMax,
-        severity: smash < smashMin ? 'critical' : 'low',
+        severity: smash < smashMin ? Severity.critical : Severity.low,
         estimatedYardsLost: yardsLost > 0 ? yardsLost : null,
         possibleRootCauses: smash < smashMin
             ? [
@@ -269,10 +290,10 @@ class ShotOptimizer {
       // Rough estimate: ~2 yards lost per degree off optimal.
       final yardsLost = deviation * 2.0;
       final severity = deviation > 5.0
-          ? 'critical'
+          ? Severity.critical
           : deviation > 3.0
-              ? 'high'
-              : 'medium';
+              ? Severity.high
+              : Severity.medium;
       diagnostics.add(Diagnostic(
         metric: 'launchAngle',
         measured: shot.launchAngle,
@@ -307,10 +328,10 @@ class ShotOptimizer {
       // Only flag if deviation is > 10% outside the window.
       if (deviation > 0.10) {
         final severity = deviation > 0.25
-            ? 'critical'
+            ? Severity.critical
             : deviation > 0.15
-                ? 'high'
-                : 'medium';
+                ? Severity.high
+                : Severity.medium;
         diagnostics.add(Diagnostic(
           metric: 'spinRate',
           measured: shot.spinRate,
@@ -344,7 +365,7 @@ class ShotOptimizer {
           measured: shot.spinRate,
           minOptimal: expectedSpin * 0.85,
           maxOptimal: expectedSpin * 1.15,
-          severity: 'medium',
+          severity: Severity.medium,
           possibleRootCauses: [
             'shaft_lag_inconsistency',
             'wrist_hinge_variation',
@@ -363,7 +384,7 @@ class ShotOptimizer {
           measured: diff,
           minOptimal: 0.0,
           maxOptimal: 5.0,
-          severity: diff > 10.0 ? 'critical' : 'high',
+          severity: diff > 10.0 ? Severity.critical : Severity.high,
           estimatedYardsLost: diff * 1.5,
           possibleRootCauses: [
             'poor_swing_path',
@@ -377,34 +398,48 @@ class ShotOptimizer {
     // ── Tier 3: Attack angle (if available) ──
     if (shot.angleOfAttack != null) {
       final aoa = shot.angleOfAttack!;
-      final isDriver = clubId == 'dr';
-      if (isDriver && aoa < 0) {
-        diagnostics.add(Diagnostic(
-          metric: 'attackAngle',
-          measured: aoa,
-          minOptimal: 3.0,
-          maxOptimal: 5.0,
-          severity: aoa < -3 ? 'high' : 'medium',
-          estimatedYardsLost: aoa.abs() * 2.0,
-          possibleRootCauses: [
-            'hitting_down_on_driver',
-            'ball_position_too_far_back',
-            'excessive_forward_shaft_lean',
-          ],
-        ));
-      } else if (clubType == ClubType.iron) {
-        // Irons should be -4 to -5 (compressing). Flag extremes.
-        if (aoa > -2 || aoa < -7) {
+      final isTeeDriver = clubId == 'dr' || clubType == ClubType.miniDriver;
+      if (isTeeDriver) {
+        // Drivers are hit off a tee — an upward strike maximizes carry.
+        if (aoa < 0) {
           diagnostics.add(Diagnostic(
             metric: 'attackAngle',
             measured: aoa,
-            minOptimal: -5.0, // more negative = deeper
-            maxOptimal: -2.0, // shallow end
-            severity: 'medium',
-            possibleRootCauses: aoa > -2
-                ? ['picking_the_ball', 'ball_position_too_far_forward']
-                : ['digging', 'ball_position_too_far_back'],
+            minOptimal: 3.0,
+            maxOptimal: 5.0,
+            severity: aoa < -3 ? Severity.high : Severity.medium,
+            estimatedYardsLost: aoa.abs() * 2.0,
+            possibleRootCauses: [
+              'hitting_down_on_driver',
+              'ball_position_too_far_back',
+              'excessive_forward_shaft_lean',
+            ],
           ));
+        }
+      } else {
+        // Ground clubs strike with a descending blow; the ideal window
+        // deepens as clubs get shorter.
+        final (double, double)? window = switch (clubType) {
+          ClubType.wood => (-4.0, 0.5),
+          ClubType.hybrid => (-4.5, -0.5),
+          ClubType.iron => (-5.0, -2.0),
+          ClubType.wedge => (-7.0, -3.0),
+          _ => null,
+        };
+        if (window != null) {
+          final (aoaMin, aoaMax) = window;
+          if (aoa < aoaMin - 2 || aoa > aoaMax) {
+            diagnostics.add(Diagnostic(
+              metric: 'attackAngle',
+              measured: aoa,
+              minOptimal: aoaMin,
+              maxOptimal: aoaMax,
+              severity: Severity.medium,
+              possibleRootCauses: aoa > aoaMax
+                  ? ['picking_the_ball', 'ball_position_too_far_forward']
+                  : ['digging', 'ball_position_too_far_back'],
+            ));
+          }
         }
       }
     }
@@ -423,7 +458,7 @@ class ShotOptimizer {
           measured: impactInches,
           minOptimal: 0.0,
           maxOptimal: 0.5,
-          severity: impactInches > 0.75 ? 'high' : 'medium',
+          severity: impactInches > 0.75 ? Severity.high : Severity.medium,
           estimatedYardsLost: impactInches * 5.0,
           possibleRootCauses: [
             'inconsistent_strike_location',
@@ -435,18 +470,18 @@ class ShotOptimizer {
     }
 
     // Sort by tier: critical → high → medium → low.
-    diagnostics.sort((a, b) => _severityRank(a.severity)
-        .compareTo(_severityRank(b.severity)));
+    diagnostics.sort((a, b) => a.severity.index.compareTo(b.severity.index));
 
     return diagnostics;
   }
 
-  static int _severityRank(String severity) => switch (severity) {
-        'critical' => 0,
-        'high' => 1,
-        'medium' => 2,
-        'low' => 3,
-        _ => 4,
+  /// Approximate carry yards gained per mph of ball speed, by club type.
+  static double _carryYardsPerBallMph(ClubType clubType) => switch (clubType) {
+        ClubType.wood || ClubType.miniDriver => 1.9,
+        ClubType.hybrid => 1.7,
+        ClubType.iron => 1.5,
+        ClubType.wedge => 1.0,
+        ClubType.putter => 0.0,
       };
 
   /// Rough spin prediction from spin loft and club speed.
@@ -469,12 +504,14 @@ class ShotOptimizer {
   }
 
   /// Estimate optimal carry for the given swing speed and club type.
-  double? _estimateOptimalCarry(ShotData shot, ClubType clubType) {
+  double? _estimateOptimalCarry(ShotData shot, ClubType clubType, String? clubId) {
     final speed = shot.clubSpeed;
     if (speed <= 0) return null;
     // Rough multipliers derived from tour data (carry per mph of club speed).
+    // Fairway woods carry less per mph than a driver at the same speed.
     final yardPerMph = switch (clubType) {
-      ClubType.wood || ClubType.miniDriver => 2.6, // ~100 mph → ~260 yds
+      ClubType.wood => clubId == 'dr' ? 2.6 : 2.35, // driver ~100 mph → ~260 yds
+      ClubType.miniDriver => 2.5,
       ClubType.hybrid => 2.2,
       ClubType.iron => 1.9,     // ~85 mph → ~162 yds
       ClubType.wedge => 1.4,
@@ -489,6 +526,7 @@ class ShotOptimizer {
     List<Diagnostic> diagnostics,
     ShotData shot,
     ClubType clubType,
+    String? clubId,
   ) {
     final recommendations = <Recommendation>[];
 
@@ -561,7 +599,9 @@ class ShotOptimizer {
           ));
 
         case 'attackAngle':
-          if (diag.measured < 0 && (clubType == ClubType.wood || clubType == ClubType.miniDriver)) {
+          final isTeeDriver =
+              clubId == 'dr' || clubType == ClubType.miniDriver;
+          if (isTeeDriver && diag.measured < 0) {
             recommendations.add(Recommendation(
               action: 'hit_up_on_driver',
               description:
@@ -570,7 +610,35 @@ class ShotOptimizer {
               priority: 2,
               expectedGainYards: diag.estimatedYardsLost,
             ));
+          } else if (!isTeeDriver && diag.measured > diag.maxOptimal) {
+            recommendations.add(Recommendation(
+              action: 'strike_down_through_the_ball',
+              description:
+                  'Attack angle too shallow — picking the ball reduces compression. '
+                  'Move ball position slightly back and keep weight forward at impact.',
+              affectedMetrics: ['attackAngle', 'spinRate', 'carryDistance'],
+              priority: 2,
+            ));
+          } else if (!isTeeDriver && diag.measured < diag.minOptimal) {
+            recommendations.add(Recommendation(
+              action: 'shallow_the_attack_angle',
+              description:
+                  'Attack angle too steep — digging costs speed and consistency. '
+                  'Check ball position isn\'t too far back and stay taller through impact.',
+              affectedMetrics: ['attackAngle', 'smashFactor', 'carryDistance'],
+              priority: 2,
+            ));
           }
+
+        case 'spinLoftMismatch':
+          recommendations.add(Recommendation(
+            action: 'stabilize_delivery',
+            description:
+                'Spin doesn\'t match your delivered loft — usually a strike location or '
+                'shaft lag inconsistency. Groove a repeatable release and check strike pattern.',
+            affectedMetrics: ['spinRate', 'carryDistance'],
+            priority: 3,
+          ));
 
         case 'impactLocation':
           recommendations.add(Recommendation(
@@ -598,7 +666,8 @@ class ShotOptimizer {
     List<Recommendation> recommendations,
     double? carryGap,
   ) {
-    final critical = diagnostics.where((d) => d.severity == 'critical').length;
+    final critical =
+        diagnostics.where((d) => d.severity == Severity.critical).length;
     final outOfRange = diagnostics.where((d) => d.isOutOfRange).length;
 
     final gapStr = carryGap != null && carryGap > 1.0

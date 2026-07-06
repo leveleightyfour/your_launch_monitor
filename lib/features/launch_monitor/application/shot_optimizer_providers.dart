@@ -51,11 +51,23 @@ class SessionOptSummary {
   final double avgSmash;
   final int totalCritical;
 
+  /// Most frequently out-of-range metric this session (null if none).
+  final String? topIssueMetric;
+
+  /// How many shots the top issue appeared on.
+  final int topIssueCount;
+
+  /// Sum of estimated yards lost across all flagged diagnostics.
+  final double totalYardsLost;
+
   const SessionOptSummary({
     required this.totalShots,
     required this.avgCarry,
     required this.avgSmash,
     required this.totalCritical,
+    this.topIssueMetric,
+    this.topIssueCount = 0,
+    this.totalYardsLost = 0,
   });
 }
 
@@ -69,6 +81,8 @@ final sessionOptSummaryProvider = Provider<SessionOptSummary?>((ref) {
   double totalCarry = 0;
   double totalSmash = 0;
   int totalCritical = 0;
+  double totalYardsLost = 0;
+  final issueCounts = <String, int>{};
 
   for (final shot in shots) {
     totalCarry += shot.carry;
@@ -80,6 +94,15 @@ final sessionOptSummaryProvider = Provider<SessionOptSummary?>((ref) {
       shot, club?.type ?? ClubType.iron, clubId: shot.clubId,
     );
     totalCritical += analysis.criticalIssues.length;
+    for (final diag in analysis.outOfRangeMetrics) {
+      issueCounts[diag.metric] = (issueCounts[diag.metric] ?? 0) + 1;
+      totalYardsLost += diag.estimatedYardsLost ?? 0;
+    }
+  }
+
+  MapEntry<String, int>? topIssue;
+  for (final entry in issueCounts.entries) {
+    if (topIssue == null || entry.value > topIssue.value) topIssue = entry;
   }
 
   return SessionOptSummary(
@@ -87,5 +110,8 @@ final sessionOptSummaryProvider = Provider<SessionOptSummary?>((ref) {
     avgCarry: totalCarry / shots.length,
     avgSmash: totalSmash / shots.length,
     totalCritical: totalCritical,
+    topIssueMetric: topIssue?.key,
+    topIssueCount: topIssue?.value ?? 0,
+    totalYardsLost: totalYardsLost,
   );
 });
