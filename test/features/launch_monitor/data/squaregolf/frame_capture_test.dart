@@ -78,6 +78,43 @@ void main() {
     });
   });
 
+  group('the GATT map', () {
+    tearDown(() => FrameCapture.recordGatt(const []));
+
+    test('a second notify characteristic is called out', () {
+      // The one we listen on, plus one we do not. If the device publishes
+      // flight data anywhere else, this is what shows it.
+      FrameCapture.recordGatt(
+        const [
+          '86602102-6b7e-439a-bdd1-489a3213e9bb  [notify]',
+          '86602104-6b7e-439a-bdd1-489a3213e9bb  [read,notify]',
+        ],
+        notifying: const ['86602104-6b7e-439a-bdd1-489a3213e9bb  [read,notify]'],
+      );
+      FrameCapture.record('ballMetrics', _frame(_ballFrame17));
+
+      final report = FrameCapture.report();
+      expect(report, contains('--- characteristics ---'));
+      expect(report, contains('1 characteristic(s) can notify'));
+      expect(report, contains('86602104'));
+    });
+
+    test('nothing is claimed when only the known characteristic notifies', () {
+      FrameCapture.recordGatt(
+        const ['86602102-6b7e-439a-bdd1-489a3213e9bb  [notify]'],
+      );
+      FrameCapture.record('ballMetrics', _frame(_ballFrame17));
+
+      expect(FrameCapture.report(), isNot(contains('can notify')));
+    });
+
+    test('the section is omitted entirely before discovery runs', () {
+      FrameCapture.record('status', _frame('11 03 00'));
+
+      expect(FrameCapture.report(), isNot(contains('characteristics ---')));
+    });
+  });
+
   group('the report is self-describing', () {
     test('carries the device identity so a capture stands alone', () {
       FrameCapture.deviceType = 'omni';

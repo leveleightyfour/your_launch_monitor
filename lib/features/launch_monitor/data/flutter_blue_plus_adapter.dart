@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'ble_adapter.dart';
+import 'squaregolf/constants.dart';
+import 'squaregolf/frame_capture.dart';
 import 'squaregolf/log.dart';
 
 /// BLE adapter backed by [FlutterBluePlus] (Android, iOS, macOS, Linux).
@@ -99,6 +101,31 @@ class FlutterBluePlusAdapter implements BleAdapter {
       'discovered ${services.length} services / ${_chars.length} characteristics: '
           '${_chars.keys.join(", ")}',
     );
+
+    // Keep the GATT map with the capture, not just the debug log — a second
+    // notify characteristic is a candidate home for the flight numbers the
+    // device reports but never sends on the one we listen to.
+    final entries = <String>[];
+    final unsubscribed = <String>[];
+    for (final service in services) {
+      for (final char in service.characteristics) {
+        final p = char.properties;
+        final props = [
+          if (p.read) 'read',
+          if (p.write) 'write',
+          if (p.writeWithoutResponse) 'writeNR',
+          if (p.notify) 'notify',
+          if (p.indicate) 'indicate',
+        ].join(',');
+        final uuid = normalizeUuid(char.uuid.toString());
+        entries.add('$uuid  [$props]');
+        if ((p.notify || p.indicate) &&
+            uuid != normalizeUuid(notificationCharUuid)) {
+          unsubscribed.add('$uuid  [$props]');
+        }
+      }
+    }
+    FrameCapture.recordGatt(entries, notifying: unsubscribed);
   }
 
   Future<BluetoothCharacteristic> _characteristic(

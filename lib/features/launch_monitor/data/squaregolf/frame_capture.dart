@@ -59,6 +59,27 @@ class FrameCapture {
   static String deviceType = 'unknown';
   static String osVersion = '';
 
+  /// The device's GATT map, one entry per characteristic: uuid and the
+  /// properties it advertises.
+  ///
+  /// We subscribe to exactly one characteristic, [notificationCharUuid]. If
+  /// the Omni publishes its flight numbers on a second notify characteristic,
+  /// no implementation would ever have seen them — so the map is worth as much
+  /// as the frames.
+  static final List<String> gatt = [];
+
+  /// Characteristics that can notify but that we never subscribe to.
+  static final List<String> unsubscribedNotify = [];
+
+  static void recordGatt(List<String> entries, {List<String> notifying = const []}) {
+    gatt
+      ..clear()
+      ..addAll(entries);
+    unsubscribedNotify
+      ..clear()
+      ..addAll(notifying);
+  }
+
   static void record(String kind, List<String> bytes) {
     _frames.addLast(CapturedFrame(
       at: DateTime.now(),
@@ -103,6 +124,23 @@ class FrameCapture {
       buf.writeln('${odd.length} frame(s) carrying data we do not decode:');
       for (final f in odd) {
         buf.writeln('  ${f.kind} len=${f.length}  ${f.hex}');
+      }
+      buf.writeln();
+    }
+
+    if (gatt.isNotEmpty) {
+      buf.writeln('--- characteristics ---');
+      for (final g in gatt) {
+        buf.writeln('  $g');
+      }
+      if (unsubscribedNotify.isNotEmpty) {
+        buf
+          ..writeln()
+          ..writeln('${unsubscribedNotify.length} characteristic(s) can notify '
+              'but are never subscribed to:');
+        for (final u in unsubscribedNotify) {
+          buf.writeln('  $u');
+        }
       }
       buf.writeln();
     }
