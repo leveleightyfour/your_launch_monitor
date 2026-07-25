@@ -138,6 +138,13 @@ class ProfileScreen extends ConsumerWidget {
               selected: prefs.autoReconnect ? 1 : 0,
               onSelect: (i) => notifier.setAutoReconnect(i == 1),
             ),
+            _UnitToggleRow(
+              icon: Icons.bolt,
+              label: 'Test shots',
+              options: const ['Off', 'On'],
+              selected: prefs.showTestShotButton ? 1 : 0,
+              onSelect: (i) => notifier.setShowTestShotButton(i == 1),
+            ),
             _AccentPickerRow(
               current: accent,
               onSelect: accentNotifier.setAccent,

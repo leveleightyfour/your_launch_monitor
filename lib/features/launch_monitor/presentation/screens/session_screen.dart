@@ -17,6 +17,7 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/d
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/flight_3d_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/table_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/tiles_tab.dart';
+import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 // ── View enums ─────────────────────────────────────────────────────────────────
@@ -156,6 +157,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                         : notifier.armBallDetection()
                   : null,
               onClose: () => _confirmFinish(context),
+              onSimulateShot: ref.watch(unitPrefsProvider
+                      .select((p) => p.showTestShotButton))
+                  ? () => notifier.simulateShot()
+                  : null,
             ),
             _ActiveNavBar(
               view: _view,
@@ -430,6 +435,10 @@ class _ActiveSessionTopBar extends StatelessWidget {
   final VoidCallback? onToggleArm;
   final VoidCallback onClose;
 
+  /// Injects a jittered seed shot for visualisation testing. Only non-null
+  /// when the "Test shots" profile toggle is on.
+  final VoidCallback? onSimulateShot;
+
   const _ActiveSessionTopBar({
     required this.status,
     this.name,
@@ -440,6 +449,7 @@ class _ActiveSessionTopBar extends StatelessWidget {
     this.ballReady = false,
     this.onToggleArm,
     required this.onClose,
+    this.onSimulateShot,
   });
 
   @override
@@ -524,6 +534,13 @@ class _ActiveSessionTopBar extends StatelessWidget {
               detecting: detecting,
               ballDetected: ballDetected,
               ballReady: ballReady,
+            ),
+            const SizedBox(width: 8),
+          ],
+          if (onSimulateShot != null) ...[
+            _CircleButton(
+              onTap: onSimulateShot,
+              child: Icon(Icons.bolt, size: 14, color: context.accent),
             ),
             const SizedBox(width: 8),
           ],
