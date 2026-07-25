@@ -552,9 +552,10 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
 
   void _add(TileMetric m) => setState(() => _selected.add(m));
   void _remove(TileMetric m) => setState(() => _selected.remove(m));
+  // Uses onReorderItem semantics: newIndex is already adjusted for the
+  // removed item, so no manual decrement is needed.
   void _reorder(int oldIndex, int newIndex) {
     setState(() {
-      if (newIndex > oldIndex) newIndex--;
       _selected.insert(newIndex, _selected.removeAt(oldIndex));
     });
   }
@@ -628,7 +629,7 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
                         shadowColor: Colors.black54,
                         child: child,
                       ),
-                      onReorder: _reorder,
+                      onReorderItem: _reorder,
                       children: [
                         for (int i = 0; i < _selected.length; i++)
                           _buildRow(_selected[i], i, prefs),

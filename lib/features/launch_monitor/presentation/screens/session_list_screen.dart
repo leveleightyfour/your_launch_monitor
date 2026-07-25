@@ -2,12 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/providers.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/sessions_notifier.dart';
+import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/device_picker_sheet.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/status_indicator.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/update_check_cta.dart';
+import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
+import 'package:omni_sniffer/shared/services/csv_export_service.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 class SessionListScreen extends ConsumerWidget {
@@ -84,16 +89,22 @@ class SessionListScreen extends ConsumerWidget {
               ),
             ),
             const Divider(height: 24, color: AppColors.border),
-            // Sessions label
+            // Sessions label + OTA update control
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text(
-                'Sessions',
-                style: AppTextStyles.sans(
-                  size: 10,
-                  weight: FontWeight.w600,
-                  color: AppColors.textDimmed,
-                ),
+              child: Row(
+                children: [
+                  Text(
+                    'Sessions',
+                    style: AppTextStyles.sans(
+                      size: 10,
+                      weight: FontWeight.w600,
+                      color: AppColors.textDimmed,
+                    ),
+                  ),
+                  const Spacer(),
+                  const UpdateCheckCta(),
+                ],
               ),
             ),
             // Combined list: active session first, then past sessions
@@ -381,11 +392,23 @@ class _SessionTile extends ConsumerWidget {
             _SessionActionsMenu(
               session: session,
               onRename: () => _promptRename(context, ref),
+              onExport: () => _exportCsv(context, ref),
               onDelete: () => _promptDelete(context, ref),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _exportCsv(BuildContext context, WidgetRef ref) async {
+    await CsvExportService.exportShots(
+      context: context,
+      shots: session.shots,
+      clubs: ref.read(clubsProvider),
+      tags: ref.read(tagsProvider).valueOrNull ?? const [],
+      prefs: ref.read(unitPrefsProvider),
+      baseName: session.name.isEmpty ? 'session' : session.name,
     );
   }
 
@@ -490,11 +513,13 @@ class _SessionTile extends ConsumerWidget {
 class _SessionActionsMenu extends StatelessWidget {
   final Session session;
   final VoidCallback onRename;
+  final VoidCallback onExport;
   final VoidCallback onDelete;
 
   const _SessionActionsMenu({
     required this.session,
     required this.onRename,
+    required this.onExport,
     required this.onDelete,
   });
 
@@ -511,6 +536,9 @@ class _SessionActionsMenu extends StatelessWidget {
           case _SessionAction.rename:
             onRename();
             break;
+          case _SessionAction.export:
+            onExport();
+            break;
           case _SessionAction.delete:
             onDelete();
             break;
@@ -524,6 +552,17 @@ class _SessionActionsMenu extends StatelessWidget {
               Icon(Icons.edit_outlined, size: 16, color: context.accent),
               const SizedBox(width: 10),
               Text('Rename', style: AppTextStyles.sans(size: 13)),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: _SessionAction.export,
+          enabled: session.shots.isNotEmpty,
+          child: Row(
+            children: [
+              Icon(Icons.ios_share, size: 16, color: context.accent),
+              const SizedBox(width: 10),
+              Text('Export CSV', style: AppTextStyles.sans(size: 13)),
             ],
           ),
         ),
@@ -545,7 +584,7 @@ class _SessionActionsMenu extends StatelessWidget {
   }
 }
 
-enum _SessionAction { rename, delete }
+enum _SessionAction { rename, export, delete }
 
 // ── BLE connect chip ──────────────────────────────────────────────────────────
 

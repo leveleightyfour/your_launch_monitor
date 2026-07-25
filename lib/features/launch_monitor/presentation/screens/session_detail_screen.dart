@@ -115,6 +115,8 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
         ClubTab(shots: shots, clubs: clubs, selectedShot: highlighted),
       _TopView.table => TableTab(
           shots: shots,
+          allShots: allShots,
+          exportName: widget.session.name,
           selectedIndex: selectedInClub >= 0 ? selectedInClub : 0,
           onRowTap: (i) => setState(() {
             if (i < shots.length) {
@@ -401,6 +403,7 @@ class _SplitViewConfigurable extends StatelessWidget {
       case _PaneView.table:
         return TableTab(
           shots: shots,
+          allShots: allShots,
           selectedIndex: selectedShotIndex,
           onRowTap: (i) => onShotSelected(selectedShotIndex == i ? null : i),
         );

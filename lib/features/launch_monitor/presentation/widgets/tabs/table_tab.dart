@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.dart';
+import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
+import 'package:omni_sniffer/shared/services/csv_export_service.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 const _fCol = 3;
@@ -105,12 +107,21 @@ class TableTab extends ConsumerStatefulWidget {
   final ValueChanged<int>? onRowTap;
   final Club? club;
 
+  /// Unfiltered shot list — enables the "All shots" export scope when a club
+  /// filter is active. Falls back to [shots] when omitted.
+  final List<ShotData>? allShots;
+
+  /// Base name for exported CSV files (e.g. the session name).
+  final String exportName;
+
   const TableTab({
     super.key,
     required this.shots,
     this.selectedIndex,
     this.onRowTap,
     this.club,
+    this.allShots,
+    this.exportName = 'session',
   });
 
   @override
@@ -281,37 +292,90 @@ class _TableTabState extends ConsumerState<TableTab> {
             ),
           ],
         ),
-        // Customize button (floating, bottom-right)
+        // Export + Customize buttons (floating, bottom-right)
         Positioned(
           right: 16,
           bottom: 16,
-          child: GestureDetector(
-            onTap: () => _showCustomizeSheet(context, ref, columns),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.border2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _FloatingChip(
+                icon: Icons.ios_share,
+                label: 'Export',
+                onTap: () => _startExport(context),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.tune, size: 14, color: AppColors.textMuted),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Customize',
-                    style: AppTextStyles.sans(
-                      size: 12,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                ],
+              const SizedBox(width: 8),
+              _FloatingChip(
+                icon: Icons.tune,
+                label: 'Customize',
+                onTap: () => _showCustomizeSheet(context, ref, columns),
               ),
-            ),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _startExport(BuildContext context) async {
+    final all = widget.allShots ?? widget.shots;
+    final filtered = widget.shots;
+    final club = widget.club;
+
+    // Only offer a scope choice when a club filter is actually narrowing.
+    List<ShotData>? toExport;
+    if (club != null && filtered.length != all.length) {
+      toExport = await showModalBottomSheet<List<ShotData>>(
+        context: context,
+        backgroundColor: AppColors.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (ctx) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text(
+                  'Export CSV',
+                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+                ),
+              ),
+              const Divider(height: 1, color: AppColors.border),
+              ListTile(
+                leading:
+                    Icon(Icons.table_rows, size: 18, color: ctx.accent),
+                title: Text('All shots (${all.length})',
+                    style: AppTextStyles.sans(size: 14)),
+                onTap: () => Navigator.pop(ctx, all),
+              ),
+              ListTile(
+                leading:
+                    Icon(Icons.filter_alt, size: 18, color: ctx.accent),
+                title: Text(
+                    '${club.shortName} only (${filtered.length})',
+                    style: AppTextStyles.sans(size: 14)),
+                onTap: () => Navigator.pop(ctx, filtered),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      );
+      if (toExport == null) return; // dismissed
+    } else {
+      toExport = filtered;
+    }
+
+    if (toExport.isEmpty || !context.mounted) return;
+    await CsvExportService.exportShots(
+      context: context,
+      shots: toExport,
+      clubs: ref.read(clubsProvider),
+      tags: ref.read(tagsProvider).valueOrNull ?? const [],
+      prefs: ref.read(unitPrefsProvider),
+      baseName: widget.exportName,
     );
   }
 
@@ -562,6 +626,46 @@ class _DynamicShotRow extends StatelessWidget {
   }
 }
 
+// ── Floating action chip (Export / Customize) ─────────────────────────────────
+
+class _FloatingChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _FloatingChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border2),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: AppColors.textMuted),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: AppTextStyles.sans(size: 12, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ── Customize bottom sheet ────────────────────────────────────────────────────
 
 class _TableCustomizeSheet extends StatefulWidget {
@@ -773,7 +877,7 @@ class _RowRevealState extends State<_RowReveal>
 
     return SizeTransition(
       sizeFactor: widget.entry,
-      axisAlignment: -1.0,
+      alignment: Alignment.topCenter,
       child: SlideTransition(
         position: slide,
         child: FadeTransition(

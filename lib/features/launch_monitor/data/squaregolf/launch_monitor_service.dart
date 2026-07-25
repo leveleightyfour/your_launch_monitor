@@ -129,21 +129,17 @@ class LaunchMonitorService {
   Stream<bool> get capacitorReadyStream => _capacitorCtrl.stream;
 
   /// Fires `true` when the device enters putting mode and `false` when it
-  /// exits. Backed by byte[4] of the Omni `11 03` status frame (the
-  /// `omniClubSelection` byte per the Go connector). Only emits on changes.
+  /// exits. Backed by byte[5] of the Omni `11 03` status frame — verified
+  /// live on hardware (fw lm 1.5.8): `00` in normal mode, `03` (the
+  /// Omni-adjusted putter code) held steadily while the physical putting
+  /// switch is on, reverting to `00` immediately on exit. Only emits on
+  /// transitions.
   Stream<bool> get putterModeStream => _putterModeCtrl.stream;
 
-  /// Device-side club selection byte (the value at `bytesList[4]` of the
-  /// latest Omni status frame). Exposed so we can compare with the value the
-  /// app last sent and avoid command loops.
-  String? get omniClubSelectionByte => _lastOmniClubSelection;
-  String? _lastOmniClubSelection;
   bool? _lastEmittedPutterMode;
 
-  /// Byte value of [`bytesList[4]`] that indicates putting mode on the
-  /// Omni — first guess based on the putter club code prefix (`01`). If
-  /// device logs show a different value, swap this constant.
-  static const String _kOmniPutterModeByte = '01';
+  /// Value of STATUS byte[5] while the device is in putting mode.
+  static const String _kOmniPuttingModeByte = '03';
 
   // ── Device info (populated during connect) ──────────────────────────────────
 
@@ -180,10 +176,11 @@ class LaunchMonitorService {
   static const Duration _ballDedupeWindow = Duration(milliseconds: 250);
   bool _awaitingClubMetrics = false;
 
-  /// Unique 1-byte headers we've already logged as "UNKNOWN". A high-rate
-  /// chatter frame like `71 …` (Omni keep-alive) is logged once per session
-  /// and then suppressed so a real shot's `11 02` isn't lost in the noise.
-  final Set<String> _seenUnknownHeaders = <String>{};
+  /// Last payload (all bytes except the final rolling counter/checksum)
+  /// logged per unknown-frame header. High-rate chatter like the Omni's
+  /// `71 …` keep-alive is suppressed while its payload is static, but any
+  /// payload change (e.g. a mode flip) is logged immediately.
+  final Map<String, String> _lastUnknownPayloadByHeader = <String, String>{};
 
   // Ball-detection / arming state (for idle-recovery + putter handling).
   bool _detectActive = false;
@@ -337,7 +334,6 @@ class LaunchMonitorService {
     _capacitorReady = false;
     _lastBallDataKey = null;
     _lastBallAt = null;
-    _lastOmniClubSelection = null;
     _lastEmittedPutterMode = null;
 
     try {
@@ -418,7 +414,7 @@ class LaunchMonitorService {
 
   String _decodeText(List<int> bytes) {
     try {
-      return utf8.decode(bytes, allowMalformed: true).replaceAll(' ', '').trim();
+      return utf8.decode(bytes, allowMalformed: true).replaceAll('\u0000', '').trim();
     } catch (_) {
       return '';
     }
@@ -863,19 +859,16 @@ class LaunchMonitorService {
               _currentHand = Handedness.leftHanded;
             }
           }
-          // Omni: byte[4] is the device-side club selection (per the Go
-          // connector's `omniClubSelection`). When it matches the putter
-          // code, the device is in putting mode — emit a transition event
-          // so the bridge can swap the active club.
-          String? clubSelByte;
+          // Omni: byte[5] is the putting-mode flag (verified on hardware —
+          // 00 normal, 03 while the physical putting switch is on). Emit a
+          // transition event so the bridge can swap the active club.
+          String? modeByte;
           String? sensorByte;
           if (deviceType == SquareGolfDeviceType.omni) {
-            if (list.length > 4) clubSelByte = list[4];
+            if (list.length > 5) modeByte = list[5];
             if (list.length > 7) sensorByte = list[7];
-            if (clubSelByte != null &&
-                clubSelByte != _lastOmniClubSelection) {
-              _lastOmniClubSelection = clubSelByte;
-              final isPutterMode = clubSelByte == _kOmniPutterModeByte;
+            if (modeByte != null) {
+              final isPutterMode = modeByte == _kOmniPuttingModeByte;
               if (_lastEmittedPutterMode != isPutterMode) {
                 _lastEmittedPutterMode = isPutterMode;
                 _putterModeCtrl.add(isPutterMode);
@@ -885,7 +878,7 @@ class LaunchMonitorService {
           lmLog(
             'notify',
             '<- $hex  → STATUS ${status?.name ?? "unknown(${list[statusIdx]})"}'
-                '${clubSelByte != null ? ' clubSel=$clubSelByte' : ''}'
+                '${modeByte != null ? ' mode=$modeByte' : ''}'
                 '${sensorByte != null ? ' sensor=$sensorByte' : ''}',
           );
           if (status != null) {
@@ -929,13 +922,24 @@ class LaunchMonitorService {
           }
           break;
         case NotificationKind.unknown:
-          // Log each unique header byte once per session, then suppress.
-          // Catches genuinely-new frame types while filtering out the
-          // Omni's `71 …` keep-alive chatter.
+          // Suppress repeats of the same unknown frame, but log whenever its
+          // payload changes. The final byte is a rolling counter/checksum on
+          // the Omni's `71 …` keep-alive, so it's excluded from the
+          // comparison — otherwise every frame would count as "changed".
           final header = list.isNotEmpty ? list[0] : '';
-          if (_seenUnknownHeaders.add(header)) {
-            lmLog('notify',
-                '<- $hex  → UNKNOWN (first seen — further $header frames suppressed)');
+          final payload = list.length > 1
+              ? list.sublist(0, list.length - 1).join(' ')
+              : hex;
+          if (_lastUnknownPayloadByHeader[header] != payload) {
+            final firstSeen =
+                !_lastUnknownPayloadByHeader.containsKey(header);
+            _lastUnknownPayloadByHeader[header] = payload;
+            lmLog(
+              'notify',
+              '<- $hex  → UNKNOWN '
+              '(${firstSeen ? "first seen" : "payload changed"} — '
+              'static repeats suppressed)',
+            );
           }
           break;
       }

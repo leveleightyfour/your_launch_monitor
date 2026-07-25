@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/last_device_provider.dart';
 import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
 import 'package:omni_sniffer/shared/providers/router.dart';
+import 'package:omni_sniffer/shared/providers/shorebird_update_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 void main() async {
@@ -47,6 +48,9 @@ class OmniSnifferApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = ref.watch(accentColorProvider);
+    // Construct + start the Shorebird update poller for the app lifetime.
+    // No-ops in debug / non-Shorebird builds.
+    ref.watch(shorebirdUpdateProvider);
     return MaterialApp.router(
       title: "Your Launch Monitor",
       debugShowCheckedModeBanner: false,

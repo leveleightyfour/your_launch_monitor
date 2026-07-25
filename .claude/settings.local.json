@@ -10,7 +10,8 @@
       "Bash([ -d \"/Users/adentutton/Dev/leveleightyfour/$dir\" ])",
       "Read(//Users/adentutton/Dev/leveleightyfour/**)",
       "Read(//Users/adentutton/**)",
-      "Bash(flutter test *)"
+      "Bash(flutter test *)",
+      "Bash(flutter pub *)"
     ],
     "additionalDirectories": [
       "/Users/adentutton/Dev/leveleightyfour/your_launch_monitor/lib/features/launch_monitor/data"

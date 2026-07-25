@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shorebird_code_push/shorebird_code_push.dart';
 
+import 'package:omni_sniffer/shared/app_version.dart';
 import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
@@ -147,9 +149,45 @@ class ProfileScreen extends ConsumerWidget {
               onTap: () {},
             ),
             _SettingsRow(icon: Icons.info, label: 'About', onTap: () {}),
+            const SizedBox(height: 24),
+            const Center(child: _VersionLabel()),
+            const SizedBox(height: 8),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// "Version 1.0.16+17 · Patch 4" — patch number comes from the Shorebird
+/// updater when running a patched release build; plain version otherwise
+/// (debug builds / unpatched installs).
+class _VersionLabel extends StatelessWidget {
+  const _VersionLabel();
+
+  static Future<int?> _currentPatch() async {
+    try {
+      final updater = ShorebirdUpdater();
+      if (!updater.isAvailable) return null;
+      return (await updater.readCurrentPatch())?.number;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<int?>(
+      future: _currentPatch(),
+      builder: (context, snap) {
+        final patch = snap.data;
+        return Text(
+          patch != null
+              ? 'Version $appVersion · Patch $patch'
+              : 'Version $appVersion',
+          style: AppTextStyles.sans(size: 11, color: AppColors.textDimmed),
+        );
+      },
     );
   }
 }
@@ -260,36 +298,47 @@ class _AccentPickerRow extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.palette, size: 18, color: AppColors.textMuted),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text('Accent colour', style: AppTextStyles.sans(size: 14)),
-          ),
+          // Header row — mirrors the other Preferences rows visually.
           Row(
-            mainAxisSize: MainAxisSize.min,
-            children: appAccentSwatches.map((swatch) {
-              final isSelected = swatch.color.toARGB32() == current.toARGB32();
-              return GestureDetector(
-                onTap: () => onSelect(swatch.color),
-                child: Container(
-                  width: 25,
-                  height: 25,
-                  margin: const EdgeInsets.only(left: 6),
-                  decoration: BoxDecoration(
-                    color: swatch.color,
-                    shape: BoxShape.circle,
-                    border: isSelected
-                        ? Border.all(color: Colors.white, width: 2)
+            children: [
+              const Icon(Icons.palette, size: 18, color: AppColors.textMuted),
+              const SizedBox(width: 12),
+              Text('Accent colour', style: AppTextStyles.sans(size: 14)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Swatches wrap to the next line when they don't all fit on one
+          // (e.g. narrow iPhone widths).
+          Padding(
+            padding: const EdgeInsets.only(left: 30),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: appAccentSwatches.map((swatch) {
+                final isSelected =
+                    swatch.color.toARGB32() == current.toARGB32();
+                return GestureDetector(
+                  onTap: () => onSelect(swatch.color),
+                  child: Container(
+                    width: 25,
+                    height: 25,
+                    decoration: BoxDecoration(
+                      color: swatch.color,
+                      shape: BoxShape.circle,
+                      border: isSelected
+                          ? Border.all(color: Colors.white, width: 2)
+                          : null,
+                    ),
+                    child: isSelected
+                        ? const Icon(Icons.check, size: 11, color: Colors.white)
                         : null,
                   ),
-                  child: isSelected
-                      ? const Icon(Icons.check, size: 11, color: Colors.white)
-                      : null,
-                ),
-              );
-            }).toList(),
+                );
+              }).toList(),
+            ),
           ),
         ],
       ),

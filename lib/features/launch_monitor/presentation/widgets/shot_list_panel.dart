@@ -7,6 +7,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.d
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/tag.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tag_picker_sheet.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
+import 'package:omni_sniffer/shared/services/csv_export_service.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 // ── Shot list metric ──────────────────────────────────────────────────────────
@@ -112,6 +113,22 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
     if (_selectedIndices.isEmpty || widget.onDeleteShots == null) return;
     final indices = _selectedIndices.toList();
     await widget.onDeleteShots!(indices);
+    if (mounted) _exitEditMode();
+  }
+
+  Future<void> _exportSelected(BuildContext context) async {
+    if (_selectedIndices.isEmpty) return;
+    final shots = (_selectedIndices.toList()..sort())
+        .map((i) => widget.allShots[i])
+        .toList();
+    await CsvExportService.exportShots(
+      context: context,
+      shots: shots,
+      clubs: widget.clubs,
+      tags: ref.read(tagsProvider).valueOrNull ?? const [],
+      prefs: ref.read(unitPrefsProvider),
+      baseName: 'selected-shots',
+    );
     if (mounted) _exitEditMode();
   }
 
@@ -297,7 +314,7 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                           ),
                           child: Center(
                             child: Text(
-                              'Tag Selected',
+                              'Tag',
                               style: AppTextStyles.sans(
                                 size: 13,
                                 color: _selectedIndices.isEmpty
@@ -309,9 +326,42 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                         ),
                       ),
                     ),
-                    if (widget.onDeleteShots != null)
-                      const SizedBox(width: 8),
+                    const SizedBox(width: 8),
                   ],
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _selectedIndices.isEmpty
+                          ? null
+                          : () => _exportSelected(context),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _selectedIndices.isEmpty
+                              ? AppColors.card
+                              : context.accentSubtle,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _selectedIndices.isEmpty
+                                ? AppColors.border2
+                                : context.accent,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            'Export',
+                            style: AppTextStyles.sans(
+                              size: 13,
+                              color: _selectedIndices.isEmpty
+                                  ? AppColors.textMuted
+                                  : context.accent,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (widget.onDeleteShots != null)
+                    const SizedBox(width: 8),
                   if (widget.onDeleteShots != null)
                     Expanded(
                       child: GestureDetector(

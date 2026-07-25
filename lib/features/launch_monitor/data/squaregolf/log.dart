@@ -27,11 +27,15 @@ const bool kLmLogHeartbeats = false;
 
 void lmLog(String tag, String message) {
   if (!kLmLoggingEnabled) return;
+  // debugPrint so lines reach the `flutter run` console — dart:developer.log
+  // is only visible in DevTools' Logging view on some toolchains.
+  debugPrint('[lm.$tag] $message');
   developer.log(message, name: 'lm.$tag');
 }
 
 void lmWarn(String tag, String message) {
   if (!kLmLoggingEnabled) return;
+  debugPrint('[lm.$tag] ⚠ $message');
   developer.log(message, name: 'lm.$tag', level: 900);
 }
 

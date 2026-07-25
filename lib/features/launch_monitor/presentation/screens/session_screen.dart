@@ -47,16 +47,21 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final status = ref.watch(launchMonitorProvider.select((s) => s.status));
     final allShots = ref.watch(launchMonitorProvider.select((s) => s.shots));
     final error = ref.watch(launchMonitorProvider.select((s) => s.error));
-    final battery =
-        ref.watch(launchMonitorProvider.select((s) => s.batteryPercent));
-    final capacitorReady =
-        ref.watch(launchMonitorProvider.select((s) => s.capacitorReady));
-    final detecting =
-        ref.watch(launchMonitorProvider.select((s) => s.detecting));
-    final ballDetected =
-        ref.watch(launchMonitorProvider.select((s) => s.ballDetected));
-    final ballReady =
-        ref.watch(launchMonitorProvider.select((s) => s.ballReady));
+    final battery = ref.watch(
+      launchMonitorProvider.select((s) => s.batteryPercent),
+    );
+    final capacitorReady = ref.watch(
+      launchMonitorProvider.select((s) => s.capacitorReady),
+    );
+    final detecting = ref.watch(
+      launchMonitorProvider.select((s) => s.detecting),
+    );
+    final ballDetected = ref.watch(
+      launchMonitorProvider.select((s) => s.ballDetected),
+    );
+    final ballReady = ref.watch(
+      launchMonitorProvider.select((s) => s.ballReady),
+    );
     final notifier = ref.read(launchMonitorProvider.notifier);
     // activeClub: sets which club new shots are tagged with (bottom pill)
     final activeClub = ref.watch(activeClubProvider);
@@ -69,8 +74,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         : allShots.where((s) => s.clubId == filterClub.id).toList();
 
     // Auto-advance selection to the newest shot when a new shot arrives.
-    ref.listen(launchMonitorProvider.select((s) => s.shots.length),
-        (prev, next) {
+    ref.listen(launchMonitorProvider.select((s) => s.shots.length), (
+      prev,
+      next,
+    ) {
       if (next > (prev ?? 0)) {
         ref.read(selectedShotIndexProvider.notifier).state = 0;
       }
@@ -100,7 +107,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         onShotSelected: (i) =>
             ref.read(selectedShotIndexProvider.notifier).state = i ?? 0,
       ),
-      _ActiveView.tiles => TilesTab(shots: shotsForClub, selectedShot: selectedShot),
+      _ActiveView.tiles => TilesTab(
+        shots: shotsForClub,
+        selectedShot: selectedShot,
+      ),
       _ActiveView.dispersion => DispersionTab(
         allShots: allShots,
         clubs: clubs,
@@ -116,11 +126,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       _ActiveView.table => _TableWrapper(
         shots: shotsForClub,
         selectedIndex: selectedInClub >= 0 ? selectedInClub : 0,
-        onRowTap: (i) =>
-            ref.read(selectedShotIndexProvider.notifier).state = i,
+        onRowTap: (i) => ref.read(selectedShotIndexProvider.notifier).state = i,
       ),
-      _ActiveView.optimizer =>
-        const ShotOptimizerPanel(showLeftBorder: false),
+      _ActiveView.optimizer => const ShotOptimizerPanel(showLeftBorder: false),
     };
 
     return Scaffold(
@@ -138,12 +146,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               ballReady: ballReady,
               onToggleArm: status == LaunchMonitorStatus.connected
                   ? () => detecting
-                      ? notifier.disarmBallDetection()
-                      : notifier.armBallDetection()
+                        ? notifier.disarmBallDetection()
+                        : notifier.armBallDetection()
                   : null,
               onClose: () => _confirmFinish(context),
-              onSimulateShot: () =>
-                  ref.read(launchMonitorProvider.notifier).simulateShot(),
             ),
             _ActiveNavBar(
               view: _view,
@@ -166,17 +172,19 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                             onMetricChanged: (m) =>
                                 setState(() => _shotListMetric = m),
                             onShotSelected: (i) =>
-                                ref.read(selectedShotIndexProvider.notifier).state = i,
+                                ref
+                                        .read(
+                                          selectedShotIndexProvider.notifier,
+                                        )
+                                        .state =
+                                    i,
                             onClearShots: notifier.clearShots,
                             onUpdateShotTags: notifier.updateShotTags,
                             onDeleteShots: notifier.deleteShots,
                           ),
                         ),
                         Expanded(child: content),
-                        SizedBox(
-                          width: 380,
-                          child: const ShotOptimizerPanel(),
-                        ),
+                        SizedBox(width: 380, child: const ShotOptimizerPanel()),
                       ],
                     )
                   : isTablet(context)
@@ -201,7 +209,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               onMetricChanged: (m) =>
                                   setState(() => _shotListMetric = m),
                               onShotSelected: (i) =>
-                                  ref.read(selectedShotIndexProvider.notifier).state = i,
+                                  ref
+                                          .read(
+                                            selectedShotIndexProvider.notifier,
+                                          )
+                                          .state =
+                                      i,
                               onClearShots: notifier.clearShots,
                               onUpdateShotTags: notifier.updateShotTags,
                               onDeleteShots: notifier.deleteShots,
@@ -223,58 +236,66 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                       },
                       child: Stack(
                         children: [
-                        Positioned.fill(child: content),
-                        IgnorePointer(
-                          ignoring: !_showShotList,
-                          child: AnimatedOpacity(
-                            opacity: _showShotList ? 1.0 : 0.0,
-                            duration: const Duration(milliseconds: 220),
-                            child: GestureDetector(
-                              onTap: () =>
-                                  setState(() => _showShotList = false),
-                              child: const ColoredBox(color: AppColors.scrim,
-                                child: SizedBox.expand()),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          top: 0,
-                          bottom: 0,
-                          left: 0,
-                          child: AnimatedSlide(
-                            offset: _showShotList
-                                ? Offset.zero
-                                : const Offset(-1, 0),
-                            duration: const Duration(milliseconds: 220),
-                            curve: Curves.easeInOut,
-                            child: Container(
-                              width: 300,
-                              decoration: const BoxDecoration(
-                                color: AppColors.background,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black26,
-                                    blurRadius: 12,
-                                    offset: Offset(4, 0),
-                                  ),
-                                ],
-                              ),
-                              child: ShotListPanel(
-                                allShots: allShots,
-                                clubs: clubs,
-                                selectedShotIndex: safeIdx,
-                                metric: _shotListMetric,
-                                onMetricChanged: (m) =>
-                                    setState(() => _shotListMetric = m),
-                                onShotSelected: (i) =>
-                                    ref.read(selectedShotIndexProvider.notifier).state = i,
-                                onClearShots: notifier.clearShots,
-                                onUpdateShotTags: notifier.updateShotTags,
-                                onDeleteShots: notifier.deleteShots,
+                          Positioned.fill(child: content),
+                          IgnorePointer(
+                            ignoring: !_showShotList,
+                            child: AnimatedOpacity(
+                              opacity: _showShotList ? 1.0 : 0.0,
+                              duration: const Duration(milliseconds: 220),
+                              child: GestureDetector(
+                                onTap: () =>
+                                    setState(() => _showShotList = false),
+                                child: const ColoredBox(
+                                  color: AppColors.scrim,
+                                  child: SizedBox.expand(),
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                          Positioned(
+                            top: 0,
+                            bottom: 0,
+                            left: 0,
+                            child: AnimatedSlide(
+                              offset: _showShotList
+                                  ? Offset.zero
+                                  : const Offset(-1, 0),
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeInOut,
+                              child: Container(
+                                width: 300,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.background,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black26,
+                                      blurRadius: 12,
+                                      offset: Offset(4, 0),
+                                    ),
+                                  ],
+                                ),
+                                child: ShotListPanel(
+                                  allShots: allShots,
+                                  clubs: clubs,
+                                  selectedShotIndex: safeIdx,
+                                  metric: _shotListMetric,
+                                  onMetricChanged: (m) =>
+                                      setState(() => _shotListMetric = m),
+                                  onShotSelected: (i) =>
+                                      ref
+                                              .read(
+                                                selectedShotIndexProvider
+                                                    .notifier,
+                                              )
+                                              .state =
+                                          i,
+                                  onClearShots: notifier.clearShots,
+                                  onUpdateShotTags: notifier.updateShotTags,
+                                  onDeleteShots: notifier.deleteShots,
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -347,7 +368,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
           final draftId = notifier.draftSessionId;
           final createdAt = notifier.draftCreatedAt ?? DateTime.now();
           final session = Session(
-            id: draftId?.toString() ??
+            id:
+                draftId?.toString() ??
                 DateTime.now().millisecondsSinceEpoch.toString(),
             name: name,
             createdAt: createdAt,
@@ -397,7 +419,6 @@ class _ActiveSessionTopBar extends StatelessWidget {
   final bool ballReady;
   final VoidCallback? onToggleArm;
   final VoidCallback onClose;
-  final VoidCallback? onSimulateShot;
 
   const _ActiveSessionTopBar({
     required this.status,
@@ -409,7 +430,6 @@ class _ActiveSessionTopBar extends StatelessWidget {
     this.ballReady = false,
     this.onToggleArm,
     required this.onClose,
-    this.onSimulateShot,
   });
 
   @override
@@ -484,8 +504,8 @@ class _ActiveSessionTopBar extends StatelessWidget {
                 color: !capacitorReady
                     ? AppColors.textDimmed
                     : detecting
-                        ? context.accent
-                        : AppColors.textMuted,
+                    ? context.accent
+                    : AppColors.textMuted,
               ),
             ),
             const SizedBox(width: 8),
@@ -503,24 +523,13 @@ class _ActiveSessionTopBar extends StatelessWidget {
               Icons.circle,
               size: 10,
               color: switch (status) {
-                LaunchMonitorStatus.connected    => Colors.green,
-                LaunchMonitorStatus.connecting   => Colors.orange,
-                LaunchMonitorStatus.scanning     => Colors.blue,
+                LaunchMonitorStatus.connected => Colors.green,
+                LaunchMonitorStatus.connecting => Colors.orange,
+                LaunchMonitorStatus.scanning => Colors.blue,
                 LaunchMonitorStatus.disconnected => Colors.red,
               },
             ),
           ),
-          if (onSimulateShot != null) ...[
-            const SizedBox(width: 8),
-            _CircleButton(
-              onTap: onSimulateShot!,
-              child: Icon(
-                Icons.bolt,
-                size: 14,
-                color: context.accent,
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -859,9 +868,12 @@ class _TableWrapper extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final club = ref.watch(selectedClubProvider);
+    final allShots =
+        ref.watch(launchMonitorProvider.select((s) => s.shots));
     return TableTab(
       shots: shots,
       club: club,
+      allShots: allShots,
       selectedIndex: selectedIndex,
       onRowTap: onRowTap,
     );
@@ -900,62 +912,62 @@ class _ActiveBottomBar extends StatelessWidget {
         children: [
           // Left: shot-list toggle with count badge (hidden in ultra-wide)
           if (!hideShotListToggle)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: GestureDetector(
-              onTap: onShotListToggle,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: showShotList
-                          ? context.accentSubtle
-                          : AppColors.card,
-                      shape: BoxShape.circle,
-                      border: Border.all(
+            Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                onTap: onShotListToggle,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: showShotList
+                            ? context.accentSubtle
+                            : AppColors.card,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: showShotList
+                              ? context.accent
+                              : AppColors.border2,
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.menu,
+                        size: 16,
                         color: showShotList
                             ? context.accent
-                            : AppColors.border2,
+                            : AppColors.textMuted,
                       ),
                     ),
-                    child: Icon(
-                      Icons.menu,
-                      size: 16,
-                      color: showShotList
-                          ? context.accent
-                          : AppColors.textMuted,
-                    ),
-                  ),
-                  if (shotCount > 0)
-                    Positioned(
-                      top: -3,
-                      right: -3,
-                      child: Container(
-                        width: 15,
-                        height: 15,
-                        decoration: BoxDecoration(
-                          color: context.accent,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: Text(
-                            '$shotCount',
-                            style: AppTextStyles.sans(
-                              size: 8,
-                              weight: FontWeight.w600,
-                              color: Colors.black,
+                    if (shotCount > 0)
+                      Positioned(
+                        top: -3,
+                        right: -3,
+                        child: Container(
+                          width: 15,
+                          height: 15,
+                          decoration: BoxDecoration(
+                            color: context.accent,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              '$shotCount',
+                              style: AppTextStyles.sans(
+                                size: 8,
+                                weight: FontWeight.w600,
+                                color: Colors.black,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
           // Centre: active club pill
           GestureDetector(
             onTap: onClubTap,
@@ -1063,10 +1075,10 @@ class _BallReadyIndicator extends StatelessWidget {
     final (color, tooltip) = !detecting
         ? (AppColors.textDimmed, 'Detection off')
         : ballReady
-            ? (Colors.green, 'Ball ready')
-            : ballDetected
-                ? (Colors.orange, 'Ball detected — not ready')
-                : (Colors.red, 'No ball detected');
+        ? (Colors.green, 'Ball ready')
+        : ballDetected
+        ? (Colors.orange, 'Ball detected — not ready')
+        : (Colors.red, 'No ball detected');
 
     return Tooltip(
       message: tooltip,
@@ -1114,22 +1126,19 @@ class _BatteryChip extends StatelessWidget {
     final color = percent <= 15
         ? Colors.red
         : percent <= 30
-            ? Colors.orange
-            : AppColors.textMuted;
+        ? Colors.orange
+        : AppColors.textMuted;
     final icon = percent <= 15
         ? Icons.battery_alert
         : percent >= 95
-            ? Icons.battery_full
-            : Icons.battery_std;
+        ? Icons.battery_full
+        : Icons.battery_std;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 14, color: color),
         const SizedBox(width: 2),
-        Text(
-          '$percent%',
-          style: AppTextStyles.sans(size: 11, color: color),
-        ),
+        Text('$percent%', style: AppTextStyles.sans(size: 11, color: color)),
       ],
     );
   }
@@ -1563,4 +1572,3 @@ class _ClubPickerSheet extends StatelessWidget {
     );
   }
 }
-
