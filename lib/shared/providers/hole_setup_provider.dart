@@ -21,7 +21,7 @@ class HoleSetupNotifier extends Notifier<HoleSetup> {
   @override
   HoleSetup build() {
     _load();
-    return HoleSetup.off;
+    return HoleSetup.standard;
   }
 
   Future<void> _load() async {

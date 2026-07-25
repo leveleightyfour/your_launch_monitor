@@ -111,6 +111,17 @@ void main() {
       expect(silly.fairwayWidth, HoleSetup.minFairwayWidth);
     });
 
+    test('the shipped default plays to a green', () {
+      // The feature shipped defaulting to off, so nobody saw a green and the
+      // dimension controls stayed hidden behind the toggle. A fresh install
+      // now plays a par 3 out of the box.
+      expect(HoleSetup.standard.enabled, isTrue);
+      expect(HoleSetup.standard.greenDistance, greaterThan(0));
+      expect(HoleSetup.standard.fairwayWidth, greaterThan(0));
+      // ...and the explicit "no hole" value still means no hole.
+      expect(HoleSetup.off.enabled, isFalse);
+    });
+
     test('survives a JSON round trip', () {
       final restored = HoleSetup.fromJson(_hole.toJson());
 

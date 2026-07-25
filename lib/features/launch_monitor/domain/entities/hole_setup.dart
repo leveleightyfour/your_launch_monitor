@@ -49,6 +49,11 @@ class HoleSetup {
   /// No hole — fairway everywhere.
   static const off = HoleSetup();
 
+  /// What a fresh install plays into: a mid-iron par 3. The feature is
+  /// invisible when it defaults to off, and a green nobody can see is a green
+  /// nobody knows they can move.
+  static const standard = HoleSetup(enabled: true);
+
   // Bounds the UI and persistence layer clamp to. Wide enough for anything
   // playable, tight enough that a bad value can't break the renderer.
   static const minGreenDistance = 30.0;

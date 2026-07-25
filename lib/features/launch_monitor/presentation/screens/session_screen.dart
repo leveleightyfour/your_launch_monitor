@@ -287,38 +287,22 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                   metric: _shotListMetric,
                                   onMetricChanged: (m) =>
                                       setState(() => _shotListMetric = m),
-                                  onShotSelected: (i) =>
-                                      ref
-                                              .read(
-                                                selectedShotIndexProvider
-                                                    .notifier,
-                                              )
-                                              .state =
-                                          i,
+                                  onShotSelected: (i) {
+                                    ref
+                                        .read(
+                                          selectedShotIndexProvider.notifier,
+                                        )
+                                        .state = i;
+                                    // Picking a shot is the whole point of
+                                    // this drawer, and here it covers the
+                                    // view — get out of the way so the shot
+                                    // is visible.
+                                    setState(() => _showShotList = false);
+                                  },
                                   onClearShots: notifier.clearShots,
                                   onUpdateShotTags: notifier.updateShotTags,
                                   onDeleteShots: notifier.deleteShots,
                                 ),
-                              ),
-                              child: ShotListPanel(
-                                allShots: allShots,
-                                clubs: clubs,
-                                selectedShotIndex: safeIdx,
-                                metric: _shotListMetric,
-                                onMetricChanged: (m) =>
-                                    setState(() => _shotListMetric = m),
-                                onShotSelected: (i) {
-                                  ref
-                                      .read(selectedShotIndexProvider.notifier)
-                                      .state = i;
-                                  // Picking a shot is the whole point of this
-                                  // drawer, and here it covers the view — get
-                                  // out of the way so the shot is visible.
-                                  setState(() => _showShotList = false);
-                                },
-                                onClearShots: notifier.clearShots,
-                                onUpdateShotTags: notifier.updateShotTags,
-                                onDeleteShots: notifier.deleteShots,
                               ),
                             ),
                           ),

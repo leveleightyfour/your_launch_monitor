@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
+import 'package:omni_sniffer/shared/providers/hole_setup_provider.dart';
 
 /// Holds the list of completed past sessions (most recent first).
 final sessionsProvider = NotifierProvider<SessionsNotifier, List<Session>>(
@@ -9,15 +11,43 @@ final sessionsProvider = NotifierProvider<SessionsNotifier, List<Session>>(
 );
 
 class SessionsNotifier extends Notifier<List<Session>> {
+  /// Sessions exactly as stored, before the configured hole is filled in.
+  /// Kept separately so changing the hole re-derives from the database rather
+  /// than from an already-stamped copy.
+  List<Session> _stored = const [];
+
   @override
   List<Session> build() {
+    // Sessions recorded before a hole was configured carry none. Rather than
+    // showing them on bare ground while the app is set up to play a hole, they
+    // adopt whatever is configured now. Sessions that recorded their own hole
+    // keep it, so their numbers never move.
+    ref.listen(holeSetupProvider, (_, next) => state = _withHole(_stored, next));
     _loadFromDb();
     return const [];
   }
 
   Future<void> _loadFromDb() async {
     final db = ref.read(appDatabaseProvider);
-    state = await db.getAllSessions();
+    _stored = await db.getAllSessions();
+    state = _withHole(_stored, ref.read(holeSetupProvider));
+  }
+
+  List<Session> _withHole(List<Session> sessions, HoleSetup setting) {
+    final active = setting.enabled ? setting : null;
+    if (active == null) return sessions;
+    return [
+      for (final session in sessions)
+        Session(
+          id: session.id,
+          name: session.name,
+          createdAt: session.createdAt,
+          shots: [
+            for (final shot in session.shots)
+              shot.hole == null ? shot.copyWith(hole: active) : shot,
+          ],
+        ),
+    ];
   }
 
   /// Called when the user finishes a session — persists to DB.
@@ -33,8 +63,7 @@ class SessionsNotifier extends Notifier<List<Session>> {
       await db.saveSession(session);
     }
     // Reload from DB so all shots carry their dbIds.
-    final rows = await db.getAllSessions();
-    state = rows;
+    await _loadFromDb();
   }
 
   Future<void> removeSession(String id) async {

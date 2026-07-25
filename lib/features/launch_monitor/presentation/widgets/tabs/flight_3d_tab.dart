@@ -8,6 +8,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_trajectory.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/hole_setup_controls.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -85,7 +86,7 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
   // Orbit state, in radians. Yaw 0 looks straight down the target line from
   // behind the ball; pitch raises the camera above the ground.
   double _yaw = 0;
-  double _pitch = 0.24;
+  double _pitch = 0;
   double _zoom = 1.0;
 
   // Gesture anchors.
@@ -175,8 +176,10 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
       _zoom = 1.0;
       switch (preset) {
         case FlightCamera.behind:
+          // First person: yaw and pitch are offsets from where a golfer
+          // standing at the ball would naturally be looking.
           _yaw = 0;
-          _pitch = 0.24;
+          _pitch = 0;
         case FlightCamera.side:
           // Positive yaw puts the camera left of the target line, so the ball
           // flies away to the right.
@@ -318,6 +321,7 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
             pitch: _pitch,
             zoom: _zoom,
             follow: _camera == FlightCamera.follow,
+            firstPerson: _camera == FlightCamera.behind,
             shotColor: shotColor,
             accent: context.accent,
             prefs: prefs,
@@ -348,6 +352,14 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
           size: buttonSize,
           tooltip: 'Previous shots with this club',
           onTap: () => setState(() => _showTrails = !_showTrails),
+        ),
+        const SizedBox(width: 6),
+        _RoundAction(
+          icon: Icons.golf_course,
+          active: _holeIsSet,
+          size: buttonSize,
+          tooltip: 'Hole setup',
+          onTap: () => showHoleSetupSheet(context),
         ),
         const SizedBox(width: 6),
         _RoundAction(
@@ -636,6 +648,33 @@ class _Camera {
     );
   }
 
+  /// A camera planted at a point, aimed by yaw and pitch — no orbit target.
+  factory _Camera.lookFrom({
+    required Vec3 position,
+    required double yaw,
+    required double pitch,
+    required Size size,
+    required double fovDegrees,
+  }) {
+    final forward = Vec3(
+      math.sin(yaw) * math.cos(pitch),
+      math.sin(pitch),
+      math.cos(yaw) * math.cos(pitch),
+    ).normalized;
+    var right = Vec3.up.cross(forward);
+    if (right.length < 1e-5) right = const Vec3(1, 0, 0);
+    right = right.normalized;
+
+    return _Camera._(
+      position: position,
+      right: right,
+      up: forward.cross(right).normalized,
+      forward: forward,
+      focal: size.height / (2 * math.tan(fovDegrees * math.pi / 360.0)),
+      centre: Offset(size.width / 2, size.height / 2),
+    );
+  }
+
   /// World point → camera space (x right, y up, z into the screen).
   Vec3 toCamera(Vec3 world) {
     final d = world - position;
@@ -706,6 +745,10 @@ class _FlightPainter extends CustomPainter {
   final double pitch;
   final double zoom;
   final bool follow;
+
+  /// Stand at the tee and watch, instead of orbiting the shot from outside.
+  final bool firstPerson;
+
   final Color shotColor;
   final Color accent;
   final UnitPrefs prefs;
@@ -730,6 +773,7 @@ class _FlightPainter extends CustomPainter {
     required this.pitch,
     required this.zoom,
     required this.follow,
+    required this.firstPerson,
     required this.shotColor,
     required this.accent,
     required this.prefs,
@@ -759,6 +803,12 @@ class _FlightPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (size.width <= 0 || size.height <= 0 || trajectory.isEmpty) return;
 
+    // CustomPaint does not clip to its own bounds. The ground plane is drawn
+    // far larger than the shot so its far edge reads as a horizon, and at some
+    // camera angles it projects well outside this widget and over whatever
+    // sits beside it — the split-view neighbour, the shot list, the nav bar.
+    canvas.clipRect(Offset.zero & size);
+
     final rest = trajectory.restPosition;
     final range = math.max(trajectory.totalDistance, 40.0);
     final ball = _ballPosition();
@@ -781,7 +831,9 @@ class _FlightPainter extends CustomPainter {
         2 * gridStep;
 
     final _Camera camera;
-    if (follow) {
+    if (firstPerson) {
+      camera = _standingCamera(size);
+    } else if (follow) {
       final heading = math.atan2(rest.x, math.max(rest.z, 1));
       camera = _Camera.orbit(
         focus: Vec3(ball.x, ball.y + 3, ball.z),
@@ -851,6 +903,46 @@ class _FlightPainter extends CustomPainter {
         Vec3(hole!.greenOffset, 2.4, hole!.greenDistance),
       ],
     ];
+  }
+
+  /// Eye of a golfer at the tee: about 5'8" up, a pace behind the ball.
+  static const _eye = Vec3(0, 1.9, -4.0);
+
+  /// What the player sees, standing where they hit it.
+  ///
+  /// The eye does not move — that is the whole point — so the shot is framed
+  /// by aiming and by the lens instead: the view tilts to sit between the ball
+  /// and the apex, and widens if it has to. Drag still looks around from the
+  /// same spot, and pinch works as a zoom lens rather than a step backwards.
+  _Camera _standingCamera(Size size) {
+    double elevationOf(Vec3 p) {
+      final d = p - _eye;
+      final horizontal = math.max(math.sqrt(d.x * d.x + d.z * d.z), 0.001);
+      return math.atan2(d.y, horizontal);
+    }
+
+    final marks = <Vec3>[
+      Vec3.zero,
+      _apexPoint() ?? Vec3.zero,
+      trajectory.restPosition,
+      if (hole != null) Vec3(hole!.greenOffset, 0, hole!.greenDistance),
+    ];
+    var lowest = double.infinity;
+    var highest = -double.infinity;
+    for (final m in marks) {
+      final e = elevationOf(m);
+      lowest = math.min(lowest, e);
+      highest = math.max(highest, e);
+    }
+
+    final spread = (highest - lowest) * 1.3 * 180 / math.pi;
+    return _Camera.lookFrom(
+      position: _eye,
+      yaw: yaw,
+      pitch: (lowest + highest) / 2 + pitch,
+      size: size,
+      fovDegrees: (spread.clamp(44.0, 104.0) * zoom).clamp(28.0, 118.0),
+    );
   }
 
   /// Pull the camera back until the whole shot fits, whatever the orbit angle.
@@ -1459,6 +1551,7 @@ class _FlightPainter extends CustomPainter {
       old.pitch != pitch ||
       old.zoom != zoom ||
       old.follow != follow ||
+      old.firstPerson != firstPerson ||
       old.shotColor != shotColor ||
       old.accent != accent ||
       old.prefs != prefs ||
