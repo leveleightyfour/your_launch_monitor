@@ -127,17 +127,25 @@ class AppDatabase extends _$AppDatabase {
   // ── Club bag persistence ──────────────────────────────────────────────────
 
   /// Loads the persisted club bag. Returns an empty list on first launch.
+  ///
+  /// Colours come from the catalog rather than the stored `colorValue`. They
+  /// are not user-editable, so the stored value is only ever a stale copy of a
+  /// catalog default — and the catalog is where the guarantees live that no
+  /// two clubs, and no club and accent, are confusable. Reading it back would
+  /// pin existing bags to whatever the palette used to be.
   Future<List<Club>> getSavedClubs() async {
     final rows = await select(savedClubs).get();
-    return rows
-        .map((r) => Club(
-              id: r.id,
-              shortName: r.shortName,
-              manufacturer: r.manufacturer,
-              model: r.model,
-              color: Color(r.colorValue),
-            ))
-        .toList();
+    return rows.map((r) {
+      final fromCatalog =
+          Club.catalog.where((c) => c.id == r.id).cast<Club?>().firstOrNull;
+      return Club(
+        id: r.id,
+        shortName: r.shortName,
+        manufacturer: r.manufacturer,
+        model: r.model,
+        color: fromCatalog?.color ?? Color(r.colorValue),
+      );
+    }).toList();
   }
 
   /// Replaces the persisted bag with the current in-memory state.
