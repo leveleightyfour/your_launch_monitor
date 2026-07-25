@@ -104,6 +104,30 @@ class FrameCapture {
             f,
       ];
 
+  /// Validity-bitmask bits on the ball frame that no parser maps to a field.
+  ///
+  /// The mask is Omni-only and byte 2 of a `11 02` frame. Three bits are
+  /// spoken for by nothing — 0x08, 0x40, 0x80 — against exactly three
+  /// independent metrics Square Golf advertise and we never receive: apex,
+  /// carry and roll (total distance being carry + roll). A bit set here is
+  /// the device saying "this field is valid" about a field we do not read.
+  static const _unmappedBits = {0x08: 'bit3', 0x40: 'bit6', 0x80: 'bit7'};
+
+  static Set<String> get spareValidityBitsSeen {
+    final seen = <String>{};
+    for (final f in _frames) {
+      if (f.kind != 'ballMetrics') continue;
+      final bytes = f.hex.split(' ');
+      if (bytes.length < 3) continue;
+      final mask = int.tryParse(bytes[2], radix: 16);
+      if (mask == null) continue;
+      _unmappedBits.forEach((bit, name) {
+        if (mask & bit != 0) seen.add(name);
+      });
+    }
+    return seen;
+  }
+
   /// The capture as shareable text, newest last.
   static String report() {
     final buf = StringBuffer()
@@ -112,6 +136,17 @@ class FrameCapture {
       ..writeln('os: ${osVersion.isEmpty ? "unknown" : osVersion}')
       ..writeln('frames: ${_frames.length} (cap $_limit)')
       ..writeln();
+
+    final spare = spareValidityBitsSeen;
+    if (spare.isNotEmpty) {
+      buf
+        ..writeln('The ball frame declared ${spare.length} field(s) valid that '
+            'no parser reads: ${spare.join(", ")}.')
+        ..writeln('Expect the values past byte 16 — the Omni club frame is 19 '
+            'bytes for 8 fields on the same 3+2N layout, so a ball frame with '
+            'these bits set should run to 23.')
+        ..writeln();
+    }
 
     final odd = undecoded;
     if (odd.isEmpty) {

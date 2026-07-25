@@ -78,6 +78,43 @@ void main() {
     });
   });
 
+  group('unmapped validity bits', () {
+    // Byte 2 is the mask. 0x3f sets every bit the parsers actually use
+    // (0x01|0x02|0x04|0x10|0x20 = 0x37) plus 0x08, which nothing reads.
+    test('a spare bit set is reported as a field we do not read', () {
+      FrameCapture.record('ballMetrics', _frame(_ballFrame17));
+
+      expect(FrameCapture.spareValidityBitsSeen, contains('bit3'));
+      expect(FrameCapture.report(), contains('no parser reads'));
+      expect(FrameCapture.report(), contains('should run to 23'));
+    });
+
+    test('a mask using only mapped bits reports nothing', () {
+      // 0x37 = speed|totalSpin|axis|backspin|sidespin, all accounted for.
+      FrameCapture.record('ballMetrics',
+          _frame('11 02 37 5c 1a 44 04 12 00 6a 0a 90 01 5e 0a 20 00'));
+
+      expect(FrameCapture.spareValidityBitsSeen, isEmpty);
+      expect(FrameCapture.report(), isNot(contains('no parser reads')));
+    });
+
+    test('all three spare bits are distinguished', () {
+      FrameCapture.record('ballMetrics',
+          _frame('11 02 c8 5c 1a 44 04 12 00 6a 0a 90 01 5e 0a 20 00'));
+
+      // 0xc8 = 0x80 | 0x40 | 0x08
+      expect(FrameCapture.spareValidityBitsSeen,
+          containsAll(<String>['bit3', 'bit6', 'bit7']));
+    });
+
+    test('club frames are not scanned for ball bits', () {
+      FrameCapture.record('clubMetrics',
+          _frame('11 07 ff 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f'));
+
+      expect(FrameCapture.spareValidityBitsSeen, isEmpty);
+    });
+  });
+
   group('the GATT map', () {
     tearDown(() => FrameCapture.recordGatt(const []));
 
