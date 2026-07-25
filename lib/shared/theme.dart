@@ -24,6 +24,33 @@ class AppColors {
   // Overlay scrim for modal drawers / bottom sheets
   static const scrim = Color(0x78000000); // black withAlpha(120)
 
+  // ── Course surfaces, for the 3D flight view ─────────────────────────────
+  // Deliberately independent of the accent. The accent means "your shot" —
+  // landing marks, roll path, read-outs — so the world those land in must not
+  // recolour with it, or a Lime accent hides the pin against the green and an
+  // Orange one loses the target line in the rough.
+  static const turfGround = Color(0xFF101619);
+  static const turfFairway = Color(0xFF13201A);
+
+  /// Every other mown band — barely lighter, so it reads as texture.
+  static const turfFairwayStripe = Color(0xFF17271F);
+
+  /// Off the fairway. Dry rather than warm: the app's greys are all cool, and
+  /// a saturated brown here was the one warm colour in the whole palette.
+  static const turfRough = Color(0xFF1C1C18);
+  static const turfGreen = Color(0xFF1B3524);
+  static const turfGreenEdge = Color(0xFF3C6B4A);
+  static const turfGrid = Color(0xFF2A3A38);
+
+  /// Horizon tone the backdrop fades to.
+  static const skyLow = Color(0xFF0E1418);
+
+  /// Flagstick red — fixed, so it reads against the green at any accent.
+  static const pinFlag = Color(0xFFD9483B);
+
+  /// The line to the target. Scenery, not data, so neutral.
+  static const targetLine = Color(0xFFC8D2D0);
+
   AppColors._();
 }
 

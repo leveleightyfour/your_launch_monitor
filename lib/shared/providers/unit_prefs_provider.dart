@@ -72,6 +72,10 @@ class UnitPrefs {
   double dist(double yards) =>
       distance == DistanceUnit.meters ? yards * 0.9144 : yards;
 
+  /// Inverse of [dist] — a value the user typed or stepped, back to yards.
+  double toYards(double displayValue) =>
+      distance == DistanceUnit.meters ? displayValue / 0.9144 : displayValue;
+
   /// Convert a value stored in mph to the display unit.
   double spd(double mph) => speed == SpeedUnit.kmh ? mph * 1.60934 : mph;
 

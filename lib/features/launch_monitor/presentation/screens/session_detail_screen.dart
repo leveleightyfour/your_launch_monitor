@@ -10,16 +10,17 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.d
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_list_panel.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/club_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/dispersion_tab.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/flight_3d_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/table_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/tiles_tab.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 // ── Top-level view options ────────────────────────────────────────────────────
 
-enum _TopView { split, tiles, dispersion, club, table }
+enum _TopView { split, tiles, dispersion, flight, club, table }
 
 // Options available inside a split pane
-enum _PaneView { tiles, dispersion, club, table }
+enum _PaneView { tiles, dispersion, flight, club, table }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 
@@ -110,6 +111,11 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
           clubs: clubs,
           highlightedShot: highlighted,
           onClubSelected: (_) {},
+        ),
+      _TopView.flight => Flight3DTab(
+          shots: shots,
+          selectedShot: highlighted,
+          clubs: clubs,
         ),
       _TopView.club =>
         ClubTab(shots: shots, clubs: clubs, selectedShot: highlighted),
@@ -231,8 +237,14 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
                                   metric: _shotListMetric,
                                   onMetricChanged: (m) =>
                                       setState(() => _shotListMetric = m),
-                                  onShotSelected: (i) =>
-                                      setState(() => _selectedShotIndex = i),
+                                  onShotSelected: (i) => setState(() {
+                                    _selectedShotIndex = i;
+                                    // Picking a shot is the whole point of
+                                    // this drawer, and here it covers the
+                                    // view — get out of the way so the shot
+                                    // is visible.
+                                    _showShotList = false;
+                                  }),
                                   onUpdateShotTags: (i, tags) =>
                                       _updateShotTags(allShots, i, tags),
                                 ),
@@ -268,29 +280,46 @@ class _TopNav extends StatelessWidget {
     (_TopView.split, Icons.view_column, 'Split view'),
     (_TopView.tiles, Icons.grid_view_rounded, 'Tiles'),
     (_TopView.dispersion, Icons.scatter_plot, 'Dispersion'),
+    (_TopView.flight, Icons.view_in_ar, '3D Flight'),
     (_TopView.club, Icons.sports_golf, 'Club'),
     (_TopView.table, Icons.table_rows, 'Table'),
   ];
 
+  /// Below this the labels start colliding, so the bar scrolls instead.
+  static const _minItemWidth = 62.0;
+
   @override
   Widget build(BuildContext context) {
+    final items = _items.map((item) {
+      final (v, icon, label) = item;
+      return _NavItem(
+        icon: icon,
+        label: label,
+        active: view == v,
+        onTap: () => onChanged(v),
+      );
+    }).toList();
+
     return Container(
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppColors.border)),
         color: AppColors.background,
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: _items.map((item) {
-          final (v, icon, label) = item;
-          final active = view == v;
-          return _NavItem(
-            icon: icon,
-            label: label,
-            active: active,
-            onTap: () => onChanged(v),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final fits = constraints.maxWidth >= _minItemWidth * items.length;
+          if (fits) {
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: items,
+            );
+          }
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(children: items),
           );
-        }).toList(),
+        },
       ),
     );
   }
@@ -398,6 +427,12 @@ class _SplitViewConfigurable extends StatelessWidget {
           highlightedShot: highlightedShot,
           onClubSelected: (_) {},
         );
+      case _PaneView.flight:
+        return Flight3DTab(
+          shots: shots,
+          selectedShot: highlightedShot,
+          clubs: clubs,
+        );
       case _PaneView.club:
         return ClubTab(shots: shots, clubs: clubs, selectedShot: highlightedShot);
       case _PaneView.table:
@@ -453,6 +488,7 @@ class _PaneHeader extends StatelessWidget {
   static const _options = [
     (_PaneView.tiles, Icons.grid_view_rounded, 'Tiles'),
     (_PaneView.dispersion, Icons.scatter_plot, 'Dispersion'),
+    (_PaneView.flight, Icons.view_in_ar, '3D Flight'),
     (_PaneView.club, Icons.sports_golf, 'Club'),
     (_PaneView.table, Icons.table_rows, 'Table'),
   ];
