@@ -2,8 +2,12 @@
 
 The Omni measures the ball at impact only — ball speed, launch angle, launch
 direction, total spin and spin axis. Everything that happens afterwards (carry,
-apex, descent angle, curvature, where the ball finishes) has to be simulated.
-This document covers the simulation and the 3D view built on top of it.
+apex, descent angle, curvature, how the ball behaves when it lands, where it
+finishes) has to be simulated. This document covers the simulation and the 3D
+view built on top of it.
+
+How the simulation is checked — and what it is known to get wrong — is a
+separate document: [`flight_model_validation.md`](flight_model_validation.md).
 
 **Code map**
 
@@ -12,18 +16,21 @@ This document covers the simulation and the 3D view built on top of it.
 | Domain | `lib/features/launch_monitor/domain/entities/shot_trajectory.dart` | `BallFlightModel` integrator, `ShotTrajectory`, `TrajectoryPoint`, `Vec3` |
 | Domain | `lib/features/launch_monitor/domain/entities/shot_data.dart` | `ShotData.trajectory` and the derived getters that read from it |
 | Presentation | `lib/features/launch_monitor/presentation/widgets/tabs/flight_3d_tab.dart` | `Flight3DTab` — camera, renderer, replay |
-| Tests | `test/features/launch_monitor/domain/entities/shot_trajectory_test.dart` | Reference flights, curvature, roll, degenerate input |
+| Tests | `test/features/launch_monitor/domain/entities/shot_trajectory_test.dart` | Behaviour and API: reference flights, curvature, roll, degenerate input |
+| Tests | `test/features/launch_monitor/domain/entities/shot_trajectory_validation_test.dart` | Whether the physics is right — see the validation doc |
 
 All distances in the domain layer are **yards**, speeds **mph**, angles
 **degrees**. Unit conversion happens at the presentation layer via `UnitPrefs`.
 
 ---
 
-## 1. The simulation
+## 1. The flight
 
 `BallFlightModel.simulate()` integrates the ball's equations of motion with
 RK4 at a 5 ms step, stopping when the ball returns to the ground and
-interpolating the exact touchdown point.
+interpolating the exact touchdown point. It then hands the touchdown state —
+position, velocity *and* the spin left on the ball — to the ground phase in
+§2.
 
 Three forces act on the ball:
 
@@ -83,16 +90,107 @@ as the noise floor rather than a target to fit away. The test suite enforces
 8% on carry, 4.5 yards on apex, 6° on descent and 0.6 s on hang time — change
 a coefficient and it will tell you what broke.
 
-### Roll
+---
 
-The device does not report roll. When `ShotData.run` is null the model
-estimates it from the landing angle: a ~30° descent runs out about 12% of its
-carry, a ~50° wedge only 4%, capped at 15%. A device-reported `run` always
-wins.
+## 2. The ground: bounce and roll
+
+Spin does not stop mattering when the ball lands — it is most of what decides
+whether a shot releases 25 yards or checks and comes back. So the ground phase
+is simulated rather than estimated: the ball bounces, slides, then rolls, and
+the spin it arrived with drives all three.
+
+### The bounce
+
+Each impact applies two impulses.
+
+**Normal.** Rebound speed is `e × |v_n|`, with `e` from Penner's fit to
+measured golf-ball/turf impacts:
+
+```
+e = 0.510 − 0.0375·v_n + 0.000903·v_n²
+```
+
+Fast, steep arrivals bury into the turf and barely rebound (e ≈ 0.12 at 17 m/s);
+slow ones bounce (e ≈ 0.35 at 5 m/s). The turf preset scales it.
+
+**Tangential.** This is where spin enters. The velocity of the ball's contact
+patch is
+
+```
+u = v_tangential − r·(ω × n̂)
+```
+
+For a backspinning ball the patch is racing *forwards* — faster than the ball's
+centre — so friction acts backwards, killing forward speed and the backspin
+with it. Sidespin drives the patch sideways and the ball gets kicked the same
+way. The impulse per unit mass is
+
+```
+j = min( (2/7)·|u| , μ·(1+e)·|v_n| )
+```
+
+the first term being what it takes to stop the patch slipping entirely (the
+no-slip limit for a sphere), the second what friction can actually deliver.
+Whichever binds, the same impulse both slows the ball (`Δv = −j·û`) and spins
+it down (`Δω = 5j/(2r)·(n̂ × û)`). A steep wedge with 9,000 rpm hits the
+friction limit and can have its forward speed reversed outright.
+
+**Ploughing.** Friction alone under-predicts how much real turf takes: the ball
+digs a pitch mark and has to climb out of it, and the crater wall pushes back
+along the ground track. That is a reaction force, not friction, so it is not
+capped by the no-slip limit:
+
+```
+dig = min( ploughing·|v_n| , 0.55·|v_tangential| )
+```
+
+It scales with how steeply the ball arrives, and it is capped as a *fraction*
+of the speed the ball has. The fractional cap matters: an earlier version
+scaled as `v_n²/v_tangential`, which blew up as the ball slowed and let a
+bouncy surface kill the ball dead on its fourth, gentlest hop.
+
+### Sliding and rolling
+
+Between bounces the ball is integrated as a normal flight. On the ground it
+slides while the contact patch is still slipping — the same friction law,
+applied continuously — until `u` reaches zero, then rolls with rolling
+resistance only, spin locked to `ω = (n̂ × v)/r`. A ball still carrying
+backspin when it settles can therefore walk backwards before it rolls forwards,
+which is exactly what a spinning wedge does on a green.
+
+### Turf presets
+
+| Preset | Ploughing | Friction | Rolling resistance | Restitution scale |
+|---|---|---|---|---|
+| `fairway` (default) | 0.19 | 0.40 | 0.42 | 1.00 |
+| `green` | 0.26 | 0.50 | 0.32 | 0.70 |
+| `firm` (links) | 0.11 | 0.34 | 0.26 | 1.25 |
+| `rough` | 0.45 | 0.60 | 1.10 | 0.45 |
+
+Fairway was fitted against the tour carry-to-total deltas — roll RMS 2.5 yd
+across driver through pitching wedge. Ball–turf friction was pinned to Penner's
+measured 0.40 rather than fitted, so the spin-to-turf coupling stays physical
+and only the two turf-deformation terms absorb the fit. The other presets are
+scaled from it by hand, and are ordered as you would expect:
+`rough < green < fairway < firm`.
+
+The surface is currently fixed to `fairway`. `BallFlightModel.copyWith(ground:)`
+switches it; there is no user-facing control yet.
+
+### Roll and the device
+
+A device-reported `ShotData.run` still wins. The bounce is simulated anyway for
+its *shape*, then the whole ground path is scaled so its downrange extent
+matches the measurement — the 3D view shows a plausible bounce sequence that
+still totals exactly what the device said.
+
+`roll` is the downrange (target-line) distance gained after touchdown, matching
+how `carry` is measured, so `totalDistance == carry + roll` always holds. It
+can be negative when a steep, spinning shot comes back.
 
 ---
 
-## 2. What reads from the model
+## 3. What reads from the model
 
 `ShotData` caches one simulation per shot (via an `Expando`, so the class stays
 `const`-constructible) and derives:
@@ -103,9 +201,12 @@ wins.
 | `lateralOffset` | simulation — includes curvature, not just the start line |
 | `totalDistance` | carry + roll |
 | `apexHeight` | device `apex`, else simulation |
-| `rollDistance` | device `run`, else estimate |
+| `rollDistance` | device `run`, else the simulated bounce and roll |
 | `curveDistance` | sideways yards gained in the air, measured from the start line |
 | `descentAngle` | simulation |
+
+`ShotTrajectory` also exposes `groundPoints` (the bounce-and-roll path),
+`bounces`, `landingSpin`, `landingSpeed`, `groundTime` and `restPosition`.
 
 > **Note:** `carry` and `lateralOffset` previously used a vacuum-ballistic
 > approximation with a flat 20% lift fudge, which over-read carry by roughly
@@ -115,7 +216,7 @@ wins.
 
 ---
 
-## 3. The 3D view
+## 4. The 3D view
 
 `Flight3DTab` renders the flight with a `CustomPainter` and about 120 lines of
 projection maths — no 3D engine, no extra dependency.
@@ -137,13 +238,23 @@ ground shadow, a faint curtain between the two for depth, an apex marker, and
 landing rings with a dashed roll-out to where the ball comes to rest.
 
 **Replay.** The flight draws itself in at ~1.15× real time whenever the
-selected shot changes; the replay button re-runs it. The trails toggle overlays
+selected shot changes, then carries on through the bounce and roll — the
+ground phase is compressed to at most 1.8 s so a long release doesn't stretch
+the animation. The replay button re-runs it. The trails toggle overlays
 previous shots with the same club.
+
+**Scaling.** The view is used as a full tab, as one half of a split, and as a
+pane on a phone, so a `_Density` tier is derived from the available size and
+everything keys off it: 7 stats shrink to 4 and then 3, camera chips drop their
+labels, stroke widths and label sizes scale, and the apex label and grid
+numbers are dropped when there is no room for them. The camera frames into the
+area the control strip does *not* cover rather than the raw viewport, so the
+shot stays clear of the chips at every size.
 
 **Clipping.** Everything is clipped against the near plane — segments by
 interpolation, polygons by Sutherland–Hodgman — so nothing wraps around when
 the camera is close to the ground.
 
-**Cost.** Paths are batched: the flight, its shadow and the curtain are one
-`Path` each, so the glow pass is a single blurred draw rather than one per
-segment.
+**Cost.** Paths are batched: the flight, its shadow, the curtain and the
+bounce path are one `Path` each, so the glow pass is a single blurred draw
+rather than one per segment. The simulation itself is cached per shot.

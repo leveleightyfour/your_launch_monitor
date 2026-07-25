@@ -24,12 +24,36 @@ enum FlightCamera {
   const FlightCamera(this.label, this.icon);
 }
 
+/// How much of the view fits: a full tab, one half of a split, or a pane on a
+/// phone. Everything that scales — how many stats, chip labels, stroke widths,
+/// which annotations survive — keys off this.
+enum _Density {
+  compact,
+  medium,
+  full;
+
+  static _Density forSize(Size size) {
+    if (size.width >= 560 && size.height >= 400) return _Density.full;
+    if (size.width >= 380 && size.height >= 290) return _Density.medium;
+    return _Density.compact;
+  }
+
+  bool get atLeastMedium => this != _Density.compact;
+
+  /// Scales stroke widths, marker radii and label sizes.
+  double get scale => switch (this) {
+        _Density.full => 1.0,
+        _Density.medium => 0.85,
+        _Density.compact => 0.7,
+      };
+}
+
 /// A 3D ball-flight view: the shot's simulated trajectory drawn over a range,
-/// with an orbiting camera and a shot replay.
+/// with an orbiting camera and a replay that runs through to the ball's rest.
 ///
-/// The Omni only measures launch conditions, so the flight itself comes from
-/// [ShotData.trajectory] — the same simulation that feeds the carry and
-/// dispersion numbers elsewhere in the app.
+/// The Omni only measures launch conditions, so the flight, the bounce and the
+/// roll all come from [ShotData.trajectory] — the same simulation that feeds
+/// the carry and dispersion numbers elsewhere in the app.
 class Flight3DTab extends ConsumerStatefulWidget {
   /// Shots in the current club filter, newest first.
   final List<ShotData> shots;
@@ -77,6 +101,10 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
   static const _minZoom = 0.35;
   static const _maxZoom = 3.0;
 
+  /// The roll-out is slow and not very interesting — cap what it costs the
+  /// replay so a long release doesn't stretch the animation out.
+  static const _maxGroundReplaySeconds = 1.8;
+
   @override
   void initState() {
     super.initState();
@@ -110,12 +138,27 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
     return a.dbId != null && a.dbId == b.dbId;
   }
 
-  Duration _replayDuration() {
-    final flight = _shot?.trajectory.flightTime ?? 3.0;
+  double get _airborneSeconds {
     // Slightly slower than real time reads better on a small screen.
-    final seconds = (flight * 1.15).clamp(1.2, 6.0);
-    return Duration(milliseconds: (seconds * 1000).round());
+    final flight = (_shot?.trajectory.flightTime ?? 3.0) * 1.15;
+    return flight.clamp(1.2, 7.0);
   }
+
+  double get _groundSeconds => math.min(
+        _shot?.trajectory.groundTime ?? 0.0,
+        _maxGroundReplaySeconds,
+      );
+
+  /// Share of the replay spent in the air, so the painter can split progress
+  /// between the flight and the bounce-and-roll.
+  double get _flightFraction {
+    final total = _airborneSeconds + _groundSeconds;
+    return total <= 0 ? 1.0 : _airborneSeconds / total;
+  }
+
+  Duration _replayDuration() => Duration(
+        milliseconds: ((_airborneSeconds + _groundSeconds) * 1000).round(),
+      );
 
   void _play() {
     _lastAnimatedShot = _shot;
@@ -163,22 +206,12 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
     final shot = _shot;
 
     if (shot == null) {
-      return Center(
-        child: Text(
-          'Hit a shot to see it in 3D',
-          style: AppTextStyles.sans(color: AppColors.textMuted),
-        ),
-      );
+      return _Message(text: 'Hit a shot to see it in 3D');
     }
 
     final trajectory = shot.trajectory;
     if (trajectory.isEmpty) {
-      return Center(
-        child: Text(
-          'Not enough launch data to model this flight',
-          style: AppTextStyles.sans(color: AppColors.textMuted),
-        ),
-      );
+      return _Message(text: 'Not enough launch data to model this flight');
     }
 
     final shotColor = _clubFor(shot)?.color ?? context.accent;
@@ -192,126 +225,168 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
             .toList()
         : const <ShotTrajectory>[];
 
-    return Column(
-      children: [
-        _FlightStatBar(shot: shot, trajectory: trajectory, prefs: prefs),
-        Expanded(
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onDoubleTap: () => _applyPreset(_camera),
-                  onScaleStart: (details) {
-                    _gestureYaw = _yaw;
-                    _gesturePitch = _pitch;
-                    _gestureZoom = _zoom;
-                    _gestureFocal = details.localFocalPoint;
-                  },
-                  onScaleUpdate: (details) {
-                    setState(() {
-                      if (details.pointerCount > 1 && details.scale != 1.0) {
-                        _zoom = (_gestureZoom / details.scale)
-                            .clamp(_minZoom, _maxZoom);
-                      }
-                      final delta = details.localFocalPoint - _gestureFocal;
-                      _yaw = _gestureYaw + delta.dx * 0.006;
-                      _pitch = (_gesturePitch + delta.dy * 0.005)
-                          .clamp(_minPitch, _maxPitch);
-                    });
-                  },
-                  child: AnimatedBuilder(
-                    animation: _replay,
-                    builder: (context, _) => CustomPaint(
-                      painter: _FlightPainter(
-                        trajectory: trajectory,
-                        ghosts: ghosts,
-                        progress: _replay.value,
-                        yaw: _yaw,
-                        pitch: _pitch,
-                        zoom: _zoom,
-                        follow: _camera == FlightCamera.follow,
-                        shotColor: shotColor,
-                        accent: context.accent,
-                        prefs: prefs,
-                      ),
-                      child: const SizedBox.expand(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final density = _Density.forSize(constraints.biggest);
+        return Column(
+          children: [
+            _FlightStatBar(
+              shot: shot,
+              trajectory: trajectory,
+              prefs: prefs,
+              density: density,
+            ),
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: _buildScene(
+                      trajectory: trajectory,
+                      ghosts: ghosts,
+                      shotColor: shotColor,
+                      prefs: prefs,
+                      density: density,
                     ),
                   ),
-                ),
+                  Positioned(
+                    left: 8,
+                    right: 8,
+                    bottom: 8,
+                    child: _buildControls(density),
+                  ),
+                ],
               ),
-              Positioned(
-                left: 12,
-                right: 12,
-                bottom: 12,
-                child: Row(
-                  children: [
-                    Expanded(child: _cameraChips()),
-                    const SizedBox(width: 8),
-                    _RoundAction(
-                      icon: _showTrails ? Icons.layers : Icons.layers_outlined,
-                      active: _showTrails,
-                      tooltip: 'Previous shots with this club',
-                      onTap: () => setState(() => _showTrails = !_showTrails),
-                    ),
-                    const SizedBox(width: 8),
-                    _RoundAction(
-                      icon: Icons.replay,
-                      active: false,
-                      tooltip: 'Replay',
-                      onTap: _play,
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildScene({
+    required ShotTrajectory trajectory,
+    required List<ShotTrajectory> ghosts,
+    required Color shotColor,
+    required UnitPrefs prefs,
+    required _Density density,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onDoubleTap: () => _applyPreset(_camera),
+      onScaleStart: (details) {
+        _gestureYaw = _yaw;
+        _gesturePitch = _pitch;
+        _gestureZoom = _zoom;
+        _gestureFocal = details.localFocalPoint;
+      },
+      onScaleUpdate: (details) {
+        setState(() {
+          if (details.pointerCount > 1 && details.scale != 1.0) {
+            _zoom = (_gestureZoom / details.scale).clamp(_minZoom, _maxZoom);
+          }
+          final delta = details.localFocalPoint - _gestureFocal;
+          _yaw = _gestureYaw + delta.dx * 0.006;
+          _pitch =
+              (_gesturePitch + delta.dy * 0.005).clamp(_minPitch, _maxPitch);
+        });
+      },
+      child: AnimatedBuilder(
+        animation: _replay,
+        builder: (context, _) => CustomPaint(
+          painter: _FlightPainter(
+            trajectory: trajectory,
+            ghosts: ghosts,
+            progress: _replay.value,
+            flightFraction: _flightFraction,
+            yaw: _yaw,
+            pitch: _pitch,
+            zoom: _zoom,
+            follow: _camera == FlightCamera.follow,
+            shotColor: shotColor,
+            accent: context.accent,
+            prefs: prefs,
+            density: density,
+            controlStripHeight: _controlStripHeight(density),
           ),
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+  }
+
+  /// Chip row height plus its padding — the painter keeps the shot above it.
+  static double _controlStripHeight(_Density density) =>
+      density == _Density.compact ? 42 : 46;
+
+  Widget _buildControls(_Density density) {
+    final buttonSize = density == _Density.compact ? 26.0 : 30.0;
+    return Row(
+      children: [
+        Expanded(child: _cameraChips(density)),
+        const SizedBox(width: 6),
+        _RoundAction(
+          icon: _showTrails ? Icons.layers : Icons.layers_outlined,
+          active: _showTrails,
+          size: buttonSize,
+          tooltip: 'Previous shots with this club',
+          onTap: () => setState(() => _showTrails = !_showTrails),
+        ),
+        const SizedBox(width: 6),
+        _RoundAction(
+          icon: Icons.replay,
+          active: false,
+          size: buttonSize,
+          tooltip: 'Replay',
+          onTap: _play,
         ),
       ],
     );
   }
 
-  Widget _cameraChips() {
+  Widget _cameraChips(_Density density) {
+    final showLabels = density.atLeastMedium;
     return SizedBox(
-      height: 30,
+      height: density == _Density.compact ? 26 : 30,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: FlightCamera.values.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        separatorBuilder: (_, __) => const SizedBox(width: 5),
         itemBuilder: (context, i) {
           final preset = FlightCamera.values[i];
           final active = preset == _camera;
-          return GestureDetector(
-            onTap: () => _applyPreset(preset),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: active ? context.accentSubtle : AppColors.card,
-                border: Border.all(
-                  color: active ? context.accent : AppColors.border2,
-                  width: active ? 1.5 : 1,
+          final color = active ? context.accent : AppColors.textMuted;
+          return Tooltip(
+            message: preset.label,
+            child: GestureDetector(
+              onTap: () => _applyPreset(preset),
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: showLabels ? 10 : 7),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: active ? context.accentSubtle : AppColors.card,
+                  border: Border.all(
+                    color: active ? context.accent : AppColors.border2,
+                    width: active ? 1.5 : 1,
+                  ),
+                  borderRadius: BorderRadius.circular(15),
                 ),
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    preset.icon,
-                    size: 12,
-                    color: active ? context.accent : AppColors.textMuted,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    preset.label,
-                    style: AppTextStyles.sans(
-                      size: 11,
-                      weight: active ? FontWeight.w600 : FontWeight.w400,
-                      color: active ? context.accent : AppColors.textMuted,
-                    ),
-                  ),
-                ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(preset.icon, size: 12, color: color),
+                    if (showLabels) ...[
+                      const SizedBox(width: 5),
+                      Text(
+                        preset.label,
+                        style: AppTextStyles.sans(
+                          size: 11,
+                          weight: active ? FontWeight.w600 : FontWeight.w400,
+                          color: color,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
           );
@@ -321,17 +396,39 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
   }
 }
 
+// ── Empty / error state ──────────────────────────────────────────────────────
+
+class _Message extends StatelessWidget {
+  final String text;
+
+  const _Message({required this.text});
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.sans(color: AppColors.textMuted),
+          ),
+        ),
+      );
+}
+
 // ── Stat bar ─────────────────────────────────────────────────────────────────
 
 class _FlightStatBar extends StatelessWidget {
   final ShotData shot;
   final ShotTrajectory trajectory;
   final UnitPrefs prefs;
+  final _Density density;
 
   const _FlightStatBar({
     required this.shot,
     required this.trajectory,
     required this.prefs,
+    required this.density,
   });
 
   @override
@@ -342,25 +439,39 @@ class _FlightStatBar extends StatelessWidget {
       return '${v.abs().toStringAsFixed(1)}${v < 0 ? 'L' : 'R'}';
     }
 
-    final stats = <(String, String, String)>[
-      ('Carry', prefs.dist(trajectory.carry).toStringAsFixed(1),
-          prefs.distLabel),
-      ('Total', prefs.dist(shot.totalDistance).toStringAsFixed(1),
-          prefs.distLabel),
-      ('Apex', prefs.dist(shot.apexHeight).toStringAsFixed(1), prefs.distLabel),
+    String dist(double yards) => prefs.dist(yards).toStringAsFixed(1);
+
+    // Ordered by how much a golfer wants them; the tail is dropped as the pane
+    // gets smaller.
+    final all = <(String, String, String)>[
+      ('Carry', dist(trajectory.carry), prefs.distLabel),
+      ('Total', dist(shot.totalDistance), prefs.distLabel),
+      ('Side', side(shot.lateralOffset), prefs.distLabel),
+      ('Apex', dist(shot.apexHeight), prefs.distLabel),
       ('Descent', trajectory.descentAngle.toStringAsFixed(1), '°'),
-      ('Side', side(trajectory.offline), prefs.distLabel),
+      ('Roll', dist(shot.rollDistance), prefs.distLabel),
       ('Curve', side(trajectory.curve), prefs.distLabel),
     ];
+    final count = switch (density) {
+      _Density.full => 7,
+      _Density.medium => 4,
+      _Density.compact => 3,
+    };
+    final valueSize = switch (density) {
+      _Density.full => 18.0,
+      _Density.medium => 16.0,
+      _Density.compact => 14.0,
+    };
+    final pad = density == _Density.compact ? 8.0 : 12.0;
 
     return Container(
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      padding: EdgeInsets.fromLTRB(pad, 6, pad, 6),
       child: Row(
         children: [
-          for (final (label, value, unit) in stats)
+          for (final (label, value, unit) in all.take(count))
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -371,7 +482,7 @@ class _FlightStatBar extends StatelessWidget {
                     overflow: TextOverflow.clip,
                     softWrap: false,
                     style: AppTextStyles.sans(
-                      size: 10,
+                      size: density == _Density.compact ? 9 : 10,
                       color: AppColors.textDimmed,
                     ),
                   ),
@@ -383,7 +494,7 @@ class _FlightStatBar extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.baseline,
                       textBaseline: TextBaseline.alphabetic,
                       children: [
-                        Text(value, style: AppTextStyles.mono(size: 18)),
+                        Text(value, style: AppTextStyles.mono(size: valueSize)),
                         const SizedBox(width: 2),
                         Text(
                           unit,
@@ -409,12 +520,14 @@ class _FlightStatBar extends StatelessWidget {
 class _RoundAction extends StatelessWidget {
   final IconData icon;
   final bool active;
+  final double size;
   final String tooltip;
   final VoidCallback onTap;
 
   const _RoundAction({
     required this.icon,
     required this.active,
+    required this.size,
     required this.tooltip,
     required this.onTap,
   });
@@ -426,8 +539,8 @@ class _RoundAction extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 30,
-          height: 30,
+          width: size,
+          height: size,
           decoration: BoxDecoration(
             color: active ? context.accentSubtle : AppColors.card,
             shape: BoxShape.circle,
@@ -437,7 +550,7 @@ class _RoundAction extends StatelessWidget {
           ),
           child: Icon(
             icon,
-            size: 15,
+            size: size * 0.5,
             color: active ? context.accent : AppColors.textMuted,
           ),
         ),
@@ -485,8 +598,7 @@ class _Camera {
     );
     final position = focus + offset * distance;
     final forward = (focus - position).normalized;
-    const worldUp = Vec3(0, 1, 0);
-    var right = worldUp.cross(forward);
+    var right = Vec3.up.cross(forward);
     if (right.length < 1e-5) right = const Vec3(1, 0, 0);
     right = right.normalized;
     final up = forward.cross(right).normalized;
@@ -560,7 +672,13 @@ List<Vec3> _clipPolygon(List<Vec3> poly) {
 class _FlightPainter extends CustomPainter {
   final ShotTrajectory trajectory;
   final List<ShotTrajectory> ghosts;
+
+  /// 0 at impact, 1 once the ball has come to rest.
   final double progress;
+
+  /// Share of [progress] spent airborne; the rest is the bounce and roll.
+  final double flightFraction;
+
   final double yaw;
   final double pitch;
   final double zoom;
@@ -568,11 +686,17 @@ class _FlightPainter extends CustomPainter {
   final Color shotColor;
   final Color accent;
   final UnitPrefs prefs;
+  final _Density density;
+
+  /// Height of the control overlay along the bottom edge, kept clear of the
+  /// shot when framing.
+  final double controlStripHeight;
 
   _FlightPainter({
     required this.trajectory,
     required this.ghosts,
     required this.progress,
+    required this.flightFraction,
     required this.yaw,
     required this.pitch,
     required this.zoom,
@@ -580,12 +704,27 @@ class _FlightPainter extends CustomPainter {
     required this.shotColor,
     required this.accent,
     required this.prefs,
+    required this.density,
+    required this.controlStripHeight,
   });
 
   static const _groundColor = Color(0xFF101619);
   static const _fairwayColor = Color(0xFF13201A);
   static const _gridColor = Color(0xFF2A3A38);
   static const _skyBottom = Color(0xFF0E1418);
+
+  double get _s => density.scale;
+
+  /// Fraction of the airborne path that has been drawn.
+  double get _flightProgress =>
+      flightFraction <= 0 ? 1.0 : (progress / flightFraction).clamp(0.0, 1.0);
+
+  /// Fraction of the bounce-and-roll path that has been drawn.
+  double get _groundProgress => flightFraction >= 1.0
+      ? (progress >= 1.0 ? 1.0 : 0.0)
+      : ((progress - flightFraction) / (1 - flightFraction)).clamp(0.0, 1.0);
+
+  bool get _hasLanded => _flightProgress >= 1.0;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -619,7 +758,9 @@ class _FlightPainter extends CustomPainter {
 
     _paintBackdrop(canvas, size);
     _paintGround(canvas, camera, halfWidth, maxDepth, gridStep);
-    _paintDistanceLabels(canvas, camera, gridStep, maxDepth, halfWidth);
+    if (density.atLeastMedium) {
+      _paintDistanceLabels(canvas, camera, gridStep, maxDepth, halfWidth);
+    }
 
     for (final ghost in ghosts) {
       final path = _pathFor(camera, ghost.points, ghost.points.length - 1);
@@ -628,34 +769,40 @@ class _FlightPainter extends CustomPainter {
           path,
           Paint()
             ..color = shotColor.withAlpha(50)
-            ..strokeWidth = 1.2
+            ..strokeWidth = 1.2 * _s
             ..style = PaintingStyle.stroke,
         );
       }
     }
 
-    if (progress >= 0.999) _paintLanding(canvas, camera);
+    if (_hasLanded) _paintLandingMarks(canvas, camera);
 
-    final upTo = _visibleSegments(trajectory.points, progress);
-    _paintCurtain(canvas, camera, upTo);
-    _paintShadow(canvas, camera, upTo);
-    _paintFlightPath(canvas, camera, upTo);
+    final flightSegments =
+        _visibleSegments(trajectory.points, _flightProgress);
+    _paintCurtain(canvas, camera, flightSegments);
+    _paintShadow(canvas, camera, trajectory.points, flightSegments);
+    _paintFlightPath(canvas, camera, flightSegments);
+    _paintGroundPath(canvas, camera);
     _paintApexMarker(canvas, camera, ball);
     _paintBall(canvas, camera, ball);
   }
 
   // ── Framing ────────────────────────────────────────────────────────────────
 
-  /// Points the camera has to keep on screen: the flight itself plus where the
-  /// ball comes to rest.
+  /// Points the camera has to keep on screen: the flight, the bounce path and
+  /// where the ball comes to rest.
   List<Vec3> _framingPoints(Vec3 rest) {
     final points = trajectory.points;
     final stride = math.max(1, points.length ~/ 24);
+    final ground = trajectory.groundPoints;
+    final groundStride = math.max(1, ground.length ~/ 8);
     return [
       Vec3.zero,
       for (var i = 0; i < points.length; i += stride)
         Vec3(points[i].x, points[i].y, points[i].z),
       Vec3(points.last.x, points.last.y, points.last.z),
+      for (var i = 0; i < ground.length; i += groundStride)
+        Vec3(ground[i].x, ground[i].y, ground[i].z),
       rest,
     ];
   }
@@ -683,12 +830,16 @@ class _FlightPainter extends CustomPainter {
     final focus = Vec3((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
     final span = Vec3(maxX - minX, maxY - minY, maxZ - minZ).length;
 
-    // Keep content clear of the chip row along the bottom.
-    final marginX = size.width * 0.5 * 0.88;
-    final marginY = size.height * 0.5 * 0.80;
+    // Frame into the area the controls don't cover, rather than the raw
+    // viewport: the chip row sits along the bottom, so the usable box is
+    // off-centre and the shot has to be centred in *that*.
+    const safeTop = 6.0;
+    final safeBottom = size.height - controlStripHeight;
+    final safeCentre = Offset(size.width / 2, (safeTop + safeBottom) / 2);
+    final marginX = size.width * 0.5 * 0.90;
+    final marginY = math.max((safeBottom - safeTop) / 2 * 0.96, 24.0);
 
-    final viewportCentre = Offset(size.width / 2, size.height / 2);
-    var principal = viewportCentre;
+    var principal = safeCentre;
 
     _Camera cameraAt(double distance) => _Camera.orbit(
           focus: focus,
@@ -707,8 +858,8 @@ class _FlightPainter extends CustomPainter {
         final cam = camera.toCamera(p);
         if (cam.z < _Camera.near) return double.infinity;
         final screen = camera.toScreen(cam);
-        worst = math.max(worst, (screen.dx - viewportCentre.dx).abs() / marginX);
-        worst = math.max(worst, (screen.dy - viewportCentre.dy).abs() / marginY);
+        worst = math.max(worst, (screen.dx - safeCentre.dx).abs() / marginX);
+        worst = math.max(worst, (screen.dy - safeCentre.dy).abs() / marginY);
       }
       return worst;
     }
@@ -747,12 +898,12 @@ class _FlightPainter extends CustomPainter {
     }
     if (minSx.isFinite) {
       final shift = Offset(
-        (viewportCentre.dx - (minSx + maxSx) / 2)
+        (safeCentre.dx - (minSx + maxSx) / 2)
             .clamp(-size.width * 0.3, size.width * 0.3),
-        (viewportCentre.dy - (minSy + maxSy) / 2)
+        (safeCentre.dy - (minSy + maxSy) / 2)
             .clamp(-size.height * 0.3, size.height * 0.3),
       );
-      principal = viewportCentre + shift;
+      principal = safeCentre + shift;
     }
 
     return cameraAt(math.max(fitDistance() * zoom, 12.0));
@@ -763,10 +914,8 @@ class _FlightPainter extends CustomPainter {
   static int _visibleSegments(List<TrajectoryPoint> points, double progress) =>
       (progress * (points.length - 1)).ceil().clamp(1, points.length - 1);
 
-  Vec3 _ballPosition() {
-    final points = trajectory.points;
-    if (points.isEmpty) return Vec3.zero;
-    final scaled = (progress.clamp(0.0, 1.0)) * (points.length - 1);
+  static Vec3 _interpolate(List<TrajectoryPoint> points, double progress) {
+    final scaled = progress.clamp(0.0, 1.0) * (points.length - 1);
     final i = scaled.floor().clamp(0, points.length - 1);
     final j = math.min(i + 1, points.length - 1);
     final t = scaled - i;
@@ -777,6 +926,14 @@ class _FlightPainter extends CustomPainter {
       a.y + (b.y - a.y) * t,
       a.z + (b.z - a.z) * t,
     );
+  }
+
+  Vec3 _ballPosition() {
+    if (trajectory.points.isEmpty) return Vec3.zero;
+    if (!_hasLanded) return _interpolate(trajectory.points, _flightProgress);
+    final ground = trajectory.groundPoints;
+    if (ground.isEmpty) return trajectory.restPosition;
+    return _interpolate(ground, _groundProgress);
   }
 
   /// Build a screen-space polyline for the first [upTo] segments, splitting
@@ -810,7 +967,7 @@ class _FlightPainter extends CustomPainter {
       path.lineTo(end.dx, end.dy);
       lastEnd = end;
     }
-    return open || lastEnd != null ? path : null;
+    return lastEnd == null ? null : path;
   }
 
   void _line3(Canvas canvas, _Camera camera, Vec3 a, Vec3 b, Paint paint) {
@@ -892,8 +1049,8 @@ class _FlightPainter extends CustomPainter {
 
     // Cross lines — faded with distance so the horizon doesn't turn solid.
     for (var z = 0.0; z <= maxDepth; z += gridStep) {
-      final fade =
-          (1 - camera.depthOf(Vec3(0, 0, z)) / (maxDepth * 1.6)).clamp(0.12, 1.0);
+      final fade = (1 - camera.depthOf(Vec3(0, 0, z)) / (maxDepth * 1.6))
+          .clamp(0.12, 1.0);
       _line3(
         canvas,
         camera,
@@ -946,7 +1103,7 @@ class _FlightPainter extends CustomPainter {
         canvas,
         prefs.dist(z).round().toString(),
         at,
-        AppTextStyles.mono(size: 9, color: AppColors.textDimmed),
+        AppTextStyles.mono(size: 9 * _s, color: AppColors.textDimmed),
       );
     }
   }
@@ -957,8 +1114,8 @@ class _FlightPainter extends CustomPainter {
     for (var i = 0; i < upTo; i++) {
       final quad = _clipPolygon([
         camera.toCamera(Vec3(points[i].x, points[i].y, points[i].z)),
-        camera.toCamera(
-            Vec3(points[i + 1].x, points[i + 1].y, points[i + 1].z)),
+        camera
+            .toCamera(Vec3(points[i + 1].x, points[i + 1].y, points[i + 1].z)),
         camera.toCamera(Vec3(points[i + 1].x, 0, points[i + 1].z)),
         camera.toCamera(Vec3(points[i].x, 0, points[i].z)),
       ]);
@@ -968,14 +1125,19 @@ class _FlightPainter extends CustomPainter {
     canvas.drawPath(sheet, Paint()..color = shotColor.withAlpha(16));
   }
 
-  void _paintShadow(Canvas canvas, _Camera camera, int upTo) {
-    final path = _pathFor(camera, trajectory.points, upTo, flatten: true);
+  void _paintShadow(
+    Canvas canvas,
+    _Camera camera,
+    List<TrajectoryPoint> points,
+    int upTo,
+  ) {
+    final path = _pathFor(camera, points, upTo, flatten: true);
     if (path == null) return;
     canvas.drawPath(
       path,
       Paint()
         ..color = Colors.black.withAlpha(130)
-        ..strokeWidth = 2.2
+        ..strokeWidth = 2.2 * _s
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round,
     );
@@ -989,16 +1151,16 @@ class _FlightPainter extends CustomPainter {
       path,
       Paint()
         ..color = shotColor.withAlpha(90)
-        ..strokeWidth = 7
+        ..strokeWidth = 7 * _s
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 6 * _s),
     );
 
     // Height reads as a vertical gradient: brighter the higher the ball is.
     final bounds = path.getBounds();
     final linePaint = Paint()
-      ..strokeWidth = 2.6
+      ..strokeWidth = 2.6 * _s
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
@@ -1014,11 +1176,44 @@ class _FlightPainter extends CustomPainter {
     canvas.drawPath(path, linePaint);
   }
 
+  /// The bounce-and-roll: the ball's real path across the turf, hops and all.
+  void _paintGroundPath(Canvas canvas, _Camera camera) {
+    final ground = trajectory.groundPoints;
+    if (ground.length < 2 || _groundProgress <= 0) return;
+
+    final upTo = _visibleSegments(ground, _groundProgress);
+    final path = _pathFor(camera, ground, upTo);
+    if (path == null) return;
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = accent.withAlpha(190)
+        ..strokeWidth = 1.8 * _s
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // Mark each touchdown: a sample sits exactly on the ground right after
+    // every bounce.
+    for (var i = 1; i <= upTo; i++) {
+      if (ground[i].y > 0.01 || ground[i - 1].y <= 0.01) continue;
+      final at = camera.project(Vec3(ground[i].x, 0, ground[i].z));
+      if (at == null) continue;
+      canvas.drawCircle(
+        at,
+        2.0 * _s,
+        Paint()..color = accent.withAlpha(200),
+      );
+    }
+  }
+
   void _paintApexMarker(Canvas canvas, _Camera camera, Vec3 ball) {
+    if (density == _Density.compact) return;
     final apexPoint = _apexPoint();
     if (apexPoint == null) return;
     // Don't label the apex before the ball has reached it.
-    if (ball.z < apexPoint.z) return;
+    if (!_hasLanded && ball.z < apexPoint.z) return;
 
     final top = camera.project(apexPoint);
     if (top == null) return;
@@ -1032,12 +1227,12 @@ class _FlightPainter extends CustomPainter {
         ..color = Colors.white.withAlpha(40)
         ..strokeWidth = 1,
     );
-    canvas.drawCircle(top, 2.5, Paint()..color = Colors.white.withAlpha(170));
+    canvas.drawCircle(top, 2.5 * _s, Paint()..color = Colors.white.withAlpha(170));
     _label(
       canvas,
       'APEX ${prefs.dist(trajectory.apex).toStringAsFixed(0)} ${prefs.distLabel}',
       top.translate(0, -12),
-      AppTextStyles.mono(size: 9, color: Colors.white.withAlpha(190)),
+      AppTextStyles.mono(size: 9 * _s, color: Colors.white.withAlpha(190)),
     );
   }
 
@@ -1051,9 +1246,9 @@ class _FlightPainter extends CustomPainter {
     return Vec3(best.x, best.y, best.z);
   }
 
-  void _paintLanding(Canvas canvas, _Camera camera) {
+  /// Rings at the pitch mark, plus the carry read-out.
+  void _paintLandingMarks(Canvas canvas, _Camera camera) {
     final landing = Vec3(trajectory.offline, 0, trajectory.carry);
-    final rest = trajectory.restPosition;
 
     for (final radius in const [2.0, 5.0]) {
       final ring = <Vec3>[
@@ -1066,47 +1261,20 @@ class _FlightPainter extends CustomPainter {
       ];
       final paint = Paint()
         ..color = accent.withAlpha(radius > 3 ? 70 : 150)
-        ..strokeWidth = 1.4;
+        ..strokeWidth = 1.4 * _s;
       for (var i = 0; i < ring.length; i++) {
         _line3(canvas, camera, ring[i], ring[(i + 1) % ring.length], paint);
       }
     }
 
-    if (trajectory.roll > 0.5) {
-      _dashedLine3(canvas, camera, landing, rest, accent.withAlpha(120));
-      final at = camera.project(rest);
-      if (at != null) canvas.drawCircle(at, 3, Paint()..color = Colors.white);
-    }
-
+    if (density == _Density.compact) return;
     final label = camera.project(landing);
     if (label != null) {
       _label(
         canvas,
         '${prefs.dist(trajectory.carry).toStringAsFixed(0)} ${prefs.distLabel}',
         label.translate(0, 14),
-        AppTextStyles.mono(size: 10, color: accent),
-      );
-    }
-  }
-
-  void _dashedLine3(
-    Canvas canvas,
-    _Camera camera,
-    Vec3 from,
-    Vec3 to,
-    Color color,
-  ) {
-    const segments = 12;
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.6;
-    for (var i = 0; i < segments; i += 2) {
-      _line3(
-        canvas,
-        camera,
-        from + (to - from) * (i / segments),
-        from + (to - from) * ((i + 1) / segments),
-        paint,
+        AppTextStyles.mono(size: 10 * _s, color: accent),
       );
     }
   }
@@ -1119,8 +1287,8 @@ class _FlightPainter extends CustomPainter {
       canvas.drawOval(
         Rect.fromCenter(
           center: shadowAt,
-          width: 9 * shrink,
-          height: 4 * shrink,
+          width: 9 * shrink * _s,
+          height: 4 * shrink * _s,
         ),
         Paint()..color = Colors.black.withAlpha(140),
       );
@@ -1130,12 +1298,12 @@ class _FlightPainter extends CustomPainter {
     if (at == null) return;
     canvas.drawCircle(
       at,
-      9,
+      9 * _s,
       Paint()
         ..color = Colors.white.withAlpha(60)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 6 * _s),
     );
-    canvas.drawCircle(at, 4, Paint()..color = Colors.white);
+    canvas.drawCircle(at, 4 * _s, Paint()..color = Colors.white);
   }
 
   void _label(Canvas canvas, String text, Offset at, TextStyle style) {
@@ -1154,11 +1322,14 @@ class _FlightPainter extends CustomPainter {
       old.trajectory != trajectory ||
       old.ghosts.length != ghosts.length ||
       old.progress != progress ||
+      old.flightFraction != flightFraction ||
       old.yaw != yaw ||
       old.pitch != pitch ||
       old.zoom != zoom ||
       old.follow != follow ||
       old.shotColor != shotColor ||
       old.accent != accent ||
-      old.prefs != prefs;
+      old.prefs != prefs ||
+      old.density != density ||
+      old.controlStripHeight != controlStripHeight;
 }
