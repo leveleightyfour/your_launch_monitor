@@ -51,6 +51,20 @@ enum _Density {
       };
 }
 
+/// How long the airborne part of a replay lasts, in seconds.
+///
+/// Real time — a 6.4 s tour drive takes 6.4 s on screen. The replay used to
+/// run 15% slow on the theory that it read better on a phone, which made every
+/// club hang noticeably longer than life, and a 7 s ceiling on top of that
+/// collapsed driver, 3-wood and 5-iron to the same duration so you could not
+/// tell them apart.
+///
+/// The clamp that remains is a guard against unusable data — a zero flight
+/// time from a bad read, or something absurd — and is deliberately wider than
+/// any real golf shot, so nothing playable is altered by it.
+double airborneReplaySeconds(double? flightTime) =>
+    (flightTime ?? 3.0).clamp(0.3, 12.0);
+
 /// Two shot rows describe the same shot.
 ///
 /// Rows are rebuilt when tags change, so identity alone is not enough.
@@ -139,9 +153,9 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
   static const _minZoom = 0.35;
   static const _maxZoom = 3.0;
 
-  /// The roll-out is slow and not very interesting — cap what it costs the
-  /// replay so a long release doesn't stretch the animation out.
-  static const _maxGroundReplaySeconds = 1.8;
+  /// The roll-out plays in real time up to this much. Past it the release is
+  /// compressed — a ball trickling for eight seconds is not worth the wait.
+  static const _maxGroundReplaySeconds = 4.0;
 
   @override
   void initState() {
@@ -168,11 +182,8 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
   ShotData? get _shot =>
       widget.selectedShot ?? (widget.shots.isEmpty ? null : widget.shots.first);
 
-  double get _airborneSeconds {
-    // Slightly slower than real time reads better on a small screen.
-    final flight = (_shot?.trajectory.flightTime ?? 3.0) * 1.15;
-    return flight.clamp(1.2, 7.0);
-  }
+  double get _airborneSeconds =>
+      airborneReplaySeconds(_shot?.trajectory.flightTime);
 
   double get _groundSeconds => math.min(
         _shot?.trajectory.groundTime ?? 0.0,
