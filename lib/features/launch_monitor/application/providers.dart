@@ -18,8 +18,10 @@ import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/notificatio
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/commands.dart'
     as sg;
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
+import 'package:omni_sniffer/shared/providers/hole_setup_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 
 part 'providers.g.dart';
@@ -98,6 +100,11 @@ class LaunchMonitor extends _$LaunchMonitor {
       if (_connectedType != sg.SquareGolfDeviceType.omni) return;
       unawaited(_pushOmniUnits(next));
     });
+
+    // Changing the hole mid-session re-plays every shot already in the list
+    // against it, so the whole session is measured on the same hole rather
+    // than only the shots hit after the change.
+    ref.listen(holeSetupProvider, (_, next) => _applyHole(next));
 
     // Attempt a silent reconnect to the last successfully-connected device
     // if the user has the pref enabled. Deferred so BT permissions have a
@@ -601,9 +608,36 @@ class LaunchMonitor extends _$LaunchMonitor {
     _pendingShotTimer?.cancel();
   }
 
+  /// Re-stamps the live session with a new hole and persists it against the
+  /// draft so a save keeps the right one.
+  void _applyHole(HoleSetup hole) {
+    final active = hole.enabled ? hole : null;
+    if (state.shots.isNotEmpty) {
+      state = state.copyWith(
+        shots: [
+          for (final shot in state.shots)
+            shot.copyWith(hole: active, clearHole: active == null),
+        ],
+      );
+    }
+    final draft = _draftSessionId;
+    if (draft != null) {
+      unawaited(
+        ref.read(appDatabaseProvider).updateSessionHole(draft, active),
+      );
+    }
+  }
+
+  /// The hole new shots are played to, or null when none is configured.
+  HoleSetup? get _activeHole {
+    final hole = ref.read(holeSetupProvider);
+    return hole.enabled ? hole : null;
+  }
+
   ShotData _ballToShotData(sg.BallMetrics b, String? clubId) {
     return ShotData(
       clubId: clubId,
+      hole: _activeHole,
       ballSpeed: b.ballSpeedMps * _mpsToMph,
       spinRate: b.totalSpinRpm.abs().toDouble(),
       spinAxis: b.spinAxis,
@@ -621,7 +655,8 @@ class LaunchMonitor extends _$LaunchMonitor {
       final db = ref.read(appDatabaseProvider);
       if (_draftSessionId == null) {
         _draftCreatedAt = DateTime.now();
-        _draftSessionId = await db.saveDraftSession(_draftCreatedAt!);
+        _draftSessionId =
+            await db.saveDraftSession(_draftCreatedAt!, hole: _activeHole);
       }
       return await db.insertShot(_draftSessionId!, shot);
     } catch (_) {
@@ -647,6 +682,7 @@ class LaunchMonitor extends _$LaunchMonitor {
 
     return ShotData(
       clubId: clubId,
+      hole: _activeHole,
       ballSpeed: j(s.ballSpeed, 0.015),
       spinRate: j(s.spinRate, 0.04),
       spinAxis: s.spinAxis + (_simRand.nextDouble() * 1.0 - 0.5),
@@ -746,6 +782,7 @@ extension on ShotData {
       verticalImpact:
           c.isImpactVerticalValid ? c.impactVertical : verticalImpact,
       tagIds: tagIds,
+      hole: hole,
     );
   }
 }

@@ -15,6 +15,8 @@ separate document: [`flight_model_validation.md`](flight_model_validation.md).
 |---|---|---|
 | Domain | `lib/features/launch_monitor/domain/entities/shot_trajectory.dart` | `BallFlightModel` integrator, `ShotTrajectory`, `TrajectoryPoint`, `Vec3` |
 | Domain | `lib/features/launch_monitor/domain/entities/shot_data.dart` | `ShotData.trajectory` and the derived getters that read from it |
+| Domain | `lib/features/launch_monitor/domain/entities/hole_setup.dart` | `HoleSetup` — fairway and green geometry, and the surface lookup |
+| Shared | `lib/shared/providers/hole_setup_provider.dart` | The configured hole, persisted |
 | Presentation | `lib/features/launch_monitor/presentation/widgets/tabs/flight_3d_tab.dart` | `Flight3DTab` — camera, renderer, replay |
 | Tests | `test/features/launch_monitor/domain/entities/shot_trajectory_test.dart` | Behaviour and API: reference flights, curvature, roll, degenerate input |
 | Tests | `test/features/launch_monitor/domain/entities/shot_trajectory_validation_test.dart` | Whether the physics is right — see the validation doc |
@@ -177,6 +179,36 @@ scaled from it by hand, and are ordered as you would expect:
 The surface is currently fixed to `fairway`. `BallFlightModel.copyWith(ground:)`
 switches it; there is no user-facing control yet.
 
+### The hole
+
+A [`HoleSetup`] turns the flat fairway into a simple hole: a fairway strip of a
+given width running from the tee to the front of a green, which is an ellipse
+at a given distance, size and lateral offset. Everything beside the fairway,
+around the green, or past the back of it is rough.
+
+`HoleSetup.surfaceAt(x, z)` resolves a point to `fairway`, `green` or `rough`,
+and `groundAt` maps that to the matching turf preset. The ground phase consults
+it at **every contact** — each bounce and each rolling step — rather than once
+at landing, so a ball can pitch on the fairway and run onto a green, or hop
+from the green into greenside rough, and behave correctly at each stage.
+
+Two consequences worth internalising, because they pull in opposite directions
+and both are right:
+
+- **Landing** on a green checks the ball, because the bounce is where spin
+  bites and a green grabs hardest.
+- **Rolling onto** a green from the fairway *releases* further, because a green
+  is a smoother surface once the ball is rolling.
+
+The hole is a property of the shot, not of the app's current settings.
+`ShotData.hole` is stamped when the shot is recorded and stored on the session
+row, so changing the hole later never rewrites a saved session's numbers. A
+null hole means fairway everywhere — bit-identical to how the model behaved
+before holes existed, which the test suite asserts directly.
+
+Only the ground phase is affected. Carry, apex, descent angle and curve are
+airborne, so they are the same shot wherever it happens to land.
+
 ### Roll and the device
 
 A device-reported `ShotData.run` still wins. The bounce is simulated anyway for
@@ -232,10 +264,18 @@ faster than 1/distance.)
 Presets: **Behind**, **Side**, **Angled**, **Top**, and **Follow** (a chase cam
 locked to the ball). Drag to orbit, pinch to zoom, double-tap to reset.
 
+With a hole configured a sixth preset, **Hole**, appears and frames tee to
+green regardless of where the shot finished. Every other view keeps following
+the shot and lets the hole run off the edge of the screen — a driver on a long
+hole shows the stretch of fairway it reached, not the whole hole shrunk to
+fit.
+
 **Scene.** Ground plane with a fairway strip and a distance grid on the
 display-unit lattice (25 yd or 25 m), a target line, the flight itself, its
 ground shadow, a faint curtain between the two for depth, an apex marker, and
-landing rings with a dashed roll-out to where the ball comes to rest.
+landing rings with the bounce-and-roll path out to where the ball comes to
+rest. With a hole configured the fairway takes its specified width and stops at
+the green, and the green is drawn with an edge and a pin.
 
 **Replay.** The flight draws itself in at ~1.15× real time whenever the
 selected shot changes, then carries on through the bounce and roll — the

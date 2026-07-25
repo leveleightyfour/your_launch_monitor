@@ -368,10 +368,10 @@ class BallFlightModel {
   ///
   /// Follows Penner's fit to measured golf-ball/turf impacts: fast, steep
   /// arrivals bury into the turf and barely rebound, slow ones bounce more.
-  double restitution(double impactSpeedMps) {
+  double restitution(double impactSpeedMps, [GroundModel? turf]) {
     final v = impactSpeedMps.abs();
     final e = 0.510 - 0.0375 * v + 0.000903 * v * v;
-    return (e * ground.restitutionScale).clamp(0.03, 0.75);
+    return (e * (turf ?? ground).restitutionScale).clamp(0.03, 0.75);
   }
 
   /// Simulate a shot from launch to rest.
@@ -382,6 +382,11 @@ class BallFlightModel {
   /// When the device reports its own roll, pass it as [measuredRollYds]: the
   /// bounce and roll are still simulated for their shape, then scaled so the
   /// downrange roll-out matches the measurement.
+  ///
+  /// [groundAt] resolves the turf under a point on the ground, in yards, and is
+  /// consulted at every ground contact — so a ball can land on a green and
+  /// check, or land short and release across the fairway onto it. Omit it and
+  /// the whole world is [ground].
   ShotTrajectory simulate({
     required double ballSpeedMph,
     required double launchAngleDeg,
@@ -389,6 +394,7 @@ class BallFlightModel {
     required double spinRpm,
     required double spinAxisDeg,
     double? measuredRollYds,
+    GroundModel Function(double xYards, double zYards)? groundAt,
   }) {
     if (ballSpeedMph <= 0 || launchAngleDeg <= 0) return ShotTrajectory.empty;
 
@@ -483,6 +489,7 @@ class BallFlightModel {
       velocity: landVelocity,
       spin: landSpin,
       startTime: landTime,
+      groundAt: groundAt,
     );
 
     var groundPoints = ground.points;
@@ -617,7 +624,14 @@ class BallFlightModel {
     required Vec3 velocity,
     required Vec3 spin,
     required double startTime,
+    GroundModel Function(double xYards, double zYards)? groundAt,
   }) {
+    /// Turf under the ball right now. Resolved per contact, not once at
+    /// landing, so crossing from fairway onto a green changes the behaviour
+    /// mid-roll.
+    GroundModel turfAt(Vec3 p) =>
+        groundAt?.call(p.x * _mToYd, p.z * _mToYd) ?? ground;
+
     var p = position;
     var v = velocity;
     var w = spin;
@@ -629,7 +643,7 @@ class BallFlightModel {
     void sample() => samples.add(_toPoint(t, p, v));
 
     // The arrival itself is the first bounce.
-    final firstImpact = _bounce(v, w);
+    final firstImpact = _bounce(v, w, turfAt(p));
     v = firstImpact.$1;
     w = firstImpact.$2;
     bounces = 1;
@@ -661,7 +675,7 @@ class BallFlightModel {
           final frac = drop.abs() < 1e-9 ? 1.0 : (previousY / drop).clamp(0.0, 1.0);
           p = Vec3(p.x, 0, p.z);
           t -= h * (1 - frac);
-          final impact = _bounce(v, w);
+          final impact = _bounce(v, w, turfAt(p));
           v = impact.$1;
           w = impact.$2;
           bounces++;
@@ -673,7 +687,7 @@ class BallFlightModel {
           continue;
         }
       } else {
-        final rolling = _groundStep(v, w, h);
+        final rolling = _groundStep(v, w, h, turfAt(p));
         v = rolling.$1;
         w = rolling.$2;
         p = Vec3(p.x + v.x * h, 0, p.z + v.z * h);
@@ -708,9 +722,9 @@ class BallFlightModel {
   }
 
   /// Impulse-based bounce. Returns the post-impact velocity and spin.
-  (Vec3, Vec3) _bounce(Vec3 v, Vec3 spin) {
+  (Vec3, Vec3) _bounce(Vec3 v, Vec3 spin, GroundModel turf) {
     final normalSpeed = v.y.abs();
-    final e = restitution(normalSpeed);
+    final e = restitution(normalSpeed, turf);
 
     final contact = _contactVelocity(v, spin);
     final contactSpeed = contact.length;
@@ -722,8 +736,7 @@ class BallFlightModel {
     // Impulse per unit mass: enough to stop the contact patch slipping, capped
     // by what friction can deliver against the normal impulse.
     final gripImpulse = (2.0 / 7.0) * contactSpeed;
-    final frictionLimit =
-        ground.slidingFriction * (1 + e) * normalSpeed;
+    final frictionLimit = turf.slidingFriction * (1 + e) * normalSpeed;
     final j = math.min(gripImpulse, frictionLimit);
 
     // Ploughing: the crater wall shoves back along the ground track, harder
@@ -738,7 +751,7 @@ class BallFlightModel {
       // self-similar over a bounce sequence: a bouncier surface cannot end up
       // killing the ball dead on its fourth, gentlest hop.
       final dig = math.min(
-        ground.ploughing * normalSpeed,
+        turf.ploughing * normalSpeed,
         _maxPloughFraction * tangentialSpeed,
       );
       final track = tangential * (1 / tangentialSpeed);
@@ -755,13 +768,13 @@ class BallFlightModel {
 
   /// One step of ground contact: sliding friction while the contact patch
   /// slips, rolling resistance once it grips.
-  (Vec3, Vec3) _groundStep(Vec3 v, Vec3 spin, double h) {
+  (Vec3, Vec3) _groundStep(Vec3 v, Vec3 spin, double h, GroundModel turf) {
     final contact = _contactVelocity(v, spin);
     final contactSpeed = contact.length;
 
     if (contactSpeed > _slipEpsilonMps) {
       final dir = contact * (1 / contactSpeed);
-      final decel = ground.slidingFriction * _gravity * h;
+      final decel = turf.slidingFriction * _gravity * h;
       // Don't overshoot past the no-slip condition inside one step.
       final maxImpulse = (2.0 / 7.0) * contactSpeed;
       final j = math.min(decel, maxImpulse);
@@ -774,7 +787,7 @@ class BallFlightModel {
     // Rolling without slipping: rolling resistance only, spin tracks speed.
     final speed = math.sqrt(v.x * v.x + v.z * v.z);
     if (speed < 1e-6) return (Vec3.zero, Vec3.zero);
-    final decel = math.min(ground.rollingResistance * _gravity * h, speed);
+    final decel = math.min(turf.rollingResistance * _gravity * h, speed);
     final rolled = Vec3(
       v.x - decel * v.x / speed,
       0,

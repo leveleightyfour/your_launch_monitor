@@ -141,6 +141,7 @@ nonsense elsewhere. Each of these is asserted over a sweep, not at a point:
 | Backspin at landing ↑ | roll falls, monotonically, over 2000–10000 rpm |
 | Descent angle ↑ | roll falls |
 | Turf firmness ↑ | roll rises: rough < green < fairway < firm |
+| Terrain under the ball | landing on a green rolls less than landing on fairway; missing the fairway into rough rolls less again |
 | Sidespin | the bounce kicks the ball further offline, in the curve direction |
 
 The single-peaked assertions are the strongest of these. A model with the wrong
@@ -272,9 +273,14 @@ where it shouldn't be.
   nothing here accounts for that.
 - **Turf is a guess.** Bounce and roll depend on moisture, grass length, thatch
   and slope, none of which are knowable from a BLE packet. Roll should be read
-  as "about this far, on this kind of surface", not as a measurement. The
-  surface is fixed to fairway; the other presets exist but are not yet
-  user-selectable.
+  as "about this far, on this kind of surface", not as a measurement. With no
+  hole configured everything is fairway; configuring one selects green,
+  fairway or rough by where the ball is, but the green and rough presets are
+  scaled by hand rather than fitted, so trust their ordering over their
+  absolute values.
+- **Hole boundaries are hard.** No fringe or collar, no bunkers, no slope: the
+  turf changes discontinuously at the edge of the green and at the edge of the
+  fairway.
 - **Flat, level ground.** No slope, so no downhill release or uphill check.
 - **Spin decay is a single exponential** with a 24 s constant, independent of
   speed. Real decay depends on Reynolds number.

@@ -1,3 +1,4 @@
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_trajectory.dart';
 
 /// Simulated flights are cached per shot — the integration is cheap but it runs
@@ -32,6 +33,13 @@ class ShotData {
   /// IDs referencing persisted [Tag] rows.
   final List<int> tagIds;
 
+  /// The hole this shot was played to, if one was configured.
+  ///
+  /// It travels with the shot rather than being read from settings, so a saved
+  /// session keeps reporting the totals it was played to even after the hole
+  /// settings change. Null means no hole: fairway everywhere.
+  final HoleSetup? hole;
+
   const ShotData({
     this.dbId,
     this.clubId,
@@ -50,9 +58,15 @@ class ShotData {
     this.horizontalImpact,
     this.verticalImpact,
     this.tagIds = const [],
+    this.hole,
   });
 
-  ShotData copyWith({int? dbId, List<int>? tagIds}) {
+  ShotData copyWith({
+    int? dbId,
+    List<int>? tagIds,
+    HoleSetup? hole,
+    bool clearHole = false,
+  }) {
     return ShotData(
       dbId: dbId ?? this.dbId,
       clubId: clubId,
@@ -71,16 +85,20 @@ class ShotData {
       horizontalImpact: horizontalImpact,
       verticalImpact: verticalImpact,
       tagIds: tagIds ?? this.tagIds,
+      hole: clearHole ? null : (hole ?? this.hole),
     );
   }
 
   /// Simulated ball flight for this shot's launch conditions.
   ///
   /// The Omni measures launch only, so carry, apex, curvature and the shape of
-  /// the flight all come from integrating the trajectory. Cached per shot.
+  /// the flight all come from integrating the trajectory. When the shot was
+  /// played to a [hole], the ground phase resolves turf from it, so where the
+  /// ball lands decides how it releases. Cached per shot.
   ShotTrajectory get trajectory {
     final cached = _trajectoryCache[this];
     if (cached != null) return cached;
+    final playedHole = hole;
     final computed = BallFlightModel.standard.simulate(
       ballSpeedMph: ballSpeed,
       launchAngleDeg: launchAngle,
@@ -88,6 +106,9 @@ class ShotData {
       spinRpm: spinRate,
       spinAxisDeg: spinAxis,
       measuredRollYds: run,
+      groundAt: playedHole != null && playedHole.enabled
+          ? playedHole.groundAt
+          : null,
     );
     _trajectoryCache[this] = computed;
     return computed;
@@ -146,6 +167,7 @@ class ShotData {
       horizontalImpact: avgNullable((s) => s.horizontalImpact),
       verticalImpact: avgNullable((s) => s.verticalImpact),
       tagIds: const [],
+      hole: shots.first.hole,
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_trajectory.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
@@ -16,7 +17,8 @@ enum FlightCamera {
   side('Side', Icons.arrow_forward),
   angled('Angled', Icons.filter_hdr),
   top('Top', Icons.vertical_align_top),
-  follow('Follow', Icons.videocam);
+  follow('Follow', Icons.videocam),
+  hole('Hole', Icons.golf_course);
 
   final String label;
   final IconData icon;
@@ -189,9 +191,21 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
         case FlightCamera.follow:
           _yaw = 0;
           _pitch = 0.22;
+        case FlightCamera.hole:
+          _yaw = 0;
+          _pitch = 0.40;
       }
     });
   }
+
+  /// The hole this shot was played to, if any. It comes from the shot rather
+  /// than from settings so a saved session renders the hole it was played on.
+  HoleSetup? get _hole {
+    final hole = _shot?.hole;
+    return hole != null && hole.enabled ? hole : null;
+  }
+
+  bool get _holeIsSet => _hole != null;
 
   Club? _clubFor(ShotData shot) {
     for (final club in widget.clubs) {
@@ -246,6 +260,7 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
                       shotColor: shotColor,
                       prefs: prefs,
                       density: density,
+                      hole: _hole,
                     ),
                   ),
                   Positioned(
@@ -269,6 +284,7 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
     required Color shotColor,
     required UnitPrefs prefs,
     required _Density density,
+    required HoleSetup? hole,
   }) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -307,6 +323,8 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
             prefs: prefs,
             density: density,
             controlStripHeight: _controlStripHeight(density),
+            hole: hole,
+            frameWholeHole: _camera == FlightCamera.hole,
           ),
           child: const SizedBox.expand(),
         ),
@@ -345,14 +363,19 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
 
   Widget _cameraChips(_Density density) {
     final showLabels = density.atLeastMedium;
+    // The Hole view is only meaningful when a hole is configured.
+    final presets = [
+      for (final p in FlightCamera.values)
+        if (p != FlightCamera.hole || _holeIsSet) p,
+    ];
     return SizedBox(
       height: density == _Density.compact ? 26 : 30,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: FlightCamera.values.length,
+        itemCount: presets.length,
         separatorBuilder: (_, __) => const SizedBox(width: 5),
         itemBuilder: (context, i) {
-          final preset = FlightCamera.values[i];
+          final preset = presets[i];
           final active = preset == _camera;
           final color = active ? context.accent : AppColors.textMuted;
           return Tooltip(
@@ -692,6 +715,12 @@ class _FlightPainter extends CustomPainter {
   /// shot when framing.
   final double controlStripHeight;
 
+  /// The hole to draw, if one was configured for this shot.
+  final HoleSetup? hole;
+
+  /// Frame the whole hole rather than just the shot.
+  final bool frameWholeHole;
+
   _FlightPainter({
     required this.trajectory,
     required this.ghosts,
@@ -706,10 +735,14 @@ class _FlightPainter extends CustomPainter {
     required this.prefs,
     required this.density,
     required this.controlStripHeight,
+    required this.hole,
+    required this.frameWholeHole,
   });
 
   static const _groundColor = Color(0xFF101619);
   static const _fairwayColor = Color(0xFF13201A);
+  static const _greenColor = Color(0xFF1B3524);
+  static const _greenEdge = Color(0xFF3C6B4A);
   static const _gridColor = Color(0xFF2A3A38);
   static const _skyBottom = Color(0xFF0E1418);
 
@@ -736,11 +769,20 @@ class _FlightPainter extends CustomPainter {
 
     // Grid spacing follows the display unit so the labels stay round numbers.
     final gridStep = prefs.distance == DistanceUnit.meters ? 25 / 0.9144 : 25.0;
+    final course = hole;
     final halfWidth = math.max(
       math.max(rest.x.abs() + 2 * gridStep, 3 * gridStep),
-      range * 0.3,
+      math.max(
+        range * 0.3,
+        course == null ? 0.0 : course.fairwayWidth * 0.9,
+      ),
     );
-    final maxDepth = range + 2 * gridStep;
+    // The hole has to be drawn even when the shot falls well short of it.
+    final maxDepth = math.max(
+          range,
+          course == null ? 0.0 : course.greenBack + 20,
+        ) +
+        2 * gridStep;
 
     final _Camera camera;
     if (follow) {
@@ -758,6 +800,7 @@ class _FlightPainter extends CustomPainter {
 
     _paintBackdrop(canvas, size);
     _paintGround(canvas, camera, halfWidth, maxDepth, gridStep);
+    if (course != null) _paintGreen(canvas, camera, course);
     if (density.atLeastMedium) {
       _paintDistanceLabels(canvas, camera, gridStep, maxDepth, halfWidth);
     }
@@ -804,6 +847,13 @@ class _FlightPainter extends CustomPainter {
       for (var i = 0; i < ground.length; i += groundStride)
         Vec3(ground[i].x, ground[i].y, ground[i].z),
       rest,
+      // The Hole view frames tee to green whatever the shot did; every other
+      // view follows the shot and lets the hole run off the edge.
+      if (frameWholeHole && hole != null) ...[
+        Vec3(hole!.greenOffset - hole!.greenWidth / 2, 0, hole!.greenFront),
+        Vec3(hole!.greenOffset + hole!.greenWidth / 2, 0, hole!.greenBack),
+        Vec3(hole!.greenOffset, 2.4, hole!.greenDistance),
+      ],
     ];
   }
 
@@ -1033,16 +1083,22 @@ class _FlightPainter extends CustomPainter {
       Paint()..color = _groundColor,
     );
 
-    // Fairway strip down the target line.
-    final fairwayHalf = math.min(halfWidth * 0.5, 30.0);
+    // Fairway strip down the target line. With a hole configured it is the
+    // width the player set and it stops at the front of the green — beyond
+    // and beside it is rough, which is what the ball will be played off.
+    final course = hole;
+    final fairwayHalf = course != null
+        ? course.fairwayWidth / 2
+        : math.min(halfWidth * 0.5, 30.0);
+    final fairwayEnd = course != null ? course.greenFront : maxDepth;
     _polygon3(
       canvas,
       camera,
       [
         Vec3(-fairwayHalf, 0, behind),
         Vec3(fairwayHalf, 0, behind),
-        Vec3(fairwayHalf, 0, maxDepth),
-        Vec3(-fairwayHalf, 0, maxDepth),
+        Vec3(fairwayHalf, 0, fairwayEnd),
+        Vec3(-fairwayHalf, 0, fairwayEnd),
       ],
       Paint()..color = _fairwayColor,
     );
@@ -1086,6 +1142,70 @@ class _FlightPainter extends CustomPainter {
         ..color = accent.withAlpha(90)
         ..strokeWidth = 1.4,
     );
+  }
+
+  /// The green: an ellipse of turf with an edge and a pin in the middle.
+  void _paintGreen(Canvas canvas, _Camera camera, HoleSetup course) {
+    const segments = 40;
+    final halfWidth = course.greenWidth / 2;
+    final halfDepth = course.greenDepth / 2;
+    final ring = <Vec3>[
+      for (var i = 0; i < segments; i++)
+        Vec3(
+          course.greenOffset + halfWidth * math.cos(i * 2 * math.pi / segments),
+          0,
+          course.greenDistance +
+              halfDepth * math.sin(i * 2 * math.pi / segments),
+        ),
+    ];
+
+    _polygon3(canvas, camera, ring, Paint()..color = _greenColor);
+
+    final edge = Paint()
+      ..color = _greenEdge
+      ..strokeWidth = 1.4 * _s;
+    for (var i = 0; i < ring.length; i++) {
+      _line3(canvas, camera, ring[i], ring[(i + 1) % ring.length], edge);
+    }
+
+    // Pin, with a small flag. Two and a half yards is roughly a real flagstick
+    // at this scale — tall enough to read, short enough not to dominate.
+    final base = course.pin;
+    const height = 2.4;
+    final top = Vec3(base.x, height, base.z);
+    _line3(
+      canvas,
+      camera,
+      base,
+      top,
+      Paint()
+        ..color = Colors.white.withAlpha(200)
+        ..strokeWidth = 1.4 * _s,
+    );
+    final flagTop = camera.project(top);
+    final flagBottom = camera.project(Vec3(base.x, height * 0.72, base.z));
+    if (flagTop != null && flagBottom != null) {
+      final span = (flagBottom.dy - flagTop.dy).abs().clamp(3.0, 14.0);
+      canvas.drawPath(
+        Path()
+          ..moveTo(flagTop.dx, flagTop.dy)
+          ..lineTo(flagTop.dx + span * 1.3, flagTop.dy + span * 0.45)
+          ..lineTo(flagTop.dx, flagTop.dy + span * 0.9)
+          ..close(),
+        Paint()..color = accent,
+      );
+    }
+
+    if (density == _Density.compact) return;
+    final label = camera.project(Vec3(base.x, 0, course.greenBack));
+    if (label != null) {
+      _label(
+        canvas,
+        '${prefs.dist(course.greenDistance).round()} ${prefs.distLabel}',
+        label.translate(0, -10),
+        AppTextStyles.mono(size: 9 * _s, color: _greenEdge),
+      );
+    }
   }
 
   void _paintDistanceLabels(
@@ -1331,5 +1451,7 @@ class _FlightPainter extends CustomPainter {
       old.accent != accent ||
       old.prefs != prefs ||
       old.density != density ||
-      old.controlStripHeight != controlStripHeight;
+      old.controlStripHeight != controlStripHeight ||
+      old.hole != hole ||
+      old.frameWholeHole != frameWholeHole;
 }

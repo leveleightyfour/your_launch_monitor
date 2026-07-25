@@ -42,8 +42,19 @@ class $ActivitiesTable extends Activities
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _holeSetupMeta = const VerificationMeta(
+    'holeSetup',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, name, createdAt];
+  late final GeneratedColumn<String> holeSetup = GeneratedColumn<String>(
+    'hole_setup',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, name, createdAt, holeSetup];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -75,6 +86,12 @@ class $ActivitiesTable extends Activities
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
+    if (data.containsKey('hole_setup')) {
+      context.handle(
+        _holeSetupMeta,
+        holeSetup.isAcceptableOrUnknown(data['hole_setup']!, _holeSetupMeta),
+      );
+    }
     return context;
   }
 
@@ -96,6 +113,10 @@ class $ActivitiesTable extends Activities
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
       )!,
+      holeSetup: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}hole_setup'],
+      ),
     );
   }
 
@@ -109,10 +130,15 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   final int id;
   final String name;
   final DateTime createdAt;
+
+  /// The hole this session was played to, as JSON. Null for sessions played
+  /// without one — they keep behaving as plain fairway forever.
+  final String? holeSetup;
   const ActivityRow({
     required this.id,
     required this.name,
     required this.createdAt,
+    this.holeSetup,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -120,6 +146,9 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     map['id'] = Variable<int>(id);
     map['name'] = Variable<String>(name);
     map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || holeSetup != null) {
+      map['hole_setup'] = Variable<String>(holeSetup);
+    }
     return map;
   }
 
@@ -128,6 +157,9 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       id: Value(id),
       name: Value(name),
       createdAt: Value(createdAt),
+      holeSetup: holeSetup == null && nullToAbsent
+          ? const Value.absent()
+          : Value(holeSetup),
     );
   }
 
@@ -140,6 +172,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       id: serializer.fromJson<int>(json['id']),
       name: serializer.fromJson<String>(json['name']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      holeSetup: serializer.fromJson<String?>(json['holeSetup']),
     );
   }
   @override
@@ -149,20 +182,27 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       'id': serializer.toJson<int>(id),
       'name': serializer.toJson<String>(name),
       'createdAt': serializer.toJson<DateTime>(createdAt),
+      'holeSetup': serializer.toJson<String?>(holeSetup),
     };
   }
 
-  ActivityRow copyWith({int? id, String? name, DateTime? createdAt}) =>
-      ActivityRow(
-        id: id ?? this.id,
-        name: name ?? this.name,
-        createdAt: createdAt ?? this.createdAt,
-      );
+  ActivityRow copyWith({
+    int? id,
+    String? name,
+    DateTime? createdAt,
+    Value<String?> holeSetup = const Value.absent(),
+  }) => ActivityRow(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    createdAt: createdAt ?? this.createdAt,
+    holeSetup: holeSetup.present ? holeSetup.value : this.holeSetup,
+  );
   ActivityRow copyWithCompanion(ActivitiesCompanion data) {
     return ActivityRow(
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      holeSetup: data.holeSetup.present ? data.holeSetup.value : this.holeSetup,
     );
   }
 
@@ -171,46 +211,53 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     return (StringBuffer('ActivityRow(')
           ..write('id: $id, ')
           ..write('name: $name, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('holeSetup: $holeSetup')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, createdAt);
+  int get hashCode => Object.hash(id, name, createdAt, holeSetup);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is ActivityRow &&
           other.id == this.id &&
           other.name == this.name &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.holeSetup == this.holeSetup);
 }
 
 class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   final Value<int> id;
   final Value<String> name;
   final Value<DateTime> createdAt;
+  final Value<String?> holeSetup;
   const ActivitiesCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.holeSetup = const Value.absent(),
   });
   ActivitiesCompanion.insert({
     this.id = const Value.absent(),
     required String name,
     required DateTime createdAt,
+    this.holeSetup = const Value.absent(),
   }) : name = Value(name),
        createdAt = Value(createdAt);
   static Insertable<ActivityRow> custom({
     Expression<int>? id,
     Expression<String>? name,
     Expression<DateTime>? createdAt,
+    Expression<String>? holeSetup,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (name != null) 'name': name,
       if (createdAt != null) 'created_at': createdAt,
+      if (holeSetup != null) 'hole_setup': holeSetup,
     });
   }
 
@@ -218,11 +265,13 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     Value<int>? id,
     Value<String>? name,
     Value<DateTime>? createdAt,
+    Value<String?>? holeSetup,
   }) {
     return ActivitiesCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
       createdAt: createdAt ?? this.createdAt,
+      holeSetup: holeSetup ?? this.holeSetup,
     );
   }
 
@@ -238,6 +287,9 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
+    if (holeSetup.present) {
+      map['hole_setup'] = Variable<String>(holeSetup.value);
+    }
     return map;
   }
 
@@ -246,7 +298,8 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     return (StringBuffer('ActivitiesCompanion(')
           ..write('id: $id, ')
           ..write('name: $name, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('holeSetup: $holeSetup')
           ..write(')'))
         .toString();
   }
@@ -1931,12 +1984,14 @@ typedef $$ActivitiesTableCreateCompanionBuilder =
       Value<int> id,
       required String name,
       required DateTime createdAt,
+      Value<String?> holeSetup,
     });
 typedef $$ActivitiesTableUpdateCompanionBuilder =
     ActivitiesCompanion Function({
       Value<int> id,
       Value<String> name,
       Value<DateTime> createdAt,
+      Value<String?> holeSetup,
     });
 
 final class $$ActivitiesTableReferences
@@ -1984,6 +2039,11 @@ class $$ActivitiesTableFilterComposer
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get holeSetup => $composableBuilder(
+    column: $table.holeSetup,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2036,6 +2096,11 @@ class $$ActivitiesTableOrderingComposer
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get holeSetup => $composableBuilder(
+    column: $table.holeSetup,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ActivitiesTableAnnotationComposer
@@ -2055,6 +2120,9 @@ class $$ActivitiesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get holeSetup =>
+      $composableBuilder(column: $table.holeSetup, builder: (column) => column);
 
   Expression<T> shotsRefs<T extends Object>(
     Expression<T> Function($$ShotsTableAnnotationComposer a) f,
@@ -2113,17 +2181,24 @@ class $$ActivitiesTableTableManager
                 Value<int> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
-              }) =>
-                  ActivitiesCompanion(id: id, name: name, createdAt: createdAt),
+                Value<String?> holeSetup = const Value.absent(),
+              }) => ActivitiesCompanion(
+                id: id,
+                name: name,
+                createdAt: createdAt,
+                holeSetup: holeSetup,
+              ),
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
                 required String name,
                 required DateTime createdAt,
+                Value<String?> holeSetup = const Value.absent(),
               }) => ActivitiesCompanion.insert(
                 id: id,
                 name: name,
                 createdAt: createdAt,
+                holeSetup: holeSetup,
               ),
           withReferenceMapper: (p0) => p0
               .map(

@@ -9,6 +9,7 @@
 // are expected and will disappear once build_runner has run.
 
 // ignore_for_file: type=lint
+import 'dart:convert';
 import 'dart:ui' show Color;
 
 import 'package:drift/drift.dart';
@@ -17,6 +18,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dar
     as domain;
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/tag.dart';
 
 part 'database.g.dart';
@@ -29,6 +31,10 @@ class Activities extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get name => text()();
   DateTimeColumn get createdAt => dateTime()();
+
+  /// The hole this session was played to, as JSON. Null for sessions played
+  /// without one — they keep behaving as plain fairway forever.
+  TextColumn get holeSetup => text().nullable()();
 }
 
 /// @DataClassName avoids clashing with any future Shot domain class.
@@ -99,7 +105,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -111,6 +117,9 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 3) {
             await m.createTable(savedClubs);
+          }
+          if (from < 4) {
+            await m.addColumn(activities, activities.holeSetup);
           }
         },
       );
@@ -209,10 +218,20 @@ class AppDatabase extends _$AppDatabase {
 
   /// Creates a placeholder activity row for the in-progress session and returns
   /// its DB ID. The name can be updated later with [finalizeSession].
-  Future<int> saveDraftSession(DateTime createdAt) =>
+  Future<int> saveDraftSession(DateTime createdAt, {HoleSetup? hole}) =>
       into(activities).insert(
-        ActivitiesCompanion.insert(name: '', createdAt: createdAt),
+        ActivitiesCompanion.insert(
+          name: '',
+          createdAt: createdAt,
+          holeSetup: Value(_encodeHole(hole)),
+        ),
       );
+
+  /// Updates the hole on an in-progress session — the player changed it
+  /// mid-round.
+  Future<void> updateSessionHole(int id, HoleSetup? hole) =>
+      (update(activities)..where((a) => a.id.equals(id)))
+          .write(ActivitiesCompanion(holeSetup: Value(_encodeHole(hole))));
 
   /// Inserts a single shot, returning the shot with its [ShotData.dbId] set.
   Future<ShotData> insertShot(int activityId, ShotData shot) async {
@@ -248,6 +267,10 @@ class AppDatabase extends _$AppDatabase {
         ActivitiesCompanion.insert(
           name: session.name,
           createdAt: session.createdAt,
+          // Every shot in a session shares its hole.
+          holeSetup: Value(_encodeHole(
+            session.shots.isEmpty ? null : session.shots.first.hole,
+          )),
         ),
       );
       for (final shot in session.shots) {
@@ -263,15 +286,28 @@ class AppDatabase extends _$AppDatabase {
   // ── Row → domain mappers ──────────────────────────────────────────────────
 
   domain.Session _toDomainSession(ActivityRow row, List<ShotRow> shotRows) {
+    final hole = _decodeHole(row.holeSetup);
     return domain.Session(
       id: row.id.toString(),
       name: row.name,
       createdAt: row.createdAt,
-      shots: shotRows.map(_toDomainShot).toList(),
+      shots: shotRows.map((r) => _toDomainShot(r, hole)).toList(),
     );
   }
 
-  ShotData _toDomainShot(ShotRow row) {
+  static String? _encodeHole(HoleSetup? hole) =>
+      hole == null || !hole.enabled ? null : jsonEncode(hole.toJson());
+
+  static HoleSetup? _decodeHole(String? json) {
+    if (json == null || json.isEmpty) return null;
+    try {
+      return HoleSetup.fromJson(jsonDecode(json) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  ShotData _toDomainShot(ShotRow row, [HoleSetup? hole]) {
     final tagIdList = row.tagIds.isEmpty
         ? <int>[]
         : row.tagIds.split(',').map(int.parse).toList();
@@ -293,6 +329,7 @@ class AppDatabase extends _$AppDatabase {
       horizontalImpact: row.horizontalImpact,
       verticalImpact: row.verticalImpact,
       tagIds: tagIdList,
+      hole: hole,
     );
   }
 
