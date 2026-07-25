@@ -42,11 +42,17 @@ class UnitPrefs {
   /// monitor on startup.
   final bool autoReconnect;
 
+  /// When `true`, the session screen shows the ⚡ test-shot button that
+  /// injects a jittered seed shot — used for visualisation testing without
+  /// the physical device. Off by default.
+  final bool showTestShotButton;
+
   const UnitPrefs({
     this.distance = DistanceUnit.meters,
     this.speed = SpeedUnit.mph,
     this.dispersionStandard = DispersionStandard.trackman,
     this.autoReconnect = true,
+    this.showTestShotButton = false,
   });
 
   UnitPrefs copyWith({
@@ -54,12 +60,14 @@ class UnitPrefs {
     SpeedUnit? speed,
     DispersionStandard? dispersionStandard,
     bool? autoReconnect,
+    bool? showTestShotButton,
   }) =>
       UnitPrefs(
         distance: distance ?? this.distance,
         speed: speed ?? this.speed,
         dispersionStandard: dispersionStandard ?? this.dispersionStandard,
         autoReconnect: autoReconnect ?? this.autoReconnect,
+        showTestShotButton: showTestShotButton ?? this.showTestShotButton,
       );
 
   /// Display label for distance values.
@@ -84,6 +92,7 @@ class UnitPrefs {
     'speed': speed.name,
     'dispersionStandard': dispersionStandard.name,
     'autoReconnect': autoReconnect,
+    'showTestShotButton': showTestShotButton,
   };
 
   factory UnitPrefs.fromJson(Map<String, dynamic> j) => UnitPrefs(
@@ -100,6 +109,7 @@ class UnitPrefs {
       orElse: () => DispersionStandard.trackman,
     ),
     autoReconnect: j['autoReconnect'] as bool? ?? true,
+    showTestShotButton: j['showTestShotButton'] as bool? ?? false,
   );
 }
 
@@ -155,6 +165,11 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
 
   void setAutoReconnect(bool enabled) {
     state = state.copyWith(autoReconnect: enabled);
+    _save();
+  }
+
+  void setShowTestShotButton(bool enabled) {
+    state = state.copyWith(showTestShotButton: enabled);
     _save();
   }
 }
