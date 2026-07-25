@@ -14,6 +14,7 @@ import 'package:flutter/foundation.dart';
 import '../ble_adapter.dart';
 import 'commands.dart';
 import 'constants.dart';
+import 'frame_capture.dart';
 import 'log.dart';
 import 'notifications.dart';
 
@@ -723,6 +724,11 @@ class LaunchMonitorService {
     _eventCtrl.add(LmRawEvent(list));
 
     final kind = classify(list);
+    // Verbatim, before any parsing narrows it to the fields we understand —
+    // an undecoded apex would only ever show up in the bytes we ignore.
+    FrameCapture.deviceType = deviceType.name;
+    FrameCapture.osVersion = osVersion ?? '';
+    FrameCapture.record(kind.name, list);
     try {
       switch (kind) {
         case NotificationKind.sensor:

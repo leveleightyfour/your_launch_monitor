@@ -6,6 +6,7 @@ import 'package:omni_sniffer/shared/app_version.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/hole_setup_controls.dart';
 import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
+import 'package:omni_sniffer/shared/services/protocol_capture_export.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -153,6 +154,13 @@ class ProfileScreen extends ConsumerWidget {
               onTap: () {},
             ),
             _SettingsRow(icon: Icons.info, label: 'About', onTap: () {}),
+            Builder(
+              builder: (context) => _SettingsRow(
+                icon: Icons.bug_report,
+                label: 'Export protocol capture',
+                onTap: () => ProtocolCaptureExport.share(context),
+              ),
+            ),
             const SizedBox(height: 24),
             const Center(child: _VersionLabel()),
             const SizedBox(height: 8),
