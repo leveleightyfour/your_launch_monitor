@@ -270,12 +270,19 @@ the shot and lets the hole run off the edge of the screen — a driver on a long
 hole shows the stretch of fairway it reached, not the whole hole shrunk to
 fit.
 
-**Scene.** Ground plane with a fairway strip and a distance grid on the
-display-unit lattice (25 yd or 25 m), a target line, the flight itself, its
-ground shadow, a faint curtain between the two for depth, an apex marker, and
-landing rings with the bounce-and-roll path out to where the ball comes to
-rest. With a hole configured the fairway takes its specified width and stops at
-the green, and the green is drawn with an edge and a pin.
+**Scene.** Ground plane with a fairway and a distance grid on the display-unit
+lattice (25 yd or 25 m), a target line, the flight itself, its ground shadow, a
+faint curtain between the two for depth, an apex marker, and landing rings with
+the bounce-and-roll path out to where the ball comes to rest. With a hole
+configured the fairway takes its specified width and stops at the green, and
+the green is drawn with an edge and a pin.
+
+The fairway is drawn as 5-yard mown bands in two tones rather than one flat
+strip. It costs a dozen polygons and the way the bands converge is most of what
+makes the surface read as receding. With a hole set, the ground off the fairway
+is coloured as rough — warmer and drier than the turf — so the boundary is
+visible, which matters because that edge is where the ball's behaviour
+changes.
 
 **Replay.** The flight draws itself in at ~1.15× real time whenever the
 selected shot changes, then carries on through the bounce and roll — the

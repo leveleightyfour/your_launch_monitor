@@ -741,8 +741,19 @@ class _FlightPainter extends CustomPainter {
 
   static const _groundColor = Color(0xFF101619);
   static const _fairwayColor = Color(0xFF13201A);
+
+  /// Every other mown band. Barely lighter than [_fairwayColor] — the stripes
+  /// should read as texture, not as markings.
+  static const _fairwayStripe = Color(0xFF17271F);
+
+  /// Off the fairway. Warmer and drier than the turf so the boundary — which
+  /// is where the ball's behaviour changes — is visible.
+  static const _roughColor = Color(0xFF1B1811);
   static const _greenColor = Color(0xFF1B3524);
   static const _greenEdge = Color(0xFF3C6B4A);
+
+  /// Width of one mown band, in yards. Roughly a triplex mower's pass.
+  static const _stripeWidth = 5.0;
   static const _gridColor = Color(0xFF2A3A38);
   static const _skyBottom = Color(0xFF0E1418);
 
@@ -1071,6 +1082,11 @@ class _FlightPainter extends CustomPainter {
     // rather than as the end of a floating platform.
     final outerWidth = halfWidth * 5;
     final outerDepth = maxDepth * 3;
+    final course = hole;
+
+    // With a hole set, everything off the fairway and green really is rough —
+    // the model says so — so the ground it sits on is coloured as rough rather
+    // than as neutral scenery.
     _polygon3(
       canvas,
       camera,
@@ -1080,28 +1096,38 @@ class _FlightPainter extends CustomPainter {
         Vec3(outerWidth, 0, outerDepth),
         Vec3(-outerWidth, 0, outerDepth),
       ],
-      Paint()..color = _groundColor,
+      Paint()..color = course != null ? _roughColor : _groundColor,
     );
 
-    // Fairway strip down the target line. With a hole configured it is the
-    // width the player set and it stops at the front of the green — beyond
-    // and beside it is rough, which is what the ball will be played off.
-    final course = hole;
+    // Fairway down the target line. With a hole configured it is the width the
+    // player set and it stops at the front of the green.
+    //
+    // It is drawn as mown bands rather than one strip: the way the bands
+    // converge is most of what makes the surface read as receding, and it
+    // costs a dozen extra polygons.
     final fairwayHalf = course != null
         ? course.fairwayWidth / 2
         : math.min(halfWidth * 0.5, 30.0);
     final fairwayEnd = course != null ? course.greenFront : maxDepth;
-    _polygon3(
-      canvas,
-      camera,
-      [
-        Vec3(-fairwayHalf, 0, behind),
-        Vec3(fairwayHalf, 0, behind),
-        Vec3(fairwayHalf, 0, fairwayEnd),
-        Vec3(-fairwayHalf, 0, fairwayEnd),
-      ],
-      Paint()..color = _fairwayColor,
-    );
+    final stripes = (fairwayHalf * 2 / _stripeWidth).ceil();
+    for (var i = 0; i < stripes; i++) {
+      final left = -fairwayHalf + i * _stripeWidth;
+      // Overlap the neighbour a hair; abutting fills leave an antialiased seam.
+      final right =
+          math.min(left + _stripeWidth + 0.05, fairwayHalf);
+      if (right - left < 0.01) continue;
+      _polygon3(
+        canvas,
+        camera,
+        [
+          Vec3(left, 0, behind),
+          Vec3(right, 0, behind),
+          Vec3(right, 0, fairwayEnd),
+          Vec3(left, 0, fairwayEnd),
+        ],
+        Paint()..color = i.isEven ? _fairwayColor : _fairwayStripe,
+      );
+    }
 
     // Cross lines — faded with distance so the horizon doesn't turn solid.
     for (var z = 0.0; z <= maxDepth; z += gridStep) {
