@@ -14,15 +14,16 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_o
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_list_panel.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/club_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/dispersion_tab.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/flight_3d_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/table_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/tiles_tab.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 // ── View enums ─────────────────────────────────────────────────────────────────
 
-enum _ActiveView { split, tiles, dispersion, club, table, optimizer }
+enum _ActiveView { split, tiles, dispersion, flight, club, table, optimizer }
 
-enum _ActivePaneView { tiles, dispersion, club, table, optimizer }
+enum _ActivePaneView { tiles, dispersion, flight, club, table, optimizer }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 
@@ -107,6 +108,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         selectedClub: filterClub,
         highlightedShot: selectedShot,
         onClubSelected: (_) {},
+      ),
+      _ActiveView.flight => Flight3DTab(
+        shots: shotsForClub,
+        selectedShot: selectedInClub >= 0 ? selectedShot : null,
+        clubs: clubs,
       ),
       _ActiveView.club => ClubTab(
         shots: shotsForClub,
@@ -539,30 +545,47 @@ class _ActiveNavBar extends StatelessWidget {
     (_ActiveView.split, Icons.view_column, 'Split view'),
     (_ActiveView.tiles, Icons.grid_view_rounded, 'Tiles'),
     (_ActiveView.dispersion, Icons.scatter_plot, 'Dispersion'),
+    (_ActiveView.flight, Icons.view_in_ar, '3D Flight'),
     (_ActiveView.club, Icons.sports_golf, 'Club'),
     (_ActiveView.table, Icons.table_rows, 'Table'),
     (_ActiveView.optimizer, Icons.tune, 'Optimizer'),
   ];
 
+  /// Below this the labels start colliding, so the bar scrolls instead.
+  static const _minItemWidth = 62.0;
+
   @override
   Widget build(BuildContext context) {
+    final items = _items.map((item) {
+      final (v, icon, label) = item;
+      return _NavItem(
+        icon: icon,
+        label: label,
+        active: view == v,
+        onTap: () => onChanged(v),
+      );
+    }).toList();
+
     return Container(
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppColors.border)),
         color: AppColors.background,
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: _items.map((item) {
-          final (v, icon, label) = item;
-          final active = view == v;
-          return _NavItem(
-            icon: icon,
-            label: label,
-            active: active,
-            onTap: () => onChanged(v),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final fits = constraints.maxWidth >= _minItemWidth * items.length;
+          if (fits) {
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: items,
+            );
+          }
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(children: items),
           );
-        }).toList(),
+        },
       ),
     );
   }
@@ -672,6 +695,12 @@ class _ActiveSplitView extends StatelessWidget {
           highlightedShot: highlightedShot,
           onClubSelected: (_) {},
         );
+      case _ActivePaneView.flight:
+        return Flight3DTab(
+          shots: shots,
+          selectedShot: highlightedShot,
+          clubs: clubs,
+        );
       case _ActivePaneView.club:
         return ClubTab(
           shots: shots,
@@ -735,6 +764,7 @@ class _ActivePaneHeader extends StatelessWidget {
   static const _options = [
     (_ActivePaneView.tiles, Icons.grid_view_rounded, 'Tiles'),
     (_ActivePaneView.dispersion, Icons.scatter_plot, 'Dispersion'),
+    (_ActivePaneView.flight, Icons.view_in_ar, '3D Flight'),
     (_ActivePaneView.club, Icons.sports_golf, 'Club'),
     (_ActivePaneView.table, Icons.table_rows, 'Table'),
     (_ActivePaneView.optimizer, Icons.tune, 'Optimizer'),

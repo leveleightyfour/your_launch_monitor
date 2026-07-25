@@ -1,4 +1,8 @@
-import 'dart:math' as math;
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_trajectory.dart';
+
+/// Simulated flights are cached per shot — the integration is cheap but it runs
+/// on every rebuild of the dispersion plot and the 3D flight view otherwise.
+final Expando<ShotTrajectory> _trajectoryCache = Expando('shotTrajectory');
 
 class ShotData {
   /// Database row ID. Null for shots that haven't been persisted yet.
@@ -70,20 +74,47 @@ class ShotData {
     );
   }
 
-  /// Estimated carry distance in yards (simplified ballistic + ~20% lift correction).
-  /// Replaced by device value once protocol is decoded.
-  double get carry {
-    final vFps = ballSpeed * 1.46667;
-    final thetaRad = launchAngle * math.pi / 180.0;
-    final rangeFeet = vFps * vFps * math.sin(2.0 * thetaRad) / 32.174;
-    return (rangeFeet / 3.0) * 1.2;
+  /// Simulated ball flight for this shot's launch conditions.
+  ///
+  /// The Omni measures launch only, so carry, apex, curvature and the shape of
+  /// the flight all come from integrating the trajectory. Cached per shot.
+  ShotTrajectory get trajectory {
+    final cached = _trajectoryCache[this];
+    if (cached != null) return cached;
+    final computed = BallFlightModel.standard.simulate(
+      ballSpeedMph: ballSpeed,
+      launchAngleDeg: launchAngle,
+      launchDirectionDeg: launchDirection,
+      spinRpm: spinRate,
+      spinAxisDeg: spinAxis,
+      measuredRollYds: run,
+    );
+    _trajectoryCache[this] = computed;
+    return computed;
   }
 
-  double get totalDistance => carry + (run ?? 0.0);
+  /// Carry distance in yards, from the simulated flight.
+  double get carry => trajectory.carry;
 
-  /// Estimated lateral offset in yards (positive = right of target).
-  double get lateralOffset =>
-      carry * math.tan(launchDirection * math.pi / 180.0);
+  double get totalDistance => trajectory.totalDistance;
+
+  /// Apex height in yards — the device value when available, otherwise the
+  /// simulated one.
+  double get apexHeight => apex ?? trajectory.apex;
+
+  /// Roll-out in yards — the device value when available, otherwise estimated
+  /// from the landing angle.
+  double get rollDistance => run ?? trajectory.roll;
+
+  /// Lateral offset at landing in yards (positive = right of target). Includes
+  /// the ball's curvature, not just the launch direction.
+  double get lateralOffset => trajectory.offline;
+
+  /// Sideways yards the ball curved in the air, independent of start line.
+  double get curveDistance => trajectory.curve;
+
+  /// Angle the ball lands at, in degrees below horizontal.
+  double get descentAngle => trajectory.descentAngle;
 
   /// Ball speed / club speed ratio.
   double get smashFactor => clubSpeed > 0 ? ballSpeed / clubSpeed : 0.0;
