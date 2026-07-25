@@ -235,8 +235,14 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
                                   metric: _shotListMetric,
                                   onMetricChanged: (m) =>
                                       setState(() => _shotListMetric = m),
-                                  onShotSelected: (i) =>
-                                      setState(() => _selectedShotIndex = i),
+                                  onShotSelected: (i) => setState(() {
+                                    _selectedShotIndex = i;
+                                    // Picking a shot is the whole point of
+                                    // this drawer, and here it covers the
+                                    // view — get out of the way so the shot
+                                    // is visible.
+                                    _showShotList = false;
+                                  }),
                                   onUpdateShotTags: (i, tags) =>
                                       _updateShotTags(allShots, i, tags),
                                 ),
