@@ -51,6 +51,41 @@ enum _Density {
       };
 }
 
+/// Two shot rows describe the same shot.
+///
+/// Rows are rebuilt when tags change, so identity alone is not enough.
+bool isSameShot(ShotData? a, ShotData? b) {
+  if (a == null || b == null) return a == b;
+  if (identical(a, b)) return true;
+  return a.dbId != null && a.dbId == b.dbId;
+}
+
+/// Other shots worth drawing alongside [subject]: same club, same target.
+///
+/// The target has to match exactly. Fairway width and green size change how
+/// the ball behaves once it lands, so shots played to different setups did not
+/// cover the same ground and overlaying them would compare flights that were
+/// never comparable. Shots dropped for that reason are counted so the view can
+/// say so rather than quietly showing fewer trails.
+({List<ShotData> shown, int hiddenByTarget}) sameTargetTrails(
+  List<ShotData> shots,
+  ShotData subject, {
+  int limit = 12,
+}) {
+  final sameClub = [
+    for (final s in shots)
+      if (!isSameShot(s, subject) && s.clubId == subject.clubId) s,
+  ];
+  final sameTarget = [
+    for (final s in sameClub)
+      if (s.hole == subject.hole) s,
+  ];
+  return (
+    shown: sameTarget.take(limit).toList(),
+    hiddenByTarget: sameClub.length - sameTarget.length,
+  );
+}
+
 /// A 3D ball-flight view: the shot's simulated trajectory drawn over a range,
 /// with an orbiting camera and a replay that runs through to the ball's rest.
 ///
@@ -121,7 +156,7 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
   void didUpdateWidget(Flight3DTab oldWidget) {
     super.didUpdateWidget(oldWidget);
     final shot = _shot;
-    if (shot != null && !_isSameShot(shot, _lastAnimatedShot)) _play();
+    if (shot != null && !isSameShot(shot, _lastAnimatedShot)) _play();
   }
 
   @override
@@ -132,14 +167,6 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
 
   ShotData? get _shot =>
       widget.selectedShot ?? (widget.shots.isEmpty ? null : widget.shots.first);
-
-  /// Shot rows are rebuilt when tags change, so identity alone would restart
-  /// the replay for no reason.
-  static bool _isSameShot(ShotData? a, ShotData? b) {
-    if (a == null || b == null) return a == b;
-    if (identical(a, b)) return true;
-    return a.dbId != null && a.dbId == b.dbId;
-  }
 
   double get _airborneSeconds {
     // Slightly slower than real time reads better on a small screen.
@@ -233,14 +260,14 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
 
     final shotColor = _clubFor(shot)?.color ?? context.accent;
 
+    final trails = sameTargetTrails(widget.shots, shot);
     final ghosts = _showTrails
-        ? widget.shots
-            .where((s) => !_isSameShot(s, shot) && s.clubId == shot.clubId)
-            .take(12)
-            .map((s) => s.trajectory)
-            .where((t) => !t.isEmpty)
-            .toList()
+        ? [
+            for (final s in trails.shown)
+              if (!s.trajectory.isEmpty) s.trajectory,
+          ]
         : const <ShotTrajectory>[];
+    final hiddenTrails = _showTrails ? trails.hiddenByTarget : 0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -266,6 +293,21 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
                       hole: _hole,
                     ),
                   ),
+                  if (hiddenTrails > 0)
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      // Clears the control strip, which itself sits 8 up.
+                      bottom: _controlStripHeight(density) + 12,
+                      child: Text(
+                        '$hiddenTrails shot${hiddenTrails == 1 ? '' : 's'} '
+                        'hidden — played to a different target',
+                        style: AppTextStyles.sans(
+                          size: 10,
+                          color: AppColors.textDimmed,
+                        ),
+                      ),
+                    ),
                   Positioned(
                     left: 8,
                     right: 8,

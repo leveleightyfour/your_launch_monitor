@@ -68,6 +68,11 @@ class Shots extends Table {
   RealColumn get horizontalImpact => real().nullable()();
   RealColumn get verticalImpact => real().nullable()();
 
+  // ── Target ────────────────────────────────────────────────────────────────
+  /// The hole this shot was played to, as JSON. Null for shots recorded before
+  /// targets were per-shot; those fall back to the session's.
+  TextColumn get holeSetup => text().nullable()();
+
   // ── Tags ──────────────────────────────────────────────────────────────────
   /// Comma-separated tag IDs, e.g. "1,3,7". Empty string = no tags.
   TextColumn get tagIds =>
@@ -105,7 +110,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -120,6 +125,10 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 4) {
             await m.addColumn(activities, activities.holeSetup);
+          }
+          if (from < 5) {
+            // Targets became a property of the shot, not the session.
+            await m.addColumn(shots, shots.holeSetup);
           }
         },
       );
@@ -315,7 +324,7 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  ShotData _toDomainShot(ShotRow row, [HoleSetup? hole]) {
+  ShotData _toDomainShot(ShotRow row, [HoleSetup? sessionHole]) {
     final tagIdList = row.tagIds.isEmpty
         ? <int>[]
         : row.tagIds.split(',').map(int.parse).toList();
@@ -337,7 +346,9 @@ class AppDatabase extends _$AppDatabase {
       horizontalImpact: row.horizontalImpact,
       verticalImpact: row.verticalImpact,
       tagIds: tagIdList,
-      hole: hole,
+      // The shot's own target wins; the session's is only a fallback for rows
+      // written before targets were per-shot.
+      hole: _decodeHole(row.holeSetup) ?? sessionHole,
     );
   }
 
@@ -359,6 +370,7 @@ class AppDatabase extends _$AppDatabase {
       dynamicLoft: Value(shot.dynamicLoft),
       horizontalImpact: Value(shot.horizontalImpact),
       verticalImpact: Value(shot.verticalImpact),
+      holeSetup: Value(_encodeHole(shot.hole)),
       tagIds: Value(shot.tagIds.join(',')),
     );
   }

@@ -496,6 +496,17 @@ class $ShotsTable extends Shots with TableInfo<$ShotsTable, ShotRow> {
     type: DriftSqlType.double,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _holeSetupMeta = const VerificationMeta(
+    'holeSetup',
+  );
+  @override
+  late final GeneratedColumn<String> holeSetup = GeneratedColumn<String>(
+    'hole_setup',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _tagIdsMeta = const VerificationMeta('tagIds');
   @override
   late final GeneratedColumn<String> tagIds = GeneratedColumn<String>(
@@ -525,6 +536,7 @@ class $ShotsTable extends Shots with TableInfo<$ShotsTable, ShotRow> {
     dynamicLoft,
     horizontalImpact,
     verticalImpact,
+    holeSetup,
     tagIds,
   ];
   @override
@@ -670,6 +682,12 @@ class $ShotsTable extends Shots with TableInfo<$ShotsTable, ShotRow> {
         ),
       );
     }
+    if (data.containsKey('hole_setup')) {
+      context.handle(
+        _holeSetupMeta,
+        holeSetup.isAcceptableOrUnknown(data['hole_setup']!, _holeSetupMeta),
+      );
+    }
     if (data.containsKey('tag_ids')) {
       context.handle(
         _tagIdsMeta,
@@ -753,6 +771,10 @@ class $ShotsTable extends Shots with TableInfo<$ShotsTable, ShotRow> {
         DriftSqlType.double,
         data['${effectivePrefix}vertical_impact'],
       ),
+      holeSetup: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}hole_setup'],
+      ),
       tagIds: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}tag_ids'],
@@ -787,6 +809,10 @@ class ShotRow extends DataClass implements Insertable<ShotRow> {
   final double? horizontalImpact;
   final double? verticalImpact;
 
+  /// The hole this shot was played to, as JSON. Null for shots recorded before
+  /// targets were per-shot; those fall back to the session's.
+  final String? holeSetup;
+
   /// Comma-separated tag IDs, e.g. "1,3,7". Empty string = no tags.
   final String tagIds;
   const ShotRow({
@@ -807,6 +833,7 @@ class ShotRow extends DataClass implements Insertable<ShotRow> {
     this.dynamicLoft,
     this.horizontalImpact,
     this.verticalImpact,
+    this.holeSetup,
     required this.tagIds,
   });
   @override
@@ -847,6 +874,9 @@ class ShotRow extends DataClass implements Insertable<ShotRow> {
     if (!nullToAbsent || verticalImpact != null) {
       map['vertical_impact'] = Variable<double>(verticalImpact);
     }
+    if (!nullToAbsent || holeSetup != null) {
+      map['hole_setup'] = Variable<String>(holeSetup);
+    }
     map['tag_ids'] = Variable<String>(tagIds);
     return map;
   }
@@ -884,6 +914,9 @@ class ShotRow extends DataClass implements Insertable<ShotRow> {
       verticalImpact: verticalImpact == null && nullToAbsent
           ? const Value.absent()
           : Value(verticalImpact),
+      holeSetup: holeSetup == null && nullToAbsent
+          ? const Value.absent()
+          : Value(holeSetup),
       tagIds: Value(tagIds),
     );
   }
@@ -911,6 +944,7 @@ class ShotRow extends DataClass implements Insertable<ShotRow> {
       dynamicLoft: serializer.fromJson<double?>(json['dynamicLoft']),
       horizontalImpact: serializer.fromJson<double?>(json['horizontalImpact']),
       verticalImpact: serializer.fromJson<double?>(json['verticalImpact']),
+      holeSetup: serializer.fromJson<String?>(json['holeSetup']),
       tagIds: serializer.fromJson<String>(json['tagIds']),
     );
   }
@@ -935,6 +969,7 @@ class ShotRow extends DataClass implements Insertable<ShotRow> {
       'dynamicLoft': serializer.toJson<double?>(dynamicLoft),
       'horizontalImpact': serializer.toJson<double?>(horizontalImpact),
       'verticalImpact': serializer.toJson<double?>(verticalImpact),
+      'holeSetup': serializer.toJson<String?>(holeSetup),
       'tagIds': serializer.toJson<String>(tagIds),
     };
   }
@@ -957,6 +992,7 @@ class ShotRow extends DataClass implements Insertable<ShotRow> {
     Value<double?> dynamicLoft = const Value.absent(),
     Value<double?> horizontalImpact = const Value.absent(),
     Value<double?> verticalImpact = const Value.absent(),
+    Value<String?> holeSetup = const Value.absent(),
     String? tagIds,
   }) => ShotRow(
     id: id ?? this.id,
@@ -982,6 +1018,7 @@ class ShotRow extends DataClass implements Insertable<ShotRow> {
     verticalImpact: verticalImpact.present
         ? verticalImpact.value
         : this.verticalImpact,
+    holeSetup: holeSetup.present ? holeSetup.value : this.holeSetup,
     tagIds: tagIds ?? this.tagIds,
   );
   ShotRow copyWithCompanion(ShotsCompanion data) {
@@ -1017,6 +1054,7 @@ class ShotRow extends DataClass implements Insertable<ShotRow> {
       verticalImpact: data.verticalImpact.present
           ? data.verticalImpact.value
           : this.verticalImpact,
+      holeSetup: data.holeSetup.present ? data.holeSetup.value : this.holeSetup,
       tagIds: data.tagIds.present ? data.tagIds.value : this.tagIds,
     );
   }
@@ -1041,6 +1079,7 @@ class ShotRow extends DataClass implements Insertable<ShotRow> {
           ..write('dynamicLoft: $dynamicLoft, ')
           ..write('horizontalImpact: $horizontalImpact, ')
           ..write('verticalImpact: $verticalImpact, ')
+          ..write('holeSetup: $holeSetup, ')
           ..write('tagIds: $tagIds')
           ..write(')'))
         .toString();
@@ -1065,6 +1104,7 @@ class ShotRow extends DataClass implements Insertable<ShotRow> {
     dynamicLoft,
     horizontalImpact,
     verticalImpact,
+    holeSetup,
     tagIds,
   );
   @override
@@ -1088,6 +1128,7 @@ class ShotRow extends DataClass implements Insertable<ShotRow> {
           other.dynamicLoft == this.dynamicLoft &&
           other.horizontalImpact == this.horizontalImpact &&
           other.verticalImpact == this.verticalImpact &&
+          other.holeSetup == this.holeSetup &&
           other.tagIds == this.tagIds);
 }
 
@@ -1109,6 +1150,7 @@ class ShotsCompanion extends UpdateCompanion<ShotRow> {
   final Value<double?> dynamicLoft;
   final Value<double?> horizontalImpact;
   final Value<double?> verticalImpact;
+  final Value<String?> holeSetup;
   final Value<String> tagIds;
   const ShotsCompanion({
     this.id = const Value.absent(),
@@ -1128,6 +1170,7 @@ class ShotsCompanion extends UpdateCompanion<ShotRow> {
     this.dynamicLoft = const Value.absent(),
     this.horizontalImpact = const Value.absent(),
     this.verticalImpact = const Value.absent(),
+    this.holeSetup = const Value.absent(),
     this.tagIds = const Value.absent(),
   });
   ShotsCompanion.insert({
@@ -1148,6 +1191,7 @@ class ShotsCompanion extends UpdateCompanion<ShotRow> {
     this.dynamicLoft = const Value.absent(),
     this.horizontalImpact = const Value.absent(),
     this.verticalImpact = const Value.absent(),
+    this.holeSetup = const Value.absent(),
     this.tagIds = const Value.absent(),
   }) : activityId = Value(activityId),
        ballSpeed = Value(ballSpeed),
@@ -1174,6 +1218,7 @@ class ShotsCompanion extends UpdateCompanion<ShotRow> {
     Expression<double>? dynamicLoft,
     Expression<double>? horizontalImpact,
     Expression<double>? verticalImpact,
+    Expression<String>? holeSetup,
     Expression<String>? tagIds,
   }) {
     return RawValuesInsertable({
@@ -1194,6 +1239,7 @@ class ShotsCompanion extends UpdateCompanion<ShotRow> {
       if (dynamicLoft != null) 'dynamic_loft': dynamicLoft,
       if (horizontalImpact != null) 'horizontal_impact': horizontalImpact,
       if (verticalImpact != null) 'vertical_impact': verticalImpact,
+      if (holeSetup != null) 'hole_setup': holeSetup,
       if (tagIds != null) 'tag_ids': tagIds,
     });
   }
@@ -1216,6 +1262,7 @@ class ShotsCompanion extends UpdateCompanion<ShotRow> {
     Value<double?>? dynamicLoft,
     Value<double?>? horizontalImpact,
     Value<double?>? verticalImpact,
+    Value<String?>? holeSetup,
     Value<String>? tagIds,
   }) {
     return ShotsCompanion(
@@ -1236,6 +1283,7 @@ class ShotsCompanion extends UpdateCompanion<ShotRow> {
       dynamicLoft: dynamicLoft ?? this.dynamicLoft,
       horizontalImpact: horizontalImpact ?? this.horizontalImpact,
       verticalImpact: verticalImpact ?? this.verticalImpact,
+      holeSetup: holeSetup ?? this.holeSetup,
       tagIds: tagIds ?? this.tagIds,
     );
   }
@@ -1294,6 +1342,9 @@ class ShotsCompanion extends UpdateCompanion<ShotRow> {
     if (verticalImpact.present) {
       map['vertical_impact'] = Variable<double>(verticalImpact.value);
     }
+    if (holeSetup.present) {
+      map['hole_setup'] = Variable<String>(holeSetup.value);
+    }
     if (tagIds.present) {
       map['tag_ids'] = Variable<String>(tagIds.value);
     }
@@ -1320,6 +1371,7 @@ class ShotsCompanion extends UpdateCompanion<ShotRow> {
           ..write('dynamicLoft: $dynamicLoft, ')
           ..write('horizontalImpact: $horizontalImpact, ')
           ..write('verticalImpact: $verticalImpact, ')
+          ..write('holeSetup: $holeSetup, ')
           ..write('tagIds: $tagIds')
           ..write(')'))
         .toString();
@@ -2271,6 +2323,7 @@ typedef $$ShotsTableCreateCompanionBuilder =
       Value<double?> dynamicLoft,
       Value<double?> horizontalImpact,
       Value<double?> verticalImpact,
+      Value<String?> holeSetup,
       Value<String> tagIds,
     });
 typedef $$ShotsTableUpdateCompanionBuilder =
@@ -2292,6 +2345,7 @@ typedef $$ShotsTableUpdateCompanionBuilder =
       Value<double?> dynamicLoft,
       Value<double?> horizontalImpact,
       Value<double?> verticalImpact,
+      Value<String?> holeSetup,
       Value<String> tagIds,
     });
 
@@ -2402,6 +2456,11 @@ class $$ShotsTableFilterComposer extends Composer<_$AppDatabase, $ShotsTable> {
 
   ColumnFilters<double> get verticalImpact => $composableBuilder(
     column: $table.verticalImpact,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get holeSetup => $composableBuilder(
+    column: $table.holeSetup,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2523,6 +2582,11 @@ class $$ShotsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get holeSetup => $composableBuilder(
+    column: $table.holeSetup,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get tagIds => $composableBuilder(
     column: $table.tagIds,
     builder: (column) => ColumnOrderings(column),
@@ -2621,6 +2685,9 @@ class $$ShotsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get holeSetup =>
+      $composableBuilder(column: $table.holeSetup, builder: (column) => column);
+
   GeneratedColumn<String> get tagIds =>
       $composableBuilder(column: $table.tagIds, builder: (column) => column);
 
@@ -2693,6 +2760,7 @@ class $$ShotsTableTableManager
                 Value<double?> dynamicLoft = const Value.absent(),
                 Value<double?> horizontalImpact = const Value.absent(),
                 Value<double?> verticalImpact = const Value.absent(),
+                Value<String?> holeSetup = const Value.absent(),
                 Value<String> tagIds = const Value.absent(),
               }) => ShotsCompanion(
                 id: id,
@@ -2712,6 +2780,7 @@ class $$ShotsTableTableManager
                 dynamicLoft: dynamicLoft,
                 horizontalImpact: horizontalImpact,
                 verticalImpact: verticalImpact,
+                holeSetup: holeSetup,
                 tagIds: tagIds,
               ),
           createCompanionCallback:
@@ -2733,6 +2802,7 @@ class $$ShotsTableTableManager
                 Value<double?> dynamicLoft = const Value.absent(),
                 Value<double?> horizontalImpact = const Value.absent(),
                 Value<double?> verticalImpact = const Value.absent(),
+                Value<String?> holeSetup = const Value.absent(),
                 Value<String> tagIds = const Value.absent(),
               }) => ShotsCompanion.insert(
                 id: id,
@@ -2752,6 +2822,7 @@ class $$ShotsTableTableManager
                 dynamicLoft: dynamicLoft,
                 horizontalImpact: horizontalImpact,
                 verticalImpact: verticalImpact,
+                holeSetup: holeSetup,
                 tagIds: tagIds,
               ),
           withReferenceMapper: (p0) => p0

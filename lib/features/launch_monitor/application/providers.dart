@@ -608,24 +608,21 @@ class LaunchMonitor extends _$LaunchMonitor {
     _pendingShotTimer?.cancel();
   }
 
-  /// Re-stamps the live session with a new hole and persists it against the
-  /// draft so a save keeps the right one.
+  /// Records a change of target against the draft session.
+  ///
+  /// Shots already hit keep the target they were played to — that is the whole
+  /// point of stamping it on the shot. Move the green mid-session and only the
+  /// shots after it are measured against the new one, so a replay always shows
+  /// what the player was actually aiming at.
   void _applyHole(HoleSetup hole) {
-    final active = hole.enabled ? hole : null;
-    if (state.shots.isNotEmpty) {
-      state = state.copyWith(
-        shots: [
-          for (final shot in state.shots)
-            shot.copyWith(hole: active, clearHole: active == null),
-        ],
-      );
-    }
     final draft = _draftSessionId;
-    if (draft != null) {
-      unawaited(
-        ref.read(appDatabaseProvider).updateSessionHole(draft, active),
-      );
-    }
+    if (draft == null) return;
+    unawaited(
+      ref.read(appDatabaseProvider).updateSessionHole(
+            draft,
+            hole.enabled ? hole : null,
+          ),
+    );
   }
 
   /// The hole new shots are played to, or null when none is configured.
