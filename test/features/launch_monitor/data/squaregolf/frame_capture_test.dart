@@ -78,6 +78,42 @@ void main() {
     });
   });
 
+  group('the undecoded tail', () {
+    test('a 23-byte ball frame yields three values, scaled and converted', () {
+      // Three int16s past byte 16: 0x0bb8=3000, 0x5dc0=24000, 0x0898=2200 →
+      // 30.00 m, 240.00 m, 22.00 m at the frame's ×100 scale.
+      FrameCapture.record('ballMetrics',
+          _frame('$_ballFrame17 b8 0b c0 5d 98 08'));
+
+      final report = FrameCapture.report();
+      expect(report, contains('3 value(s) past'));
+      expect(report, contains('30.00m'));
+      expect(report, contains('240.00m'));
+      expect(report, contains('raw=3000'));
+      // ...and the yard equivalent, since that is what the device displays.
+      expect(report, contains('262.5y'));
+    });
+
+    test('a 17-byte frame has no tail and says nothing about one', () {
+      FrameCapture.record('ballMetrics', _frame(_ballFrame17));
+
+      expect(FrameCapture.report(), isNot(contains('value(s) past')));
+    });
+
+    test('a trailing odd byte is not read as half a value', () {
+      FrameCapture.record('ballMetrics', _frame('$_ballFrame17 b8 0b ff'));
+
+      expect(FrameCapture.report(), contains('1 value(s) past'));
+    });
+
+    test('negative values sign-extend', () {
+      // 0xffec = -20 → a roll-back, which a spinning wedge genuinely does.
+      FrameCapture.record('ballMetrics', _frame('$_ballFrame17 ec ff'));
+
+      expect(FrameCapture.report(), contains('raw=-20'));
+    });
+  });
+
   group('unmapped validity bits', () {
     // Byte 2 is the mask. 0x3f sets every bit the parsers actually use
     // (0x01|0x02|0x04|0x10|0x20 = 0x37) plus 0x08, which nothing reads.

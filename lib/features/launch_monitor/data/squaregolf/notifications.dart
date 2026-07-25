@@ -161,6 +161,24 @@ class BallMetrics {
   /// Raw validity bitmask byte (Omni only). Empty for Home devices.
   final String validityBitmask;
 
+  /// Signed int16 values sitting past byte 16 — the part of the frame no
+  /// parser has ever read.
+  ///
+  /// The Omni is known to lengthen frames the Home device kept short: club
+  /// metrics went from 11 bytes for 4 fields to 19 for 8, laid out as
+  /// `3 + 2N` with a validity bit per field. Ball metrics never got the same
+  /// treatment — one parser, 17 bytes, 7 fields — yet the ball bitmask is
+  /// Omni-only and three of its bits belong to no field at all. Square Golf
+  /// advertise exactly three independent ball metrics we never receive: apex
+  /// height, carry and roll, total distance being their sum.
+  ///
+  /// These are captured raw and left unassigned. Which slot is which, and
+  /// whether the scale is the ×100 the rest of the frame uses, is not
+  /// something to guess at — a wrong apex would feed the trajectory silently.
+  /// One capture from a shot whose numbers are visible on the device settles
+  /// it.
+  final List<int> tailInt16;
+
   const BallMetrics({
     required this.rawData,
     required this.ballSpeedMps,
@@ -176,6 +194,7 @@ class BallMetrics {
     required this.isBackspinValid,
     required this.isSidespinValid,
     required this.validityBitmask,
+    this.tailInt16 = const [],
   });
 
   BallMetrics copyWith({
@@ -200,6 +219,7 @@ class BallMetrics {
         isBackspinValid: isBackspinValid ?? this.isBackspinValid,
         isSidespinValid: isSidespinValid ?? this.isSidespinValid,
         validityBitmask: validityBitmask,
+        tailInt16: tailInt16,
       );
 
   @override
@@ -219,6 +239,7 @@ class BallMetrics {
           isSpinAxisValid == other.isSpinAxisValid &&
           isBackspinValid == other.isBackspinValid &&
           isSidespinValid == other.isSidespinValid &&
+          _listEq(tailInt16, other.tailInt16) &&
           validityBitmask == other.validityBitmask;
 
   @override
@@ -307,7 +328,22 @@ BallMetrics parseShotBallMetrics(List<String> bytesList) {
     isBackspinValid: isBackspinValid,
     isSidespinValid: isSidespinValid,
     validityBitmask: validityBitmask,
+    tailInt16: _tailInt16(bytesList, from: 17),
   );
+}
+
+/// Every whole little-endian int16 from [from] to the end of the frame.
+///
+/// Empty for a Home-length 17-byte frame, so this costs nothing when there is
+/// nothing there.
+List<int> _tailInt16(List<String> bytesList, {required int from}) {
+  final out = <int>[];
+  for (var i = from; i + 1 < bytesList.length; i += 2) {
+    final r = _parseInt16(bytesList[i], bytesList[i + 1]);
+    if (!r.ok) break;
+    out.add(r.value);
+  }
+  return List.unmodifiable(out);
 }
 
 /// Apply the Omni's per-field validity bitmask to ball metrics.

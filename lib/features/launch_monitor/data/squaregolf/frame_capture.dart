@@ -128,6 +128,25 @@ class FrameCapture {
     return seen;
   }
 
+  /// The undecoded int16 tail of every ball frame that has one.
+  static List<List<int>> _tails() {
+    final out = <List<int>>[];
+    for (final f in _frames) {
+      if (f.kind != 'ballMetrics') continue;
+      final bytes = f.hex.split(' ');
+      final tail = <int>[];
+      for (var i = 17; i + 1 < bytes.length; i += 2) {
+        final lo = int.tryParse(bytes[i], radix: 16);
+        final hi = int.tryParse(bytes[i + 1], radix: 16);
+        if (lo == null || hi == null) break;
+        final raw = lo | (hi << 8);
+        tail.add(raw < 0x8000 ? raw : raw - 0x10000);
+      }
+      if (tail.isNotEmpty) out.add(tail);
+    }
+    return out;
+  }
+
   /// The capture as shareable text, newest last.
   static String report() {
     final buf = StringBuffer()
@@ -145,6 +164,25 @@ class FrameCapture {
         ..writeln('Expect the values past byte 16 — the Omni club frame is 19 '
             'bytes for 8 fields on the same 3+2N layout, so a ball frame with '
             'these bits set should run to 23.')
+        ..writeln();
+    }
+
+    final tails = _tails();
+    if (tails.isNotEmpty) {
+      buf.writeln('Ball frames carried ${tails.first.length} value(s) past '
+          'byte 16. Read at the ×100 scale the rest of the frame uses:');
+      for (final t in tails.take(8)) {
+        final shown = [
+          for (final v in t)
+            '${(v / 100).toStringAsFixed(2)}m'
+                ' (${(v / 100 * 1.09361).toStringAsFixed(1)}y)  raw=$v',
+        ];
+        buf.writeln('  ${shown.join('  |  ')}');
+      }
+      buf
+        ..writeln()
+        ..writeln('Match these against the apex, carry and roll the device')
+        ..writeln('showed for the same shots to fix which slot is which.')
         ..writeln();
     }
 
