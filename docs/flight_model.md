@@ -277,6 +277,13 @@ the bounce-and-roll path out to where the ball comes to rest. With a hole
 configured the fairway takes its specified width and stops at the green, and
 the green is drawn with an edge and a pin.
 
+Colours live in `AppColors` with the rest of the palette, and the terrain ones
+are deliberately fixed rather than accent-derived. The accent means "your
+shot" — landing marks, roll path, read-outs — so the world those land in must
+not recolour with it: a Lime accent would otherwise hide the pin against the
+green, and an Orange one would lose the target line in the rough. The flagstick
+is a fixed red and the target line a neutral grey for the same reason.
+
 The fairway is drawn as 5-yard mown bands in two tones rather than one flat
 strip. It costs a dozen polygons and the way the bands converge is most of what
 makes the surface read as receding. With a hole set, the ground off the fairway

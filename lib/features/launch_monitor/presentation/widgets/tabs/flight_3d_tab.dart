@@ -739,23 +739,8 @@ class _FlightPainter extends CustomPainter {
     required this.frameWholeHole,
   });
 
-  static const _groundColor = Color(0xFF101619);
-  static const _fairwayColor = Color(0xFF13201A);
-
-  /// Every other mown band. Barely lighter than [_fairwayColor] — the stripes
-  /// should read as texture, not as markings.
-  static const _fairwayStripe = Color(0xFF17271F);
-
-  /// Off the fairway. Warmer and drier than the turf so the boundary — which
-  /// is where the ball's behaviour changes — is visible.
-  static const _roughColor = Color(0xFF1B1811);
-  static const _greenColor = Color(0xFF1B3524);
-  static const _greenEdge = Color(0xFF3C6B4A);
-
   /// Width of one mown band, in yards. Roughly a triplex mower's pass.
   static const _stripeWidth = 5.0;
-  static const _gridColor = Color(0xFF2A3A38);
-  static const _skyBottom = Color(0xFF0E1418);
 
   double get _s => density.scale;
 
@@ -1064,7 +1049,7 @@ class _FlightPainter extends CustomPainter {
         ..shader = ui.Gradient.linear(
           Offset.zero,
           Offset(0, size.height),
-          const [AppColors.background, _skyBottom],
+          const [AppColors.background, AppColors.skyLow],
         ),
     );
   }
@@ -1096,7 +1081,7 @@ class _FlightPainter extends CustomPainter {
         Vec3(outerWidth, 0, outerDepth),
         Vec3(-outerWidth, 0, outerDepth),
       ],
-      Paint()..color = course != null ? _roughColor : _groundColor,
+      Paint()..color = course != null ? AppColors.turfRough : AppColors.turfGround,
     );
 
     // Fairway down the target line. With a hole configured it is the width the
@@ -1125,7 +1110,7 @@ class _FlightPainter extends CustomPainter {
           Vec3(right, 0, fairwayEnd),
           Vec3(left, 0, fairwayEnd),
         ],
-        Paint()..color = i.isEven ? _fairwayColor : _fairwayStripe,
+        Paint()..color = i.isEven ? AppColors.turfFairway : AppColors.turfFairwayStripe,
       );
     }
 
@@ -1139,7 +1124,7 @@ class _FlightPainter extends CustomPainter {
         Vec3(-halfWidth, 0, z),
         Vec3(halfWidth, 0, z),
         Paint()
-          ..color = _gridColor.withAlpha((150 * fade).round())
+          ..color = AppColors.turfGrid.withAlpha((150 * fade).round())
           ..strokeWidth = 1,
       );
     }
@@ -1153,19 +1138,20 @@ class _FlightPainter extends CustomPainter {
         Vec3(i * gridStep, 0, behind),
         Vec3(i * gridStep, 0, maxDepth),
         Paint()
-          ..color = _gridColor.withAlpha(70)
+          ..color = AppColors.turfGrid.withAlpha(70)
           ..strokeWidth = 1,
       );
     }
 
-    // Target line.
+    // Target line — scenery, so it stays neutral instead of competing with
+    // the shot's own accent-coloured marks.
     _line3(
       canvas,
       camera,
       const Vec3(0, 0, behind),
       Vec3(0, 0, maxDepth),
       Paint()
-        ..color = accent.withAlpha(90)
+        ..color = AppColors.targetLine.withAlpha(70)
         ..strokeWidth = 1.4,
     );
   }
@@ -1185,10 +1171,10 @@ class _FlightPainter extends CustomPainter {
         ),
     ];
 
-    _polygon3(canvas, camera, ring, Paint()..color = _greenColor);
+    _polygon3(canvas, camera, ring, Paint()..color = AppColors.turfGreen);
 
     final edge = Paint()
-      ..color = _greenEdge
+      ..color = AppColors.turfGreenEdge
       ..strokeWidth = 1.4 * _s;
     for (var i = 0; i < ring.length; i++) {
       _line3(canvas, camera, ring[i], ring[(i + 1) % ring.length], edge);
@@ -1218,7 +1204,7 @@ class _FlightPainter extends CustomPainter {
           ..lineTo(flagTop.dx + span * 1.3, flagTop.dy + span * 0.45)
           ..lineTo(flagTop.dx, flagTop.dy + span * 0.9)
           ..close(),
-        Paint()..color = accent,
+        Paint()..color = AppColors.pinFlag,
       );
     }
 
@@ -1229,7 +1215,7 @@ class _FlightPainter extends CustomPainter {
         canvas,
         '${prefs.dist(course.greenDistance).round()} ${prefs.distLabel}',
         label.translate(0, -10),
-        AppTextStyles.mono(size: 9 * _s, color: _greenEdge),
+        AppTextStyles.mono(size: 9 * _s, color: AppColors.turfGreenEdge),
       );
     }
   }
