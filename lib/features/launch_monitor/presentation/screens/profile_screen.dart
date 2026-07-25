@@ -6,6 +6,7 @@ import 'package:omni_sniffer/shared/app_version.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/hole_setup_controls.dart';
 import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
+import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/log.dart';
 import 'package:omni_sniffer/shared/services/protocol_capture_export.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -154,6 +155,7 @@ class ProfileScreen extends ConsumerWidget {
               onTap: () {},
             ),
             _SettingsRow(icon: Icons.info, label: 'About', onTap: () {}),
+            const _ProtocolLoggingRow(),
             Builder(
               builder: (context) => _SettingsRow(
                 icon: Icons.bug_report,
@@ -359,6 +361,49 @@ class _AccentPickerRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Turns the protocol log on in a build that would otherwise stay silent.
+///
+/// [lmLoggingEnabled] follows `kDebugMode`, so a TestFlight build prints
+/// nothing — and a TestFlight build is where the shots actually get hit. With
+/// this on, every frame is written to the device console, including the
+/// decoded tail of the Omni ball frame.
+class _ProtocolLoggingRow extends StatefulWidget {
+  const _ProtocolLoggingRow();
+
+  @override
+  State<_ProtocolLoggingRow> createState() => _ProtocolLoggingRowState();
+}
+
+class _ProtocolLoggingRowState extends State<_ProtocolLoggingRow> {
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => setState(() => lmLoggingEnabled = !lmLoggingEnabled),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppColors.border)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.terminal, size: 18, color: AppColors.textMuted),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('Protocol logging',
+                  style: AppTextStyles.sans(size: 14)),
+            ),
+            Switch.adaptive(
+              value: lmLoggingEnabled,
+              onChanged: (v) => setState(() => lmLoggingEnabled = v),
+              activeThumbColor: context.accent,
+            ),
+          ],
+        ),
       ),
     );
   }

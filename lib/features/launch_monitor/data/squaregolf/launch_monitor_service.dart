@@ -789,7 +789,9 @@ class LaunchMonitorService {
                 'valid[s=${b.isBallSpeedValid} t=${b.isTotalSpinValid} '
                 'a=${b.isSpinAxisValid} b=${b.isBackspinValid} '
                 'sd=${b.isSidespinValid}] '
-                'mask=${b.validityBitmask}',
+                'mask=${b.validityBitmask} '
+                'len=${list.length}'
+                '${lmTailSummary(b.tailInt16)}',
           );
           _ballCtrl.add(b);
           _eventCtrl.add(LmBallMetricsEvent(b));

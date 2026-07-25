@@ -18,15 +18,20 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
 
-/// Master switch — debug builds only.
-const bool kLmLoggingEnabled = kDebugMode;
+/// Master switch. Debug builds log by default; release builds do not.
+///
+/// Mutable rather than const so a release build can be asked to talk. Reading
+/// the undecoded tail of an Omni ball frame means watching frames arrive
+/// during a real range session, and a real range session is a TestFlight
+/// build, where `kDebugMode` is false and nothing would print at all.
+bool lmLoggingEnabled = kDebugMode;
 
 /// Set to `true` to also log every heartbeat tick. Off by default because
 /// they're sent every 5 s and clutter the console.
 const bool kLmLogHeartbeats = false;
 
 void lmLog(String tag, String message) {
-  if (!kLmLoggingEnabled) return;
+  if (!lmLoggingEnabled) return;
   // debugPrint so lines reach the `flutter run` console — dart:developer.log
   // is only visible in DevTools' Logging view on some toolchains.
   debugPrint('[lm.$tag] $message');
@@ -34,9 +39,26 @@ void lmLog(String tag, String message) {
 }
 
 void lmWarn(String tag, String message) {
-  if (!kLmLoggingEnabled) return;
+  if (!lmLoggingEnabled) return;
   debugPrint('[lm.$tag] ⚠ $message');
   developer.log(message, name: 'lm.$tag', level: 900);
+}
+
+/// Render the undecoded int16 tail of a ball frame for the log line.
+///
+/// Empty string when there is no tail, so a Home-length 17-byte frame logs
+/// exactly as it always did. Otherwise each value is shown raw and at the ×100
+/// scale the rest of the frame uses, in metres and yards — the two units the
+/// device itself can be set to display, so the numbers can be read straight
+/// off the console and matched against the monitor.
+String lmTailSummary(List<int> tail) {
+  if (tail.isEmpty) return '';
+  final parts = [
+    for (final v in tail)
+      '$v(${(v / 100).toStringAsFixed(2)}m/'
+          '${(v / 100 * 1.09361).toStringAsFixed(1)}y)',
+  ];
+  return ' TAIL[${parts.join(' ')}]';
 }
 
 /// Encode raw bytes as a space-separated lower-case hex string.
