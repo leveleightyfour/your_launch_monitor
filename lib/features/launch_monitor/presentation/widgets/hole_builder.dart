@@ -69,6 +69,12 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
     // there are the starting point rather than a blank sheet.
     _grid = widget.hole.grid ??
         seedHoleGrid(widget.hole, cellSize: _cellSize);
+    // Open looking at the tee — a hole gets built from where it is played
+    // from. `reverse` was doing the opposite, and only a render showed it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    });
   }
 
   /// Five squares in whatever unit the profile is set to.
@@ -156,8 +162,6 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
               borderRadius: BorderRadius.circular(8),
               child: SingleChildScrollView(
                 controller: _scroll,
-                // Reversed so offset zero is the tee end at the bottom.
-                reverse: true,
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTapDown: (d) =>
@@ -275,7 +279,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
                         width: 12,
                         height: 12,
                         decoration: BoxDecoration(
-                          color: t.surfaceColor,
+                          color: t.planColor,
                           borderRadius: BorderRadius.circular(3),
                           border: Border.all(color: AppColors.border2),
                         ),
@@ -364,7 +368,7 @@ class _PlanPainter extends CustomPainter {
       for (var col = 0; col < grid.cols; col++) {
         canvas.drawRect(
           Rect.fromLTWH(col * cw, top, cw + 0.5, ch + 0.5),
-          Paint()..color = grid.at(col, row).surfaceColor,
+          Paint()..color = grid.at(col, row).planColor,
         );
       }
     }

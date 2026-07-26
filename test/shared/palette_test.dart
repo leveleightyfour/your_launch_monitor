@@ -16,6 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/terrain.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 /// No club may be confusable with any accent the user can pick.
@@ -251,6 +252,41 @@ void main() {
           reason: 'accent $i disappears against ${entry.key}',
         );
       }
+    }
+  });
+
+  test('every terrain is distinguishable on the builder plan', () {
+    // The 3D view is a scene: rough, trees and out of bounds all sit near
+    // black there and are told apart by where they are. A plan is a map —
+    // colour is the only thing separating two cells — so the plan palette is
+    // held to a much higher floor than the scene palette. Rendering the
+    // builder is what showed this: at scene colours those three were one
+    // indistinguishable smear.
+    final worst = <String>[];
+    for (var i = 0; i < Terrain.values.length; i++) {
+      for (var j = i + 1; j < Terrain.values.length; j++) {
+        final a = Terrain.values[i];
+        final b = Terrain.values[j];
+        final d = _deltaE(a.planColor, b.planColor);
+        if (d < 12.0) {
+          worst.add('${a.name} ${_hex(a.planColor)} vs '
+              '${b.name} ${_hex(b.planColor)} — ΔE ${d.toStringAsFixed(1)}');
+        }
+      }
+    }
+
+    expect(worst, isEmpty, reason: worst.join('\n'));
+  });
+
+  test('the plan reads brighter than the scene it describes', () {
+    // A map is looked at in a lit room with a fingertip over it; the scene is
+    // looked at as a scene. The three that were unreadable are the check.
+    for (final t in [Terrain.rough, Terrain.trees, Terrain.outOfBounds]) {
+      expect(
+        _relLuminance(t.planColor),
+        greaterThan(_relLuminance(t.surfaceColor) * 0.9),
+        reason: '${t.name} is no clearer on the plan than in the scene',
+      );
     }
   });
 }

@@ -128,4 +128,21 @@ extension TerrainPalette on Terrain {
         Terrain.green => AppColors.turfGreenCollar,
         _ => surfaceColor,
       };
+
+  /// Colour for the top-down plan in the builder.
+  ///
+  /// Deliberately not [surfaceColor]. The 3D view is a scene lit for a dark
+  /// app, where rough, trees and out of bounds are all near-black and are told
+  /// apart by where they are. A plan is a map: the only thing distinguishing
+  /// two cells is their colour, so these are pulled apart in lightness and hue
+  /// until each is unmistakable at the size of a fingertip.
+  Color get planColor => switch (this) {
+        Terrain.fairway => const Color(0xFF4C7A47),
+        Terrain.green => const Color(0xFF74B863),
+        Terrain.rough => const Color(0xFF2F4A2C),
+        Terrain.bunker => const Color(0xFFD9C48A),
+        Terrain.water => const Color(0xFF3C7FB1),
+        Terrain.trees => const Color(0xFF1B3324),
+        Terrain.outOfBounds => const Color(0xFF6B5A4A),
+      };
 }
