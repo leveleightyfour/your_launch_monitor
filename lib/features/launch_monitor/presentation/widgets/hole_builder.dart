@@ -154,9 +154,11 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
         child: Row(
           children: [
+            // Plus/minus rather than unfold chevrons: same stepper meaning,
+            // and these glyphs are already in the shipped release's icon
+            // font, so the control renders on Shorebird-patched installs.
             _stepButton(
-              Icons.unfold_less,
-              quarterTurns: 1,
+              Icons.remove,
               _grid.cols <= HoleGrid.minCols
                   ? null
                   : () => setState(() {
@@ -176,8 +178,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
             ),
             const SizedBox(width: 10),
             _stepButton(
-              Icons.unfold_more,
-              quarterTurns: 1,
+              Icons.add,
               _grid.cols >= HoleGrid.maxCols
                   ? null
                   : () => setState(() {
