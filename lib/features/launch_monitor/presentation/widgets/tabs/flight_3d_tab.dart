@@ -54,6 +54,33 @@ enum _Density {
   };
 }
 
+/// Width of one mown band, in yards, for a surface that is banded.
+///
+/// A putting surface is cut far tighter than a fairway, so its bands are
+/// narrower as well as fainter.
+double mowLaneWidthYards(Terrain terrain) =>
+    terrain == Terrain.green ? 2.5 : 5.0;
+
+/// Which of the two alternating bands a point falls in.
+///
+/// Anchored on the target line, in yards — not on a grid column, and not on
+/// the fairway edge.
+///
+/// Both of those were wrong in ways that only showed once fairways could vary
+/// in width. Anchoring at the fairway's own edge moved the whole pattern every
+/// time the width changed, so bands jumped at every pinch. Anchoring at grid
+/// column zero held still but put the phase wherever the grid's left edge
+/// happened to land, so the pattern was not symmetric about the middle of the
+/// hole and the two sides of a narrowed fairway disagreed.
+///
+/// Measuring from x = 0 fixes both: a lane covers the same ground whatever the
+/// fairway is doing there, the pattern mirrors about the target line, and it
+/// no longer shifts when the cell size changes with the unit preference.
+bool isMowBand(double xYards, Terrain terrain) {
+  final lane = (xYards / mowLaneWidthYards(terrain)).floor();
+  return lane.isEven;
+}
+
 /// How long the airborne part of a replay lasts, in seconds.
 ///
 /// Real time — a 6.4 s tour drive takes 6.4 s on screen. The replay used to
@@ -1265,7 +1292,11 @@ class _FlightPainter extends CustomPainter {
   /// stripes line up across runs rather than restarting at every boundary.
   void _paintGridHole(Canvas canvas, _Camera camera, HoleGrid grid) {
     final cell = grid.cellSize;
-    final stripeEvery = math.max(1, (_stripeWidth / cell).round());
+
+    /// Middle of a column, in yards from the target line. The band is read
+    /// from the middle rather than an edge so a cell sitting astride a lane
+    /// boundary picks the lane it mostly occupies.
+    double centreOf(int col) => grid.left + (col + 0.5) * cell;
 
     for (var row = 0; row < grid.rows; row++) {
       final z0 = row * cell;
@@ -1277,11 +1308,11 @@ class _FlightPainter extends CustomPainter {
         // Runs break on a change of terrain, and on a change of mown band so
         // the stripes survive the merge.
         final banded = terrain == Terrain.fairway || terrain == Terrain.green;
-        final band = (col ~/ stripeEvery).isEven;
+        final band = isMowBand(centreOf(col), terrain);
         var end = col + 1;
         while (end < grid.cols &&
             grid.at(end, row) == terrain &&
-            (!banded || (end ~/ stripeEvery).isEven == band)) {
+            (!banded || isMowBand(centreOf(end), terrain) == band)) {
           end++;
         }
 
@@ -1512,11 +1543,17 @@ class _FlightPainter extends CustomPainter {
         ? course.fairwayWidth / 2
         : math.min(halfWidth * 0.5, 30.0);
     final fairwayEnd = course != null ? course.greenFront : maxDepth;
-    final stripes = (fairwayHalf * 2 / _stripeWidth).ceil();
-    for (var i = 0; i < stripes; i++) {
-      final left = -fairwayHalf + i * _stripeWidth;
+    // Lanes are laid out from the target line outwards, not from the fairway
+    // edge inwards. Anchoring at the edge moved every band whenever the width
+    // changed, and left the two sides of the fairway out of step with each
+    // other.
+    final firstLane = (-fairwayHalf / _stripeWidth).floor();
+    final lastLane = (fairwayHalf / _stripeWidth).ceil();
+    for (var lane = firstLane; lane < lastLane; lane++) {
+      final left = math.max(lane * _stripeWidth, -fairwayHalf);
       // Overlap the neighbour a hair; abutting fills leave an antialiased seam.
-      final right = math.min(left + _stripeWidth + 0.05, fairwayHalf);
+      final right =
+          math.min((lane + 1) * _stripeWidth + 0.05, fairwayHalf);
       if (right - left < 0.01) continue;
       _polygon3(
         canvas,
@@ -1528,7 +1565,7 @@ class _FlightPainter extends CustomPainter {
           Vec3(left, 0, fairwayEnd),
         ],
         Paint()
-          ..color = i.isEven
+          ..color = lane.isEven
               ? AppColors.turfFairway
               : AppColors.turfFairwayStripe,
       );

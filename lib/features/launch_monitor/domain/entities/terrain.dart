@@ -125,7 +125,7 @@ extension TerrainPalette on Terrain {
   /// else returns its own colour, so the caller can stripe unconditionally.
   Color get stripeColor => switch (this) {
         Terrain.fairway => AppColors.turfFairwayStripe,
-        Terrain.green => AppColors.turfGreenCollar,
+        Terrain.green => AppColors.turfGreenStripe,
         _ => surfaceColor,
       };
 

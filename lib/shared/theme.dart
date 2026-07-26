@@ -65,6 +65,11 @@ class AppColors {
   /// cut actually looks.
   static const turfGreen = Color(0xFF3E6B45);
 
+  /// The green's own mown band. A whisper against [turfGreen] — a putting
+  /// surface is cut too tight for the banding to shout, and it must not be
+  /// mistaken for [turfGreenCollar], which means something else entirely.
+  static const turfGreenStripe = Color(0xFF457550);
+
   /// The collar: the fringe ring between green and its surround. The single
   /// clearest "this is a green" cue at a glance.
   static const turfGreenCollar = Color(0xFF50805A);
