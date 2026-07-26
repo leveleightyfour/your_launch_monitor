@@ -176,7 +176,7 @@ void main() {
     final marked = before.withCell(0, 0, Terrain.bunker);
     expect(marked.at(0, 0), Terrain.bunker);
 
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.bySemanticsLabel('Extend hole'));
     await tester.pump(const Duration(milliseconds: 200));
 
     final longer = state.currentGrid;
@@ -187,7 +187,7 @@ void main() {
     expect(longer.at(0, 0), before.at(0, 0));
     expect(longer.at(0, longer.rows - 1), Terrain.rough);
 
-    await tester.tap(find.byIcon(Icons.remove));
+    await tester.tap(find.bySemanticsLabel('Shorten hole'));
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(state.currentGrid.rows, before.rows);
@@ -275,9 +275,10 @@ void main() {
         tester.state<HoleBuilderSheetState>(find.byType(HoleBuilderSheet));
     final before = state.currentGrid;
 
-    // Distinct icons from the length bar, so the two controls are separable
-    // by touch and by test.
-    await tester.tap(find.byIcon(Icons.unfold_more));
+    // Both bars step with plus and minus — those glyphs survive icon-font
+    // tree shaking on a Shorebird patch, where the unfold chevrons did not.
+    // The labels are what tells the four steppers apart.
+    await tester.tap(find.bySemanticsLabel('Widen hole'));
     await tester.pump(const Duration(milliseconds: 200));
 
     final wide = state.currentGrid;
@@ -285,7 +286,7 @@ void main() {
     expect(wide.rows, before.rows, reason: 'length must not change');
     expect(wide.left, -wide.width / 2, reason: 'centre drifted');
 
-    await tester.tap(find.byIcon(Icons.unfold_less));
+    await tester.tap(find.bySemanticsLabel('Narrow hole'));
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(state.currentGrid.cols, before.cols);
@@ -298,20 +299,37 @@ void main() {
         tester.state<HoleBuilderSheetState>(find.byType(HoleBuilderSheet));
     final before = state.currentGrid;
 
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.bySemanticsLabel('Extend hole'));
     await tester.pump(const Duration(milliseconds: 200));
 
     // Lengthening leaves the width alone...
     expect(state.currentGrid.cols, before.cols);
     expect(state.currentGrid.rows, greaterThan(before.rows));
 
-    await tester.tap(find.byIcon(Icons.unfold_more));
+    await tester.tap(find.bySemanticsLabel('Widen hole'));
     await tester.pump(const Duration(milliseconds: 200));
 
     // ...and widening leaves the new length alone.
     expect(state.currentGrid.rows,
         before.rows + HoleGrid.lengthStepCells);
     expect(state.currentGrid.cols, before.cols + HoleGrid.widthStepCells);
+    tester.takeException();
+  });
+
+  testWidgets('every stepper says what it does', (tester) async {
+    // Four buttons, two glyphs. Without labels neither a screen reader nor a
+    // test can tell the axis or the direction apart — and the icons became
+    // ambiguous the moment the width bar moved to plus and minus.
+    await _open(tester, const HoleSetup(enabled: true, greenDistance: 165));
+
+    for (final label in const [
+      'Shorten hole',
+      'Extend hole',
+      'Narrow hole',
+      'Widen hole',
+    ]) {
+      expect(find.bySemanticsLabel(label), findsOneWidget, reason: label);
+    }
     tester.takeException();
   });
 }

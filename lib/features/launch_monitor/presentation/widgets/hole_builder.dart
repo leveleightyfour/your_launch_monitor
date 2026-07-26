@@ -159,6 +159,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
             // font, so the control renders on Shorebird-patched installs.
             _stepButton(
               Icons.remove,
+              label: 'Narrow hole',
               _grid.cols <= HoleGrid.minCols
                   ? null
                   : () => setState(() {
@@ -179,6 +180,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
             const SizedBox(width: 10),
             _stepButton(
               Icons.add,
+              label: 'Widen hole',
               _grid.cols >= HoleGrid.maxCols
                   ? null
                   : () => setState(() {
@@ -254,6 +256,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
           children: [
             _stepButton(
               Icons.remove,
+              label: 'Shorten hole',
               _grid.rows <= HoleGrid.minRows
                   ? null
                   : () => setState(() {
@@ -274,6 +277,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
             const SizedBox(width: 10),
             _stepButton(
               Icons.add,
+              label: 'Extend hole',
               _grid.rows >= HoleGrid.maxRows
                   ? null
                   : () => setState(() {
@@ -359,12 +363,20 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
   /// [quarterTurns] rotates the glyph. The fold icons read vertically, which
   /// is right for length and wrong for width — the arrows should point along
   /// the axis the button actually changes.
+  /// [label] names what the button does. The four steppers share two glyphs
+  /// between them, so the icon alone identifies neither the axis nor the
+  /// direction — to a screen reader, and to anything else asking.
   Widget _stepButton(
     IconData icon,
     VoidCallback? onTap, {
+    required String label,
     int quarterTurns = 0,
   }) =>
-      GestureDetector(
+      Semantics(
+        button: true,
+        enabled: onTap != null,
+        label: label,
+        child: GestureDetector(
         onTap: onTap,
         child: Container(
           width: 34,
@@ -382,6 +394,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
               color: onTap == null ? AppColors.textDimmed : AppColors.textMuted,
             ),
           ),
+        ),
         ),
       );
 
