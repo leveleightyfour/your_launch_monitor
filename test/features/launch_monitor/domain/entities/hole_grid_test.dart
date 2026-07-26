@@ -309,4 +309,72 @@ void main() {
       expect(restored.grid!.at(4, 4), Terrain.fairway);
     });
   });
+
+  group('length', () {
+    test('extending adds rough at the far end and leaves the tee alone', () {
+      var g = HoleGrid.blank(cellSize: 5, width: 40, length: 100);
+      g = g.withBlock(0, 0, 7, 4, Terrain.fairway);
+      final longer = g.extended();
+
+      expect(longer.rows, g.rows + HoleGrid.lengthStepCells);
+      expect(longer.cols, g.cols);
+      expect(longer.cellSize, g.cellSize);
+      expect(longer.at(0, 0), Terrain.fairway, reason: 'the tee end is fixed');
+      expect(longer.at(0, longer.rows - 1), Terrain.rough);
+    });
+
+    test('shortening trims the far end, never the tee', () {
+      var g = HoleGrid.blank(cellSize: 5, width: 40, length: 200);
+      g = g.withCell(0, 0, Terrain.bunker);
+      final shorter = g.shortened();
+
+      expect(shorter.rows, g.rows - HoleGrid.lengthStepCells);
+      expect(shorter.at(0, 0), Terrain.bunker);
+    });
+
+    test('a hole cannot be shortened out of existence', () {
+      var g = HoleGrid.blank(cellSize: 5, width: 40, length: 50);
+      for (var i = 0; i < 20; i++) {
+        g = g.shortened();
+      }
+
+      expect(g.rows, HoleGrid.minRows);
+    });
+
+    test('extending is bounded too', () {
+      var g = HoleGrid.blank(cellSize: 5, width: 40, length: 100);
+      g = g.withRows(HoleGrid.maxRows + 500);
+
+      expect(g.rows, HoleGrid.maxRows);
+    });
+
+    test('a round trip through extend and shorten is lossless in the middle',
+        () {
+      var g = HoleGrid.blank(cellSize: 5, width: 40, length: 200);
+      g = g.withBlock(2, 3, 5, 12, Terrain.green);
+
+      expect(g.extended().shortened(), g);
+    });
+  });
+
+  group('cell size follows the profile, storage does not', () {
+    test('five yards, or five metres expressed in yards', () {
+      expect(HoleGrid.cellSizeForUnit(metric: false), 5.0);
+      expect(HoleGrid.cellSizeForUnit(metric: true), closeTo(5.4681, 0.001));
+    });
+
+    test('a metric grid still measures its ground in yards', () {
+      final g = HoleGrid.blank(
+        cellSize: HoleGrid.cellSizeForUnit(metric: true),
+        width: 100,
+        length: 200,
+      );
+
+      // 20 cells of 5 m is 100 m, which is 109.4 yards — the grid reports the
+      // yardage, because that is the unit everything downstream expects.
+      expect(g.length, closeTo(g.rows * g.cellSize, 1e-9));
+      expect(g.terrainAt(0, g.length - 1), isNot(Terrain.outOfBounds));
+      expect(g.terrainAt(0, g.length + 1), Terrain.outOfBounds);
+    });
+  });
 }

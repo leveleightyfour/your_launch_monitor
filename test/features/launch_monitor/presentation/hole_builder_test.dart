@@ -7,7 +7,9 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/terrain.dar
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/hole_builder.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 
+// The app defaults to metres, so that is the default fixture too.
 const _prefs = UnitPrefs();
+const _yardPrefs = UnitPrefs(distance: DistanceUnit.yards);
 
 /// The sheet is tall — the default 800x600 test surface clips the action row
 /// and taps on it silently miss.
@@ -17,12 +19,16 @@ void _bigScreen(WidgetTester tester) {
   addTearDown(tester.view.reset);
 }
 
-Future<void> _open(WidgetTester tester, HoleSetup hole) async {
+Future<void> _open(
+  WidgetTester tester,
+  HoleSetup hole, {
+  UnitPrefs prefs = _prefs,
+}) async {
   _bigScreen(tester);
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
-        body: HoleBuilderSheet(hole: hole, prefs: _prefs),
+        body: HoleBuilderSheet(hole: hole, prefs: prefs),
       ),
     ),
   );
@@ -129,24 +135,76 @@ void main() {
     tester.takeException();
   });
 
-  testWidgets('the grid-size stepper resamples without losing the paint',
+  testWidgets('a yard profile gets five-yard cells', (tester) async {
+    await _open(tester, const HoleSetup(enabled: true, greenDistance: 165),
+        prefs: _yardPrefs);
+    final state =
+        tester.state<HoleBuilderSheetState>(find.byType(HoleBuilderSheet));
+
+    expect(state.currentGrid.cellSize, 5.0);
+    tester.takeException();
+  });
+
+  testWidgets('a metric profile gets five-metre cells, still kept in yards',
       (tester) async {
-    const hole = HoleSetup(enabled: true, greenDistance: 165, fairwayWidth: 40);
+    // Only the size of the square follows the preference. The grid stays in
+    // yards because the trajectory and the ground models are.
+    await _open(tester, const HoleSetup(enabled: true, greenDistance: 165));
+    final state =
+        tester.state<HoleBuilderSheetState>(find.byType(HoleBuilderSheet));
+
+    expect(state.currentGrid.cellSize, closeTo(5.4681, 0.001));
+    tester.takeException();
+  });
+
+  testWidgets('there is no grid-size control to get wrong', (tester) async {
+    await _open(tester, const HoleSetup(enabled: true, greenDistance: 165));
+
+    expect(find.text('Grid size'), findsNothing);
+    tester.takeException();
+  });
+
+  testWidgets('the hole extends and shortens from the far end',
+      (tester) async {
+    const hole = HoleSetup(enabled: true, greenDistance: 165);
     await _open(tester, hole);
 
-    final state = tester.state<HoleBuilderSheetState>(find.byType(HoleBuilderSheet));
-    final HoleGrid before = state.currentGrid;
-    expect(before.cellSize, HoleGrid.defaultCellSize);
+    final state =
+        tester.state<HoleBuilderSheetState>(find.byType(HoleBuilderSheet));
+    final before = state.currentGrid;
+    // Paint something near the tee so it can be checked for survival.
+    final marked = before.withCell(0, 0, Terrain.bunker);
+    expect(marked.at(0, 0), Terrain.bunker);
 
     await tester.tap(find.byIcon(Icons.add));
     await tester.pump(const Duration(milliseconds: 200));
 
-    final HoleGrid after = state.currentGrid;
-    expect(after.cellSize, HoleGrid.defaultCellSize + 1);
-    // The ground it covers is unchanged, and so is what was painted on it.
-    expect(after.width, closeTo(before.width, after.cellSize));
-    expect(after.terrainAt(0, 80), Terrain.fairway);
-    expect(after.terrainAt(0, 165), Terrain.green);
+    final longer = state.currentGrid;
+    expect(longer.rows, before.rows + HoleGrid.lengthStepCells);
+    expect(longer.cols, before.cols, reason: 'width must not change');
+    expect(longer.cellSize, before.cellSize);
+    // The tee end is untouched and the new ground is rough.
+    expect(longer.at(0, 0), before.at(0, 0));
+    expect(longer.at(0, longer.rows - 1), Terrain.rough);
+
+    await tester.tap(find.byIcon(Icons.remove));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(state.currentGrid.rows, before.rows);
+    tester.takeException();
+  });
+
+  testWidgets('the sheet is the same height whatever the hole length',
+      (tester) async {
+    await _open(tester, const HoleSetup(enabled: true, greenDistance: 120));
+    final short = tester.getSize(find.byType(HoleBuilderSheet));
+
+    await _open(tester, const HoleSetup(enabled: true, greenDistance: 600));
+    final long = tester.getSize(find.byType(HoleBuilderSheet));
+
+    // The plan scrolls instead of the modal growing.
+    expect(long.height, short.height);
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
     tester.takeException();
   });
 

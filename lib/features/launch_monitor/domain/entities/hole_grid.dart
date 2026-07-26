@@ -42,6 +42,45 @@ class HoleGrid {
   static const minCellSize = 2.0;
   static const maxCellSize = 25.0;
 
+  static const _yardsPerMetre = 1.0936133;
+
+  /// Cells are always five of whatever the player reads distances in — five
+  /// yards, or five metres — rather than a number they have to choose.
+  ///
+  /// The grid itself is stored in yards, because everything downstream of it
+  /// is: the trajectory, the ground models, [HoleSetup]. Only the size of the
+  /// square changes with the preference, never the units it is kept in.
+  static double cellSizeForUnit({required bool metric}) =>
+      metric ? 5 * _yardsPerMetre : 5.0;
+
+  /// How far a hole grows or shrinks by in one press — ten cells, so the
+  /// change is worth the tap without overshooting.
+  static const lengthStepCells = 10;
+
+  static const minRows = 8;
+  static const maxRows = 400;
+
+  /// A copy running to a different distance, keeping everything painted.
+  ///
+  /// Ground added at the far end starts as rough; ground removed takes
+  /// whatever was on it. The tee end never moves, so shortening a hole cannot
+  /// silently delete the part the player is standing on.
+  HoleGrid withRows(int newRows) {
+    final r = newRows.clamp(minRows, maxRows);
+    if (r == rows) return this;
+    final next = <Terrain>[];
+    for (var row = 0; row < r; row++) {
+      for (var col = 0; col < cols; col++) {
+        next.add(row < rows ? at(col, row) : Terrain.rough);
+      }
+    }
+    return HoleGrid(cellSize: cellSize, cols: cols, rows: r, cells: next);
+  }
+
+  HoleGrid extended() => withRows(rows + lengthStepCells);
+
+  HoleGrid shortened() => withRows(rows - lengthStepCells);
+
   /// A hole wide enough to miss badly on and long enough for a driver.
   factory HoleGrid.blank({
     double cellSize = defaultCellSize,

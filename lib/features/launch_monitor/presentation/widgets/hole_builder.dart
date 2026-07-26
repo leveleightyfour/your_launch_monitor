@@ -53,14 +53,28 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
   /// lot of.
   final List<HoleGrid> _history = [];
 
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
     // Opening the builder on a hole that was only ever described by numbers
     // seeds the grid from that description, so the fairway and green already
     // there are the starting point rather than a blank sheet.
-    _grid = widget.hole.grid ?? seedHoleGrid(widget.hole);
+    _grid = widget.hole.grid ??
+        seedHoleGrid(widget.hole, cellSize: _cellSize);
   }
+
+  /// Five squares in whatever unit the profile is set to.
+  double get _cellSize => HoleGrid.cellSizeForUnit(
+        metric: widget.prefs.distance == DistanceUnit.meters,
+      );
 
   /// The grid being edited. Exposed so the painting rules can be tested
   /// without reaching through the widget tree.
@@ -100,57 +114,110 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    // The plan wants all the room it can get, but the palette and the action
-    // row have to stay on screen — an unreachable Cancel button is worse than
-    // a smaller plan. Capping the sheet and letting the plan take what is
-    // left is what guarantees that on any handset.
+    // Fixed height, whatever the hole is. The plan scrolls inside it, so a
+    // 600-yard par 5 opens the same size as a pitch-and-putt and the palette
+    // and action row never move.
+    final sheetHeight = media.size.height * 0.82;
+
     return SafeArea(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: media.size.height * 0.88),
+      child: SizedBox(
+        height: sheetHeight,
         child: Padding(
-        padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _header(context),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: AspectRatio(
-                  // The plan is taller than it is wide, like the hole.
-                  aspectRatio: _grid.width / _grid.length * 2.2,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final size = constraints.biggest;
-                      return GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTapDown: (d) =>
-                            _paintAt(d.localPosition, size, starting: true),
-                        onPanStart: (d) =>
-                            _paintAt(d.localPosition, size, starting: true),
-                        onPanUpdate: (d) =>
-                            _paintAt(d.localPosition, size, starting: false),
-                        child: CustomPaint(
-                          painter: _PlanPainter(_grid),
-                          size: size,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _palette(),
-            _cellSizeRow(),
-            _actions(context),
-            const SizedBox(height: 8),
-          ],
-        ),
+          padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _header(context),
+              _lengthBar(),
+              Expanded(child: _plan()),
+              const SizedBox(height: 10),
+              _palette(),
+              _actions(context),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
   }
+
+  /// The plan, scrolling vertically.
+  ///
+  /// Cell size on screen comes from the width, so the hole always fits across
+  /// and grows downwards — which is the axis that varies. The view starts at
+  /// the tee, since that is where a hole gets built from.
+  Widget _plan() => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final cellPx = constraints.maxWidth / _grid.cols;
+            final planSize = Size(constraints.maxWidth, cellPx * _grid.rows);
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SingleChildScrollView(
+                controller: _scroll,
+                // Reversed so offset zero is the tee end at the bottom.
+                reverse: true,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: (d) =>
+                      _paintAt(d.localPosition, planSize, starting: true),
+                  onPanStart: (d) =>
+                      _paintAt(d.localPosition, planSize, starting: true),
+                  onPanUpdate: (d) =>
+                      _paintAt(d.localPosition, planSize, starting: false),
+                  child: CustomPaint(
+                    painter: _PlanPainter(_grid),
+                    size: planSize,
+                    child: SizedBox(
+                      width: planSize.width,
+                      height: planSize.height,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      );
+
+  /// Extend or shorten the hole. The far end moves; the tee stays put.
+  Widget _lengthBar() => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: Row(
+          children: [
+            _stepButton(
+              Icons.remove,
+              _grid.rows <= HoleGrid.minRows
+                  ? null
+                  : () => setState(() {
+                        _push();
+                        _grid = _grid.shortened();
+                      }),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '${widget.prefs.dist(_grid.length).round()} '
+                '${widget.prefs.distLabel} to the far end',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.mono(
+                    size: 11, color: AppColors.textMuted),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _stepButton(
+              Icons.add,
+              _grid.rows >= HoleGrid.maxRows
+                  ? null
+                  : () => setState(() {
+                        _push();
+                        _grid = _grid.extended();
+                      }),
+            ),
+          ],
+        ),
+      );
 
   Widget _header(BuildContext context) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
@@ -223,65 +290,21 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
         ),
       );
 
-  Widget _cellSizeRow() {
-    final unit = widget.prefs.distLabel;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text('Grid size',
-                style: AppTextStyles.sans(size: 13)),
-          ),
-          _stepper(
-            label: '${widget.prefs.dist(_grid.cellSize).toStringAsFixed(0)} '
-                '$unit',
-            // Resampling is nearest-neighbour, so what is painted survives.
-            onDown: () => setState(() {
-              _push();
-              _grid = _grid.resized(_grid.cellSize - 1);
-            }),
-            onUp: () => setState(() {
-              _push();
-              _grid = _grid.resized(_grid.cellSize + 1);
-            }),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _stepper({
-    required String label,
-    required VoidCallback onDown,
-    required VoidCallback onUp,
-  }) =>
-      Row(
-        children: [
-          _stepButton(Icons.remove, onDown),
-          SizedBox(
-            width: 62,
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: AppTextStyles.mono(size: 12),
-            ),
-          ),
-          _stepButton(Icons.add, onUp),
-        ],
-      );
-
-  Widget _stepButton(IconData icon, VoidCallback onTap) => GestureDetector(
+  Widget _stepButton(IconData icon, VoidCallback? onTap) => GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 30,
-          height: 30,
+          width: 34,
+          height: 34,
           decoration: BoxDecoration(
             color: AppColors.card,
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(color: AppColors.border),
           ),
-          child: Icon(icon, size: 15, color: AppColors.textMuted),
+          child: Icon(
+            icon,
+            size: 17,
+            color: onTap == null ? AppColors.textDimmed : AppColors.textMuted,
+          ),
         ),
       );
 
@@ -382,11 +405,14 @@ class _PlanPainter extends CustomPainter {
 /// should show that hole, not a blank sheet — the fairway and green already
 /// set up are the starting point. Every cell asks the analytic hole its own
 /// question, so the seed is exactly what the player had.
-HoleGrid seedHoleGrid(HoleSetup hole) {
+HoleGrid seedHoleGrid(
+  HoleSetup hole, {
+  double cellSize = HoleGrid.defaultCellSize,
+}) {
   // Long enough to hold the green with room past it, wide enough to miss.
   final length = (hole.greenDistance + 80).clamp(120.0, 700.0).toDouble();
   final grid = HoleGrid.blank(
-    cellSize: HoleGrid.defaultCellSize,
+    cellSize: cellSize,
     width: 140,
     length: length,
   );
