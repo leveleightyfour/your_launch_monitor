@@ -7,7 +7,10 @@
 /// it.
 library;
 
+import 'package:flutter/painting.dart';
+
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_trajectory.dart';
+import 'package:omni_sniffer/shared/theme.dart';
 
 /// What a shot ended up being, once it stopped moving.
 ///
@@ -102,5 +105,27 @@ enum Terrain {
         Terrain.water => 'Water',
         Terrain.trees => 'Trees',
         Terrain.outOfBounds => 'Out of bounds',
+      };
+}
+
+/// Colours the 3D view and the builder both paint terrain with, so a cell
+/// looks the same in the editor as it does on the hole.
+extension TerrainPalette on Terrain {
+  Color get surfaceColor => switch (this) {
+        Terrain.fairway => AppColors.turfFairway,
+        Terrain.green => AppColors.turfGreen,
+        Terrain.rough => AppColors.turfRough,
+        Terrain.bunker => AppColors.turfBunker,
+        Terrain.water => AppColors.turfWater,
+        Terrain.trees => AppColors.turfTrees,
+        Terrain.outOfBounds => AppColors.turfOob,
+      };
+
+  /// Alternate band, for the surfaces that are mown in stripes. Everything
+  /// else returns its own colour, so the caller can stripe unconditionally.
+  Color get stripeColor => switch (this) {
+        Terrain.fairway => AppColors.turfFairwayStripe,
+        Terrain.green => AppColors.turfGreenCollar,
+        _ => surfaceColor,
       };
 }

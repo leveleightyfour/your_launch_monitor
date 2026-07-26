@@ -5,10 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_grid.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/terrain.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_trajectory.dart';
-import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/hole_setup_controls.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/hole_builder.dart';
+import 'package:omni_sniffer/shared/providers/hole_setup_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -248,6 +251,23 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
 
   bool get _holeIsSet => _hole != null;
 
+  /// Opens the builder on whatever hole is configured, and keeps what comes
+  /// back.
+  ///
+  /// The configured hole is edited, not the selected shot's. Shots are stamped
+  /// with the hole they were played to and stay that way — building a new one
+  /// applies to the shots that come next, which is the same rule as moving the
+  /// green.
+  Future<void> _openHoleBuilder() async {
+    final built = await showHoleBuilder(
+      context,
+      hole: ref.read(holeSetupProvider),
+      prefs: ref.read(unitPrefsProvider),
+    );
+    if (built == null || !mounted) return;
+    ref.read(holeSetupProvider.notifier).replace(built);
+  }
+
   Club? _clubFor(ShotData shot) {
     for (final club in widget.clubs) {
       if (club.id == shot.clubId) return club;
@@ -411,8 +431,8 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
           icon: Icons.golf_course,
           active: _holeIsSet,
           size: buttonSize,
-          tooltip: 'Hole setup',
-          onTap: () => showHoleSetupSheet(context),
+          tooltip: 'Hole builder',
+          onTap: _openHoleBuilder,
         ),
         const SizedBox(width: 6),
         _RoundAction(
@@ -901,11 +921,22 @@ class _FlightPainter extends CustomPainter {
 
     _paintBackdrop(canvas, size);
     _paintGround(canvas, camera, halfWidth, maxDepth, gridStep);
-    if (course != null && density.atLeastMedium) {
-      _paintRoughTexture(canvas, camera, course, halfWidth, maxDepth);
+    // A built hole replaces the analytic fairway-and-green entirely: its cells
+    // already say what every patch of ground is, including the green.
+    final built = course?.grid;
+    if (built != null) {
+      _paintGridHole(canvas, camera, built);
+      _paintPinAt(canvas, camera, built);
+    } else {
+      if (course != null && density.atLeastMedium) {
+        _paintRoughTexture(canvas, camera, course, halfWidth, maxDepth);
+      }
+      if (course != null) _paintGreen(canvas, camera, course);
     }
-    if (course != null) _paintGreen(canvas, camera, course);
     _paintDistanceHaze(canvas, camera, size);
+    // Trees stand on the ground, so they go over the haze — otherwise the far
+    // ones would be washed out at the base and solid at the top.
+    if (built != null) _paintTrees(canvas, camera, built);
     if (density.atLeastMedium) {
       _paintDistanceLabels(canvas, camera, gridStep, maxDepth, halfWidth);
     }
@@ -1203,6 +1234,158 @@ class _FlightPainter extends CustomPainter {
     );
   }
 
+  /// The pin on a built hole: the middle of wherever the green cells are.
+  ///
+  /// A painted green has no centre to read off a setting, so it is measured.
+  /// No green cells means no pin, which is correct — a hole can be built
+  /// without one.
+  void _paintPinAt(Canvas canvas, _Camera camera, HoleGrid grid) {
+    var sx = 0.0, sz = 0.0, n = 0;
+    for (var row = 0; row < grid.rows; row++) {
+      for (var col = 0; col < grid.cols; col++) {
+        if (grid.at(col, row) != Terrain.green) continue;
+        sx += grid.left + (col + 0.5) * grid.cellSize;
+        sz += (row + 0.5) * grid.cellSize;
+        n++;
+      }
+    }
+    if (n == 0) return;
+    _paintFlagstick(canvas, camera, Vec3(sx / n, 0, sz / n));
+  }
+
+  /// A hand-built hole, drawn cell by cell.
+  ///
+  /// Cells are merged into horizontal runs before anything is projected: a
+  /// 400x120 yard hole at 5-yard cells is nearly two thousand of them, and
+  /// almost every one shares a terrain with the cell beside it. Merging turns
+  /// that into a few dozen quads a row without changing a pixel.
+  ///
+  /// Mown surfaces keep their banding, computed from the column index so the
+  /// stripes line up across runs rather than restarting at every boundary.
+  void _paintGridHole(Canvas canvas, _Camera camera, HoleGrid grid) {
+    final cell = grid.cellSize;
+    final stripeEvery = math.max(1, (_stripeWidth / cell).round());
+
+    for (var row = 0; row < grid.rows; row++) {
+      final z0 = row * cell;
+      // Overlap downrange by a hair; abutting fills leave an antialiased seam.
+      final z1 = z0 + cell + 0.04;
+      var col = 0;
+      while (col < grid.cols) {
+        final terrain = grid.at(col, row);
+        // Runs break on a change of terrain, and on a change of mown band so
+        // the stripes survive the merge.
+        final banded = terrain == Terrain.fairway || terrain == Terrain.green;
+        final band = (col ~/ stripeEvery).isEven;
+        var end = col + 1;
+        while (end < grid.cols &&
+            grid.at(end, row) == terrain &&
+            (!banded || (end ~/ stripeEvery).isEven == band)) {
+          end++;
+        }
+
+        final x0 = grid.left + col * cell;
+        final x1 = grid.left + end * cell + 0.04;
+        _polygon3(
+          canvas,
+          camera,
+          [
+            Vec3(x0, 0, z0),
+            Vec3(x1, 0, z0),
+            Vec3(x1, 0, z1),
+            Vec3(x0, 0, z1),
+          ],
+          Paint()
+            ..color = banded && !band ? terrain.stripeColor : terrain.surfaceColor,
+        );
+        col = end;
+      }
+    }
+  }
+
+  /// Trees, as flat-shaded shapes standing on their cells.
+  ///
+  /// Sorted far-to-near and drawn in that order, which is the whole of the
+  /// depth handling — they are painted before the shot, so a tree never hides
+  /// the ball. That is deliberate: the trace is the subject of the view, and
+  /// interleaving it properly would mean splitting the path by depth.
+  void _paintTrees(Canvas canvas, _Camera camera, HoleGrid grid) {
+    final cell = grid.cellSize;
+    final stands = <({double depth, Vec3 at, double scale})>[];
+
+    for (var row = 0; row < grid.rows; row++) {
+      for (var col = 0; col < grid.cols; col++) {
+        if (grid.at(col, row) != Terrain.trees) continue;
+        // Hashed from the cell so a tree stays put as the camera moves.
+        final h = (col * 73856093) ^ (row * 19349663);
+        final jx = ((h & 0xff) / 255.0 - 0.5) * cell * 0.6;
+        final jz = (((h >> 8) & 0xff) / 255.0 - 0.5) * cell * 0.6;
+        final at = Vec3(
+          grid.left + (col + 0.5) * cell + jx,
+          0,
+          (row + 0.5) * cell + jz,
+        );
+        final depth = camera.depthOf(at);
+        if (depth <= 0) continue;
+        stands.add((
+          depth: depth,
+          at: at,
+          scale: 0.8 + ((h >> 16) & 0xff) / 255.0 * 0.5,
+        ));
+      }
+    }
+
+    stands.sort((a, b) => b.depth.compareTo(a.depth));
+    for (final t in stands) {
+      _paintTree(canvas, camera, t.at, t.scale);
+    }
+  }
+
+  /// One tree: a trunk and two canopy layers, built from ground-anchored
+  /// verticals so it scales with the projection like everything else.
+  void _paintTree(Canvas canvas, _Camera camera, Vec3 base, double scale) {
+    final height = 9.0 * scale;
+    final spread = 3.2 * scale;
+
+    final trunkTop = camera.project(Vec3(base.x, height * 0.42, base.z));
+    final trunkBase = camera.project(base);
+    if (trunkTop == null || trunkBase == null) return;
+    if (!trunkTop.dy.isFinite || !trunkBase.dy.isFinite) return;
+
+    // Trunk width follows the projected height, so it thins with distance
+    // without needing a second projection.
+    final rise = (trunkBase.dy - trunkTop.dy).abs();
+    if (rise < 1.2) return; // too far away to be worth drawing
+    canvas.drawLine(
+      trunkBase,
+      trunkTop,
+      Paint()
+        ..color = AppColors.treeTrunk
+        ..strokeWidth = math.max(1.0, rise * 0.16),
+    );
+
+    // Canopy as two stacked triangles — enough to read as a conifer at any
+    // size this view puts them at.
+    for (final layer in const [(0.34, 1.0), (0.62, 0.72)]) {
+      final (base0, width) = layer;
+      final tip = camera.project(Vec3(base.x, height * (base0 + 0.42), base.z));
+      final left = camera.project(
+          Vec3(base.x - spread * width, height * base0, base.z));
+      final right = camera.project(
+          Vec3(base.x + spread * width, height * base0, base.z));
+      if (tip == null || left == null || right == null) continue;
+      canvas.drawPath(
+        Path()
+          ..moveTo(tip.dx, tip.dy)
+          ..lineTo(right.dx, right.dy)
+          ..lineTo(left.dx, left.dy)
+          ..close(),
+        Paint()
+          ..color = base0 > 0.5 ? AppColors.treeCanopyLit : AppColors.treeCanopy,
+      );
+    }
+  }
+
   /// Scattered clumps over the rough, so it reads as longer grass rather than
   /// as a flat fill the fairway happens to sit on.
   ///
@@ -1434,9 +1617,23 @@ class _FlightPainter extends CustomPainter {
       _line3(canvas, camera, ring[i], ring[(i + 1) % ring.length], edge);
     }
 
-    // Pin, with a small flag. Two and a half yards is roughly a real flagstick
-    // at this scale — tall enough to read, short enough not to dominate.
-    final base = course.pin;
+    _paintFlagstick(canvas, camera, course.pin);
+
+    if (density == _Density.compact) return;
+    final label = camera.project(Vec3(course.pin.x, 0, course.greenBack));
+    if (label != null) {
+      _label(
+        canvas,
+        '${prefs.dist(course.greenDistance).round()} ${prefs.distLabel}',
+        label.translate(0, -10),
+        AppTextStyles.mono(size: 9 * _s, color: AppColors.turfGreenEdge),
+      );
+    }
+  }
+
+  /// Pin, with a small flag. Two and a half yards is roughly a real flagstick
+  /// at this scale — tall enough to read, short enough not to dominate.
+  void _paintFlagstick(Canvas canvas, _Camera camera, Vec3 base) {
     const height = 2.4;
     final top = Vec3(base.x, height, base.z);
     _line3(
@@ -1459,17 +1656,6 @@ class _FlightPainter extends CustomPainter {
           ..lineTo(flagTop.dx, flagTop.dy + span * 0.9)
           ..close(),
         Paint()..color = AppColors.pinFlag,
-      );
-    }
-
-    if (density == _Density.compact) return;
-    final label = camera.project(Vec3(base.x, 0, course.greenBack));
-    if (label != null) {
-      _label(
-        canvas,
-        '${prefs.dist(course.greenDistance).round()} ${prefs.distLabel}',
-        label.translate(0, -10),
-        AppTextStyles.mono(size: 9 * _s, color: AppColors.turfGreenEdge),
       );
     }
   }

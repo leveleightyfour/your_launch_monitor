@@ -71,6 +71,25 @@ class AppColors {
   static const turfGreenEdge = Color(0xFF6DA878);
   static const turfGrid = Color(0xFF3A5148);
 
+  // ── Built terrain ────────────────────────────────────────────────────────
+  // Hazards have to be identifiable at a glance from a moving camera, so each
+  // sits in its own hue family rather than being a shade of the turf.
+  static const turfBunker = Color(0xFFB9A77A);
+  static const turfBunkerEdge = Color(0xFF8C7C55);
+  static const turfWater = Color(0xFF2B5A7A);
+  static const turfWaterEdge = Color(0xFF4E8CB0);
+
+  /// Ground beneath the trees — rough, shaded by what is standing on it.
+  static const turfTrees = Color(0xFF232B22);
+  static const treeCanopy = Color(0xFF3D6B3A);
+  static const treeCanopyLit = Color(0xFF4F8449);
+  static const treeTrunk = Color(0xFF3A2E22);
+
+  /// Out of bounds. Deliberately drab — it is the one surface that means the
+  /// shot is over, and it should look like nothing worth aiming at.
+  static const turfOob = Color(0xFF2A2622);
+  static const turfOobStake = Color(0xFFD8D2C4);
+
   /// Distance haze. The far field fades to this instead of being painted dark,
   /// which is what keeps depth once the near turf is bright.
   static const turfHaze = Color(0xFF16221F);
