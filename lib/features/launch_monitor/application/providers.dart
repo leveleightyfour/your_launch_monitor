@@ -80,6 +80,11 @@ class LaunchMonitor extends _$LaunchMonitor {
   int? get draftSessionId => _draftSessionId;
   DateTime? get draftCreatedAt => _draftCreatedAt;
 
+  /// Name chosen when the session was started. Stashed here (not in the
+  /// route) so leaving the session screen and resuming it later keeps the
+  /// name for the top bar and the save flow.
+  String? draftName;
+
   @override
   LaunchMonitorState build() {
     ref.onDispose(_cleanup);
@@ -463,6 +468,7 @@ class LaunchMonitor extends _$LaunchMonitor {
   void clearShots() {
     _draftSessionId = null;
     _draftCreatedAt = null;
+    draftName = null;
     state = state.copyWith(shots: []);
   }
 

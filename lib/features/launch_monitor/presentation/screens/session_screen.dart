@@ -47,6 +47,21 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   bool _showShotList = false;
   ShotListMetric _shotListMetric = ShotListMetric.carry;
 
+  /// The session's chosen name. Falls back to the name stashed on the
+  /// notifier so leaving and resuming the session doesn't lose it (the
+  /// resume route carries no `initialName`).
+  String? get _sessionName =>
+      widget.initialName ?? ref.read(launchMonitorProvider.notifier).draftName;
+
+  @override
+  void initState() {
+    super.initState();
+    // Stash the chosen name so it survives leave-and-resume.
+    if (widget.initialName != null) {
+      ref.read(launchMonitorProvider.notifier).draftName = widget.initialName;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = ref.watch(launchMonitorProvider.select((s) => s.status));
@@ -148,7 +163,15 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       canPop: allShots.isEmpty,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) {
-          unawaited(ref.read(launchMonitorProvider.notifier).abandonSession());
+          // Only an empty session pops directly; discard its empty draft.
+          // A completed pop with shots on board is always programmatic
+          // (leave / save / abandon), and those flows already handled the
+          // draft — abandoning here would destroy a left-open session.
+          if (ref.read(launchMonitorProvider).shots.isEmpty) {
+            unawaited(
+              ref.read(launchMonitorProvider.notifier).abandonSession(),
+            );
+          }
           return;
         }
         _confirmFinish(context);
@@ -160,7 +183,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             children: [
               _ActiveSessionTopBar(
                 status: status,
-                name: widget.initialName,
+                name: _sessionName,
                 batteryPercent: battery,
                 capacitorReady: capacitorReady,
                 detecting: detecting,
@@ -383,6 +406,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             );
           });
         },
+        onLeave: () {
+          // Keep everything — shots, draft, connection — and step out.
+          // The session list shows an active-session tile to return here.
+          Navigator.of(dialogCtx).pop();
+          context.pop(); // ignore: use_build_context_synchronously
+        },
         onAbandon: () {
           unawaited(notifier.abandonSession());
           Navigator.of(dialogCtx).pop();
@@ -409,7 +438,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       builder: (_) => _SessionSummarySheet(
         allShots: allShots,
         clubs: clubs,
-        initialName: widget.initialName,
+        initialName: _sessionName,
         onSave: (name) {
           final draftId = notifier.draftSessionId;
           final createdAt = notifier.draftCreatedAt ?? DateTime.now();
@@ -641,10 +670,16 @@ class _ConnectionBanner extends StatelessWidget {
               ),
             )
           else
-            const Icon(
-              Icons.bluetooth_disabled,
-              size: 14,
-              color: AppColors.errorText,
+            // A plain dot rather than an icon: it mirrors the top bar's
+            // status-dot language, and it adds no new glyph to the
+            // tree-shaken icon font (new glyphs can't ship in an OTA patch).
+            Container(
+              width: 10,
+              height: 10,
+              decoration: const BoxDecoration(
+                color: AppColors.errorText,
+                shape: BoxShape.circle,
+              ),
             ),
           const SizedBox(width: 8),
           Expanded(
@@ -1409,18 +1444,21 @@ class _BatteryChip extends StatelessWidget {
 
 // ── Step 1: confirm dialog ─────────────────────────────────────────────────────
 
-/// Two-stage finish dialog. Stage one offers the save path; choosing
-/// "Abandon Session" swaps to an explicit red confirm naming exactly what is
-/// destroyed, so one stray tap can never delete a session.
+/// Two-stage finish dialog. Stage one offers the save path, a leave-and-
+/// resume-later path, and abandonment; choosing "Abandon Session" swaps to
+/// an explicit red confirm naming exactly what is destroyed, so one stray
+/// tap can never delete a session.
 class _FinishConfirmDialog extends StatefulWidget {
   final int shotCount;
   final VoidCallback onFinish;
+  final VoidCallback onLeave;
   final VoidCallback onAbandon;
   final VoidCallback onNevermind;
 
   const _FinishConfirmDialog({
     required this.shotCount,
     required this.onFinish,
+    required this.onLeave,
     required this.onAbandon,
     required this.onNevermind,
   });
@@ -1521,7 +1559,8 @@ class _FinishConfirmDialogState extends State<_FinishConfirmDialog> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '$count $shotsWord recorded.',
+                    '$count $shotsWord recorded. Leaving keeps the session '
+                    'active so you can return to it from the home screen.',
                     style: AppTextStyles.sans(
                       size: 13,
                       color: AppColors.textMuted,
@@ -1545,6 +1584,27 @@ class _FinishConfirmDialogState extends State<_FinishConfirmDialog> {
                         style: AppTextStyles.sans(
                           weight: FontWeight.w600,
                           color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: AppColors.border2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: widget.onLeave,
+                      child: Text(
+                        'Leave for Now',
+                        style: AppTextStyles.sans(
+                          weight: FontWeight.w600,
+                          color: Colors.white,
                         ),
                       ),
                     ),
