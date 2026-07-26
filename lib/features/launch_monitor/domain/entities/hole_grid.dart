@@ -81,6 +81,44 @@ class HoleGrid {
 
   HoleGrid shortened() => withRows(rows - lengthStepCells);
 
+  /// Widening adds a column to each side at once, so the step is even and the
+  /// target line stays exactly down the middle. An odd step would shift the
+  /// centre of the hole every press.
+  static const widthStepCells = 2;
+
+  static const minCols = 6;
+  static const maxCols = 120;
+
+  /// A copy spanning a different width, keeping everything painted.
+  ///
+  /// Growth and loss are shared equally between the two sides, because the
+  /// target line runs down the centre and everything — the mown bands, the
+  /// physics, [left] — is measured from it. Taking cells off one side only
+  /// would slide the whole hole sideways under the player.
+  ///
+  /// New ground at either edge starts as rough.
+  HoleGrid withCols(int newCols) {
+    final c = newCols.clamp(minCols, maxCols);
+    if (c == cols) return this;
+    // Positive when growing: how far the old grid sits in from the new left
+    // edge. Negative when shrinking, which drops cells off both sides.
+    final offset = (c - cols) ~/ 2;
+    final next = <Terrain>[];
+    for (var row = 0; row < rows; row++) {
+      for (var col = 0; col < c; col++) {
+        final source = col - offset;
+        next.add(
+          source >= 0 && source < cols ? at(source, row) : Terrain.rough,
+        );
+      }
+    }
+    return HoleGrid(cellSize: cellSize, cols: c, rows: rows, cells: next);
+  }
+
+  HoleGrid widened() => withCols(cols + widthStepCells);
+
+  HoleGrid narrowed() => withCols(cols - widthStepCells);
+
   /// A hole wide enough to miss badly on and long enough for a driver.
   factory HoleGrid.blank({
     double cellSize = defaultCellSize,

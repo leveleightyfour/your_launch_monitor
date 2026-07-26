@@ -377,4 +377,73 @@ void main() {
       expect(g.terrainAt(0, g.length + 1), Terrain.outOfBounds);
     });
   });
+
+  group('width grows and shrinks from the centre', () {
+    test('widening adds a column to each side, keeping the line centred', () {
+      final g = HoleGrid.blank(cellSize: 5, width: 100, length: 100);
+      final wide = g.widened();
+
+      expect(wide.cols, g.cols + HoleGrid.widthStepCells);
+      expect(wide.rows, g.rows, reason: 'length must not change');
+      // The centre is still the centre, and the edges moved out equally.
+      expect(wide.left, -wide.width / 2);
+      expect(wide.left, lessThan(g.left));
+    });
+
+    test('what was painted stays where it was on the ground', () {
+      // The point of growing from the centre: a bunker 20 yards right of the
+      // target line is still 20 yards right of it afterwards.
+      var g = HoleGrid.blank(cellSize: 5, width: 100, length: 100);
+      g = g.withBlock(g.colFor(20)!, 5, g.colFor(20)!, 5, Terrain.bunker);
+      expect(g.terrainAt(20, 27), Terrain.bunker);
+
+      final wide = g.widened();
+      expect(wide.terrainAt(20, 27), Terrain.bunker,
+          reason: 'the bunker slid sideways when the hole widened');
+
+      final back = wide.narrowed();
+      expect(back.terrainAt(20, 27), Terrain.bunker);
+      expect(back.cols, g.cols);
+    });
+
+    test('new ground at the edges is rough', () {
+      final g = HoleGrid.blank(
+          cellSize: 5, width: 100, length: 100, fill: Terrain.fairway);
+      final wide = g.widened();
+
+      expect(wide.at(0, 0), Terrain.rough);
+      expect(wide.at(wide.cols - 1, 0), Terrain.rough);
+      expect(wide.at(wide.cols ~/ 2, 0), Terrain.fairway);
+    });
+
+    test('narrowing takes from both sides, not one', () {
+      var g = HoleGrid.blank(cellSize: 5, width: 100, length: 100);
+      g = g.withBlock(0, 0, 0, g.rows - 1, Terrain.water);
+      g = g.withBlock(g.cols - 1, 0, g.cols - 1, g.rows - 1, Terrain.bunker);
+
+      final narrow = g.narrowed();
+
+      expect(narrow.cols, g.cols - HoleGrid.widthStepCells);
+      // A column went from each edge, so neither survives.
+      expect(narrow.cells.contains(Terrain.water), isFalse);
+      expect(narrow.cells.contains(Terrain.bunker), isFalse);
+    });
+
+    test('width is clamped at both ends', () {
+      var g = HoleGrid.blank(cellSize: 5, width: 40, length: 100);
+      for (var i = 0; i < 40; i++) {
+        g = g.narrowed();
+      }
+      expect(g.cols, HoleGrid.minCols);
+
+      for (var i = 0; i < 200; i++) {
+        g = g.widened();
+      }
+      expect(g.cols, HoleGrid.maxCols);
+    });
+
+    test('the step is even, so the centre can never drift', () {
+      expect(HoleGrid.widthStepCells.isEven, isTrue);
+    });
+  });
 }

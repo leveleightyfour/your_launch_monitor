@@ -267,4 +267,51 @@ void main() {
       expect(distanceMarkerStep(5000), 200.0);
     });
   });
+
+  testWidgets('the hole widens and narrows about the target line',
+      (tester) async {
+    await _open(tester, const HoleSetup(enabled: true, greenDistance: 165));
+    final state =
+        tester.state<HoleBuilderSheetState>(find.byType(HoleBuilderSheet));
+    final before = state.currentGrid;
+
+    // Distinct icons from the length bar, so the two controls are separable
+    // by touch and by test.
+    await tester.tap(find.byIcon(Icons.unfold_more));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final wide = state.currentGrid;
+    expect(wide.cols, before.cols + HoleGrid.widthStepCells);
+    expect(wide.rows, before.rows, reason: 'length must not change');
+    expect(wide.left, -wide.width / 2, reason: 'centre drifted');
+
+    await tester.tap(find.byIcon(Icons.unfold_less));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(state.currentGrid.cols, before.cols);
+    tester.takeException();
+  });
+
+  testWidgets('length and width are separate controls', (tester) async {
+    await _open(tester, const HoleSetup(enabled: true, greenDistance: 165));
+    final state =
+        tester.state<HoleBuilderSheetState>(find.byType(HoleBuilderSheet));
+    final before = state.currentGrid;
+
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // Lengthening leaves the width alone...
+    expect(state.currentGrid.cols, before.cols);
+    expect(state.currentGrid.rows, greaterThan(before.rows));
+
+    await tester.tap(find.byIcon(Icons.unfold_more));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // ...and widening leaves the new length alone.
+    expect(state.currentGrid.rows,
+        before.rows + HoleGrid.lengthStepCells);
+    expect(state.currentGrid.cols, before.cols + HoleGrid.widthStepCells);
+    tester.takeException();
+  });
 }

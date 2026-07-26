@@ -135,6 +135,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
             children: [
               _header(context),
               _lengthBar(),
+              _widthBar(),
               Expanded(child: _plan()),
               const SizedBox(height: 10),
               _palette(),
@@ -147,6 +148,47 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
     );
   }
 
+  /// Widen or narrow the hole. Both edges move together, so the target line
+  /// stays down the middle.
+  Widget _widthBar() => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: Row(
+          children: [
+            _stepButton(
+              Icons.unfold_less,
+              quarterTurns: 1,
+              _grid.cols <= HoleGrid.minCols
+                  ? null
+                  : () => setState(() {
+                        _push();
+                        _grid = _grid.narrowed();
+                      }),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '${widget.prefs.dist(_grid.width).round()} '
+                '${widget.prefs.distLabel} wide',
+                textAlign: TextAlign.center,
+                style:
+                    AppTextStyles.mono(size: 11, color: AppColors.textMuted),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _stepButton(
+              Icons.unfold_more,
+              quarterTurns: 1,
+              _grid.cols >= HoleGrid.maxCols
+                  ? null
+                  : () => setState(() {
+                        _push();
+                        _grid = _grid.widened();
+                      }),
+            ),
+          ],
+        ),
+      );
+
   /// The plan, scrolling vertically.
   ///
   /// Cell size on screen comes from the width, so the hole always fits across
@@ -158,6 +200,27 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
           builder: (context, constraints) {
             final cellPx = constraints.maxWidth / _grid.cols;
             final planSize = Size(constraints.maxWidth, cellPx * _grid.rows);
+            return Column(
+              children: [
+                // Offsets from the target line, pinned above the plan rather
+                // than drawn on it. On the plan they scrolled away with the
+                // ground, so they were only ever visible at the end of the
+                // hole you were not shaping.
+                SizedBox(
+                  height: 15,
+                  width: constraints.maxWidth,
+                  child: CustomPaint(
+                    painter: _WidthRulerPainter(_grid, widget.prefs),
+                  ),
+                ),
+                Expanded(child: _scrollingPlan(planSize)),
+              ],
+            );
+          },
+        ),
+      );
+
+  Widget _scrollingPlan(Size planSize) {
             return ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: SingleChildScrollView(
@@ -181,9 +244,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
                 ),
               ),
             );
-          },
-        ),
-      );
+  }
 
   /// Extend or shorten the hole. The far end moves; the tee stays put.
   Widget _lengthBar() => Padding(
@@ -294,7 +355,15 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
         ),
       );
 
-  Widget _stepButton(IconData icon, VoidCallback? onTap) => GestureDetector(
+  /// [quarterTurns] rotates the glyph. The fold icons read vertically, which
+  /// is right for length and wrong for width — the arrows should point along
+  /// the axis the button actually changes.
+  Widget _stepButton(
+    IconData icon,
+    VoidCallback? onTap, {
+    int quarterTurns = 0,
+  }) =>
+      GestureDetector(
         onTap: onTap,
         child: Container(
           width: 34,
@@ -304,10 +373,13 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: AppColors.border),
           ),
-          child: Icon(
-            icon,
-            size: 17,
-            color: onTap == null ? AppColors.textDimmed : AppColors.textMuted,
+          child: RotatedBox(
+            quarterTurns: quarterTurns,
+            child: Icon(
+              icon,
+              size: 17,
+              color: onTap == null ? AppColors.textDimmed : AppColors.textMuted,
+            ),
           ),
         ),
       );
@@ -498,4 +570,64 @@ HoleGrid seedHoleGrid(
     rows: grid.rows,
     cells: cells,
   );
+}
+
+/// Offsets from the target line, as a fixed strip above the plan.
+///
+/// Labelled unsigned and mirrored: shaping a hole is about how far a boundary
+/// sits from the middle, not which side of the middle it is on.
+class _WidthRulerPainter extends CustomPainter {
+  final HoleGrid grid;
+  final UnitPrefs prefs;
+
+  _WidthRulerPainter(this.grid, this.prefs);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final halfDisplay = prefs.dist(grid.width / 2);
+    final step = distanceMarkerStep(halfDisplay * 2);
+    final mid = size.width / 2;
+
+    // The centre gets a tick too — it is the line everything is measured from.
+    canvas.drawLine(
+      Offset(mid, size.height - 5),
+      Offset(mid, size.height),
+      Paint()
+        ..color = AppColors.targetLine.withAlpha(110)
+        ..strokeWidth = 1,
+    );
+
+    for (var d = step; d <= halfDisplay; d += step) {
+      final dx = size.width * (prefs.toYards(d) / grid.width);
+      for (final x in [mid - dx, mid + dx]) {
+        if (x < 6 || x > size.width - 6) continue;
+
+        canvas.drawLine(
+          Offset(x, size.height - 4),
+          Offset(x, size.height),
+          Paint()
+            ..color = AppColors.targetLine.withAlpha(70)
+            ..strokeWidth = 1,
+        );
+
+        final label = TextPainter(
+          text: TextSpan(
+            text: '${d.round()}',
+            style: AppTextStyles.mono(size: 8, color: AppColors.textDimmed),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        // Skip a label that would overlap the edge of the strip rather than
+        // letting two numbers collide.
+        if (x - label.width / 2 < 0 || x + label.width / 2 > size.width) {
+          continue;
+        }
+        label.paint(canvas, Offset(x - label.width / 2, 0));
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WidthRulerPainter old) =>
+      old.grid.width != grid.width || old.prefs.distance != prefs.distance;
 }
