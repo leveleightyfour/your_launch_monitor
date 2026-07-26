@@ -171,7 +171,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
                   onPanUpdate: (d) =>
                       _paintAt(d.localPosition, planSize, starting: false),
                   child: CustomPaint(
-                    painter: _PlanPainter(_grid),
+                    painter: _PlanPainter(_grid, widget.prefs),
                     size: planSize,
                     child: SizedBox(
                       width: planSize.width,
@@ -352,10 +352,23 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
 }
 
 /// Top-down plan of the grid. Tee at the bottom, target line up the middle.
+/// Spacing between labelled distance lines, in the unit being displayed.
+///
+/// Round numbers only, and never so many that the plan turns into a ruler:
+/// the step grows with the hole so a 600-yard par 5 gets the same handful of
+/// lines a pitch-and-putt does.
+double distanceMarkerStep(double lengthInDisplayUnits) {
+  for (final step in const [10.0, 25.0, 50.0, 100.0]) {
+    if (lengthInDisplayUnits / step <= 8) return step;
+  }
+  return 200.0;
+}
+
 class _PlanPainter extends CustomPainter {
   final HoleGrid grid;
+  final UnitPrefs prefs;
 
-  _PlanPainter(this.grid);
+  _PlanPainter(this.grid, this.prefs);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -397,10 +410,61 @@ class _PlanPainter extends CustomPainter {
         ..color = AppColors.targetLine.withAlpha(70)
         ..strokeWidth = 1,
     );
+
+    _paintDistances(canvas, size);
+  }
+
+  /// Distance from the tee, so a green or a carry can be placed on a number
+  /// rather than by counting squares.
+  ///
+  /// Measured in whatever unit the profile is set to, which is not the unit
+  /// the grid is stored in — the marks land wherever that distance actually
+  /// falls, not on a cell boundary.
+  void _paintDistances(Canvas canvas, Size size) {
+    final totalDisplay = prefs.dist(grid.length);
+    final step = distanceMarkerStep(totalDisplay);
+
+    for (var d = step; d < totalDisplay; d += step) {
+      // Display units back to yards, then to a fraction of the hole, so the
+      // line sits at the true distance rather than the nearest square.
+      final y = size.height * (1 - prefs.toYards(d) / grid.length);
+      if (y < 8 || y > size.height - 4) continue;
+
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        Paint()
+          ..color = AppColors.targetLine.withAlpha(60)
+          ..strokeWidth = 1,
+      );
+
+      final label = TextPainter(
+        text: TextSpan(
+          text: '${d.round()}',
+          style: AppTextStyles.mono(size: 9, color: AppColors.textPrimary),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      // A plate behind the number: it has to stay readable over sand, water
+      // and dark rough alike, and those are very different backgrounds.
+      final plate = Rect.fromLTWH(
+        4,
+        y - label.height / 2 - 1.5,
+        label.width + 8,
+        label.height + 3,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(plate, const Radius.circular(3)),
+        Paint()..color = AppColors.background.withAlpha(190),
+      );
+      label.paint(canvas, Offset(8, y - label.height / 2));
+    }
   }
 
   @override
-  bool shouldRepaint(_PlanPainter old) => old.grid != grid;
+  bool shouldRepaint(_PlanPainter old) =>
+      old.grid != grid || old.prefs.distance != prefs.distance;
 }
 
 /// Turn an analytic hole into a grid to start editing from.

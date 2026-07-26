@@ -242,4 +242,29 @@ void main() {
     expect(state.currentGrid, original);
     tester.takeException();
   });
+
+  group('distance markers', () {
+    test('the step is a round number and never crowds the plan', () {
+      // A 600-yard par 5 should get the same handful of lines a pitch-and-putt
+      // does, so the step grows with the hole rather than the count.
+      for (final length in [40.0, 90.0, 150.0, 230.0, 400.0, 600.0, 900.0]) {
+        final step = distanceMarkerStep(length);
+
+        expect(const [10.0, 25.0, 50.0, 100.0, 200.0], contains(step),
+            reason: '$length gave a step of $step, which is not a round one');
+        expect(length / step, lessThanOrEqualTo(8.0),
+            reason: '$length would draw ${length ~/ step} lines');
+      }
+    });
+
+    test('short holes get finer marks than long ones', () {
+      expect(distanceMarkerStep(60), lessThan(distanceMarkerStep(600)));
+      expect(distanceMarkerStep(80), 10.0);
+      expect(distanceMarkerStep(230), 50.0);
+    });
+
+    test('a hole too long for the biggest step still gets marks', () {
+      expect(distanceMarkerStep(5000), 200.0);
+    });
+  });
 }
