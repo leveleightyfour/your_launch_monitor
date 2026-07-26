@@ -902,6 +902,7 @@ class _FlightPainter extends CustomPainter {
     _paintBackdrop(canvas, size);
     _paintGround(canvas, camera, halfWidth, maxDepth, gridStep);
     if (course != null) _paintGreen(canvas, camera, course);
+    _paintDistanceHaze(canvas, camera, size);
     if (density.atLeastMedium) {
       _paintDistanceLabels(canvas, camera, gridStep, maxDepth, halfWidth);
     }
@@ -1199,6 +1200,40 @@ class _FlightPainter extends CustomPainter {
     );
   }
 
+  /// Atmospheric perspective: turf fades toward the horizon tone with
+  /// distance.
+  ///
+  /// This is what pays for the brighter surface. Depth used to come from the
+  /// turf simply being nearly black, so lifting it would have flattened the
+  /// scene into one bright slab running to the skyline. Fading the far field
+  /// instead puts the depth cue where the eye expects it and leaves the near
+  /// ground — the part with the shot in it — at full strength.
+  ///
+  /// Drawn over the ground but under the shot, so it never touches the trace.
+  void _paintDistanceHaze(Canvas canvas, _Camera camera, Size size) {
+    // The horizon is wherever the ground plane vanishes. Fall back to the
+    // upper third if the camera is looking somewhere that has no horizon.
+    // A point behind the eye, or one the projection cannot resolve, yields a
+    // non-finite y. Letting that reach Gradient.linear locks the rasteriser
+    // rather than throwing, so it is checked before it is used.
+    final far = camera.project(const Vec3(0, 0, 10000));
+    final raw = (far != null && far.dy.isFinite) ? far.dy : size.height * 0.33;
+    final horizon = raw.clamp(0.0, size.height);
+    if (!horizon.isFinite || horizon >= size.height - 1) return;
+
+    canvas.drawRect(
+      Rect.fromLTRB(0, horizon, size.width, size.height),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(0, horizon),
+          // Reaches full clarity a third of the way down from the horizon;
+          // past that the haze would start eating the landing area.
+          Offset(0, horizon + (size.height - horizon) * 0.55),
+          [AppColors.turfHaze, AppColors.turfHaze.withAlpha(0)],
+        ),
+    );
+  }
+
   void _paintGround(
     Canvas canvas,
     _Camera camera,
@@ -1315,6 +1350,27 @@ class _FlightPainter extends CustomPainter {
               halfDepth * math.sin(i * 2 * math.pi / segments),
         ),
     ];
+
+    // Collar first, as a slightly larger ellipse behind the putting surface.
+    // A real green is ringed by a band cut between fairway and putting height,
+    // and it is the cue that reads first — the shape stops looking like a
+    // painted patch and starts looking like a green.
+    const collar = 2.2;
+    _polygon3(
+      canvas,
+      camera,
+      [
+        for (var i = 0; i < segments; i++)
+          Vec3(
+            course.greenOffset +
+                (halfWidth + collar) * math.cos(i * 2 * math.pi / segments),
+            0,
+            course.greenDistance +
+                (halfDepth + collar) * math.sin(i * 2 * math.pi / segments),
+          ),
+      ],
+      Paint()..color = AppColors.turfGreenCollar,
+    );
 
     _polygon3(canvas, camera, ring, Paint()..color = AppColors.turfGreen);
 

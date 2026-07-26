@@ -58,6 +58,19 @@ double _deltaE(Color a, Color b) {
   return math.sqrt(dl * dl + da * da + db * db);
 }
 
+/// WCAG relative luminance — how bright the surface actually is, which is the
+/// axis the mown bands live or die on.
+double _relLuminance(Color c) {
+  double channel(double v) {
+    final s = v / 255.0;
+    return s <= 0.03928 ? s / 12.92 : math.pow((s + 0.055) / 1.055, 2.4) as double;
+  }
+
+  return 0.2126 * channel(c.r * 255) +
+      0.7152 * channel(c.g * 255) +
+      0.0722 * channel(c.b * 255);
+}
+
 String _hex(Color c) =>
     '#${((c.a * 255).round() << 24 | (c.r * 255).round() << 16 | (c.g * 255).round() << 8 | (c.b * 255).round()).toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
 
@@ -183,6 +196,59 @@ void main() {
           _deltaE(surfaces[names[i]]!, surfaces[names[j]]!),
           greaterThan(floor),
           reason: '${names[i]} and ${names[j]} are the same tone',
+        );
+      }
+    }
+  });
+
+  test('turf is bright enough for the mowing to actually read', () {
+    // The bands were always in a believable ratio — 1.39x against a photoreal
+    // reference's 1.45x — but sat so dark that the ratio bought an absolute
+    // separation of 0.005 of white, which is invisible. Brightness is what
+    // makes a mown surface legible, so it is the brightness that is pinned.
+    final fairway = _relLuminance(AppColors.turfFairway);
+    final stripe = _relLuminance(AppColors.turfFairwayStripe);
+
+    expect(fairway, greaterThan(0.035),
+        reason: 'fairway is too dark for the bands to separate');
+    expect(stripe - fairway, greaterThan(0.012),
+        reason: 'mown bands differ by $stripe vs $fairway — invisible');
+    // ...and still a whisper, not a stripe of paint.
+    expect(stripe / fairway, lessThan(1.8));
+  });
+
+  test('the green reads as a target against the fairway around it', () {
+    final green = _relLuminance(AppColors.turfGreen);
+    final fairway = _relLuminance(AppColors.turfFairway);
+    final collar = _relLuminance(AppColors.turfGreenCollar);
+
+    // A tighter cut is lighter, and the collar lighter again — the ordering is
+    // what makes the shape read as a green rather than a painted patch.
+    expect(green, greaterThan(fairway));
+    expect(collar, greaterThan(green));
+    expect(_deltaE(AppColors.turfGreen, AppColors.turfFairway),
+        greaterThan(8.0));
+    expect(_deltaE(AppColors.turfGreenCollar, AppColors.turfGreen),
+        greaterThan(6.0));
+  });
+
+  test('brighter turf does not let the shot get lost in it', () {
+    // The reference trace is *darker* than its fairway and still dominates,
+    // because it wins on chroma and hue rather than luminance. That is the
+    // property worth holding: every accent stays far from every surface.
+    const surfaces = {
+      'fairway': AppColors.turfFairway,
+      'stripe': AppColors.turfFairwayStripe,
+      'rough': AppColors.turfRough,
+      'green': AppColors.turfGreen,
+      'collar': AppColors.turfGreenCollar,
+    };
+    for (var i = 0; i < accents.length; i++) {
+      for (final entry in surfaces.entries) {
+        expect(
+          _deltaE(accents[i], entry.value),
+          greaterThan(30.0),
+          reason: 'accent $i disappears against ${entry.key}',
         );
       }
     }
