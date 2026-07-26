@@ -8,7 +8,7 @@ import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.d
 import 'package:omni_sniffer/features/launch_monitor/data/ble_adapter.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/ble_adapter_factory.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/last_device_provider.dart';
-import 'package:omni_sniffer/features/launch_monitor/data/seed_data.dart';
+import 'package:omni_sniffer/features/launch_monitor/data/pga_sim_profiles.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/constants.dart'
     as sg;
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/launch_monitor_service.dart';
@@ -89,9 +89,7 @@ class LaunchMonitor extends _$LaunchMonitor {
     ref.listen(activeClubProvider, (_, next) {
       if (next == null) return;
       if (state.status != LaunchMonitorStatus.connected) return;
-      unawaited(
-        state.detecting ? _autoArm() : _pushClubSelection(next),
-      );
+      unawaited(state.detecting ? _autoArm() : _pushClubSelection(next));
     });
 
     // When unit prefs change while connected to an Omni, re-send the units.
@@ -131,8 +129,10 @@ class LaunchMonitor extends _$LaunchMonitor {
     final last = ref.read(lastDeviceProvider);
     if (last == null) return;
 
-    lmLog('bridge',
-        'auto-reconnect attempt to ${last.name} (${last.id}, ${last.type.name})');
+    lmLog(
+      'bridge',
+      'auto-reconnect attempt to ${last.name} (${last.id}, ${last.type.name})',
+    );
     await _connectToDeviceInternal(last.id, last.type, silent: true);
   }
 
@@ -160,26 +160,33 @@ class LaunchMonitor extends _$LaunchMonitor {
     // stream — otherwise a synchronous throw above leaves the chip stuck.
     state = state.copyWith(status: LaunchMonitorStatus.scanning, error: null);
 
-    return raw.map((devices) {
-      return devices.where((d) {
-        // Permissive while we triage the Omni's actual advertised name —
-        // include anything that looks plausibly Square Golf by name OR by
-        // Omni manufacturer-data magic.
-        final lower = d.name.toLowerCase();
-        return lower.contains('square') ||
-            lower.contains('omni') ||
-            lower.contains('sg') ||
-            d.manufacturerDataHex
-                .toUpperCase()
-                .contains(sg.omniManufacturerDataHex.toUpperCase());
-      }).map((d) => DiscoveredSquareGolfDevice(
-            id: d.id,
-            name: d.name,
-            type: sg.detectDeviceType(d.manufacturerDataHex),
-          )).toList();
-    }).handleError((Object e) {
-      _setError('Scan failed: $e');
-    });
+    return raw
+        .map((devices) {
+          return devices
+              .where((d) {
+                // Permissive while we triage the Omni's actual advertised name —
+                // include anything that looks plausibly Square Golf by name OR by
+                // Omni manufacturer-data magic.
+                final lower = d.name.toLowerCase();
+                return lower.contains('square') ||
+                    lower.contains('omni') ||
+                    lower.contains('sg') ||
+                    d.manufacturerDataHex.toUpperCase().contains(
+                      sg.omniManufacturerDataHex.toUpperCase(),
+                    );
+              })
+              .map(
+                (d) => DiscoveredSquareGolfDevice(
+                  id: d.id,
+                  name: d.name,
+                  type: sg.detectDeviceType(d.manufacturerDataHex),
+                ),
+              )
+              .toList();
+        })
+        .handleError((Object e) {
+          _setError('Scan failed: $e');
+        });
   }
 
   Future<void> stopScan() async {
@@ -209,13 +216,12 @@ class LaunchMonitor extends _$LaunchMonitor {
     String deviceId,
     sg.SquareGolfDeviceType type, {
     String? deviceName,
-  }) =>
-      _connectToDeviceInternal(
-        deviceId,
-        type,
-        deviceName: deviceName,
-        silent: false,
-      );
+  }) => _connectToDeviceInternal(
+    deviceId,
+    type,
+    deviceName: deviceName,
+    silent: false,
+  );
 
   Future<void> _connectToDeviceInternal(
     String deviceId,
@@ -315,7 +321,9 @@ class LaunchMonitor extends _$LaunchMonitor {
 
       // Remember the device so the next app launch can auto-reconnect.
       unawaited(
-        ref.read(lastDeviceProvider.notifier).save(
+        ref
+            .read(lastDeviceProvider.notifier)
+            .save(
               LastConnectedDevice(
                 id: deviceId,
                 name: deviceName ?? '',
@@ -414,17 +422,20 @@ class LaunchMonitor extends _$LaunchMonitor {
     if (state.status != LaunchMonitorStatus.disconnected) return;
 
     final completer = Completer<DiscoveredSquareGolfDevice?>();
-    _scanSubscription = scanForDevices(
-      timeout: const Duration(seconds: 15),
-    ).listen((devices) {
-      if (devices.isNotEmpty && !completer.isCompleted) {
-        completer.complete(devices.first);
-      }
-    }, onDone: () {
-      if (!completer.isCompleted) completer.complete(null);
-    }, onError: (Object e) {
-      if (!completer.isCompleted) completer.completeError(e);
-    });
+    _scanSubscription = scanForDevices(timeout: const Duration(seconds: 15))
+        .listen(
+          (devices) {
+            if (devices.isNotEmpty && !completer.isCompleted) {
+              completer.complete(devices.first);
+            }
+          },
+          onDone: () {
+            if (!completer.isCompleted) completer.complete(null);
+          },
+          onError: (Object e) {
+            if (!completer.isCompleted) completer.completeError(e);
+          },
+        );
 
     final found = await completer.future;
     await _scanSubscription?.cancel();
@@ -455,6 +466,21 @@ class LaunchMonitor extends _$LaunchMonitor {
     state = state.copyWith(shots: []);
   }
 
+  /// Discards the in-progress session for good: deletes the draft row and its
+  /// shots from the DB, then clears the in-memory list. Without the DB delete
+  /// an abandoned draft resurfaces in the session list as a ghost. Callers
+  /// confirm with the user first — there is no undo.
+  Future<void> abandonSession() async {
+    final draft = _draftSessionId;
+    clearShots();
+    if (draft == null) return;
+    try {
+      await ref.read(appDatabaseProvider).deleteSession(draft);
+    } catch (e) {
+      lmWarn('bridge', 'draft session delete failed: $e');
+    }
+  }
+
   /// Deletes shots at the given indices (into [state.shots]) and removes from DB.
   Future<void> deleteShots(List<int> indices) async {
     final updated = List<ShotData>.from(state.shots);
@@ -481,13 +507,16 @@ class LaunchMonitor extends _$LaunchMonitor {
     }
   }
 
-  /// Synthesises a shot from the active club's seed pool with light jitter,
-  /// runs it through the same persist + state-update path as a real BLE shot.
+  /// Synthesises a tour-realistic shot for the active club (TrackMan PGA
+  /// Tour launch parameters + tour-level dispersion), then runs it through
+  /// the same persist + state-update path as a real BLE shot.
   Future<void> simulateShot() async {
     final club = ref.read(activeClubProvider);
-    final base = _pickSimSource(club);
-    final jittered = _jitterShot(base, clubId: club?.id);
-    final dbReady = await _persistShot(jittered);
+    final shot = generatePgaTourShot(
+      club?.id,
+      _simRand,
+    ).copyWith(hole: _activeHole);
+    final dbReady = await _persistShot(shot);
     state = state.copyWith(shots: [dbReady, ...state.shots]);
   }
 
@@ -512,21 +541,28 @@ class LaunchMonitor extends _$LaunchMonitor {
       _preputterClubId = active?.id;
       final putter = clubs.where((c) => c.id == 'pt').firstOrNull;
       if (putter == null) {
-        lmLog('bridge',
-            'device entered putter mode but no putter in clubs list');
+        lmLog(
+          'bridge',
+          'device entered putter mode but no putter in clubs list',
+        );
         return;
       }
-      lmLog('bridge',
-          'device → putter mode, switching active club from ${active?.id} → pt');
+      lmLog(
+        'bridge',
+        'device → putter mode, switching active club from ${active?.id} → pt',
+      );
       activeNotifier.state = putter;
     } else {
       if (active?.id != 'pt') return; // user already moved off putter
       final restoreId = _preputterClubId ?? 'dr';
-      final club = clubs.where((c) => c.id == restoreId).firstOrNull ??
+      final club =
+          clubs.where((c) => c.id == restoreId).firstOrNull ??
           clubs.where((c) => c.id == 'dr').firstOrNull ??
           clubs.first;
-      lmLog('bridge',
-          'device → swing mode, restoring active club to ${club.id}');
+      lmLog(
+        'bridge',
+        'device → swing mode, restoring active club to ${club.id}',
+      );
       activeNotifier.state = club;
       _preputterClubId = null;
     }
@@ -615,13 +651,25 @@ class LaunchMonitor extends _$LaunchMonitor {
   /// shots after it are measured against the new one, so a replay always shows
   /// what the player was actually aiming at.
   void _applyHole(HoleSetup hole) {
+    // Re-stamp every in-memory shot so hole-aware views (the 3D green,
+    // distance-to-pin) follow the new setting immediately. Views read the
+    // hole from the shot itself, so without this the old distance keeps
+    // rendering until the session is reloaded.
+    if (state.shots.isNotEmpty) {
+      state = state.copyWith(
+        shots: [
+          for (final s in state.shots)
+            hole.enabled ? s.copyWith(hole: hole) : s.copyWith(clearHole: true),
+        ],
+      );
+    }
+
     final draft = _draftSessionId;
     if (draft == null) return;
     unawaited(
-      ref.read(appDatabaseProvider).updateSessionHole(
-            draft,
-            hole.enabled ? hole : null,
-          ),
+      ref
+          .read(appDatabaseProvider)
+          .updateSessionHole(draft, hole.enabled ? hole : null),
     );
   }
 
@@ -652,8 +700,10 @@ class LaunchMonitor extends _$LaunchMonitor {
       final db = ref.read(appDatabaseProvider);
       if (_draftSessionId == null) {
         _draftCreatedAt = DateTime.now();
-        _draftSessionId =
-            await db.saveDraftSession(_draftCreatedAt!, hole: _activeHole);
+        _draftSessionId = await db.saveDraftSession(
+          _draftCreatedAt!,
+          hole: _activeHole,
+        );
       }
       return await db.insertShot(_draftSessionId!, shot);
     } catch (_) {
@@ -662,49 +712,6 @@ class LaunchMonitor extends _$LaunchMonitor {
   }
 
   // ── Internal: simulator helpers ──────────────────────────────────────────
-
-  ShotData _pickSimSource(Club? club) {
-    final pool = switch (club?.id) {
-      '7i' => sevenIronSeedShots,
-      'dr' || null => driverSeedShots,
-      _ => driverSeedShots,
-    };
-    return pool[_simRand.nextInt(pool.length)];
-  }
-
-  ShotData _jitterShot(ShotData s, {String? clubId}) {
-    double j(double v, double pct) =>
-        v + v * pct * (_simRand.nextDouble() * 2 - 1);
-    double? jn(double? v, double pct) => v == null ? null : j(v, pct);
-
-    return ShotData(
-      clubId: clubId,
-      hole: _activeHole,
-      ballSpeed: j(s.ballSpeed, 0.015),
-      spinRate: j(s.spinRate, 0.04),
-      spinAxis: s.spinAxis + (_simRand.nextDouble() * 1.0 - 0.5),
-      launchDirection:
-          s.launchDirection + (_simRand.nextDouble() * 0.6 - 0.3),
-      launchAngle: j(s.launchAngle, 0.03),
-      clubSpeed: j(s.clubSpeed, 0.015),
-      apex: jn(s.apex, 0.04),
-      run: jn(s.run, 0.08),
-      swingPath: s.swingPath == null
-          ? null
-          : s.swingPath! + (_simRand.nextDouble() * 0.6 - 0.3),
-      faceAngle: s.faceAngle == null
-          ? null
-          : s.faceAngle! + (_simRand.nextDouble() * 0.6 - 0.3),
-      angleOfAttack: s.angleOfAttack == null
-          ? null
-          : s.angleOfAttack! + (_simRand.nextDouble() * 0.4 - 0.2),
-      dynamicLoft: jn(s.dynamicLoft, 0.02),
-      horizontalImpact:
-          s.horizontalImpact == null ? null : j(s.horizontalImpact!, 0.15),
-      verticalImpact:
-          s.verticalImpact == null ? null : j(s.verticalImpact!, 0.15),
-    );
-  }
 
   final _simRand = math.Random();
 
@@ -776,8 +783,9 @@ extension on ShotData {
       horizontalImpact: c.isImpactHorizontalValid
           ? c.impactHorizontal
           : horizontalImpact,
-      verticalImpact:
-          c.isImpactVerticalValid ? c.impactVertical : verticalImpact,
+      verticalImpact: c.isImpactVerticalValid
+          ? c.impactVertical
+          : verticalImpact,
       tagIds: tagIds,
       hole: hole,
     );

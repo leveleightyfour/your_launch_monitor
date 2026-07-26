@@ -37,7 +37,10 @@ class SessionListScreen extends ConsumerWidget {
                 children: [
                   Text(
                     'Sessions',
-                    style: AppTextStyles.sans(size: 20, weight: FontWeight.w600),
+                    style: AppTextStyles.sans(
+                      size: 20,
+                      weight: FontWeight.w600,
+                    ),
                   ),
                   const Spacer(),
                   _ConnectChip(
@@ -172,7 +175,10 @@ class SessionListScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _startSession(BuildContext context, {bool resume = false}) async {
+  Future<void> _startSession(
+    BuildContext context, {
+    bool resume = false,
+  }) async {
     if (resume) {
       context.push('/session/new');
       return;
@@ -201,28 +207,37 @@ class SessionListScreen extends ConsumerWidget {
               borderRadius: BorderRadius.circular(10),
               borderSide: BorderSide.none,
             ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
           ),
           onSubmitted: (_) => Navigator.pop(ctx, true),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel',
-                style: AppTextStyles.sans(color: AppColors.textMuted)),
+            child: Text(
+              'Cancel',
+              style: AppTextStyles.sans(color: AppColors.textMuted),
+            ),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: context.accent,
               foregroundColor: Colors.black,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Start',
-                style: AppTextStyles.sans(
-                    weight: FontWeight.w600, color: Colors.black)),
+            child: Text(
+              'Start',
+              style: AppTextStyles.sans(
+                weight: FontWeight.w600,
+                color: Colors.black,
+              ),
+            ),
           ),
         ],
       ),
@@ -264,7 +279,11 @@ class _ActiveSessionTile extends StatelessWidget {
                 border: Border.all(color: context.accentBorder),
               ),
               child: Center(
-                child: Icon(Icons.bolt_rounded, size: 18, color: context.accent),
+                child: Icon(
+                  Icons.bolt_rounded,
+                  size: 18,
+                  color: context.accent,
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -285,7 +304,9 @@ class _ActiveSessionTile extends StatelessWidget {
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: context.accent,
                           borderRadius: BorderRadius.circular(4),
@@ -304,10 +325,7 @@ class _ActiveSessionTile extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     '$shotCount ${shotCount == 1 ? 'shot' : 'shots'} · Tap to resume',
-                    style: AppTextStyles.sans(
-                      size: 11,
-                      color: context.accent,
-                    ),
+                    style: AppTextStyles.sans(size: 11, color: context.accent),
                   ),
                 ],
               ),
@@ -372,7 +390,9 @@ class _SessionTile extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    session.name.isEmpty ? 'Untitled session' : session.name,
+                    // A nameless session is a draft the app never finished —
+                    // the session was interrupted before "Save & Finish".
+                    session.name.isEmpty ? 'Recovered session' : session.name,
                     style: AppTextStyles.sans(
                       size: 14,
                       weight: FontWeight.w400,
@@ -437,28 +457,37 @@ class _SessionTile extends ConsumerWidget {
               borderRadius: BorderRadius.circular(10),
               borderSide: BorderSide.none,
             ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
           ),
           onSubmitted: (_) => Navigator.pop(ctx, ctrl.text),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel',
-                style: AppTextStyles.sans(color: AppColors.textMuted)),
+            child: Text(
+              'Cancel',
+              style: AppTextStyles.sans(color: AppColors.textMuted),
+            ),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: context.accent,
               foregroundColor: Colors.black,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: Text('Save',
-                style: AppTextStyles.sans(
-                    weight: FontWeight.w600, color: Colors.black)),
+            child: Text(
+              'Save',
+              style: AppTextStyles.sans(
+                weight: FontWeight.w600,
+                color: Colors.black,
+              ),
+            ),
           ),
         ],
       ),
@@ -482,25 +511,30 @@ class _SessionTile extends ConsumerWidget {
           style: AppTextStyles.sans(size: 17, weight: FontWeight.w600),
         ),
         content: Text(
-          'This permanently removes "${session.name.isEmpty ? 'Untitled session' : session.name}" and all of its shots. This cannot be undone.',
+          'This permanently removes "${session.name.isEmpty ? 'Recovered session' : session.name}" and all of its shots. This cannot be undone.',
           style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel',
-                style: AppTextStyles.sans(color: AppColors.textMuted)),
+            child: Text(
+              'Cancel',
+              style: AppTextStyles.sans(color: AppColors.textMuted),
+            ),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFEF4444),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Delete',
-                style: AppTextStyles.sans(weight: FontWeight.w600)),
+            child: Text(
+              'Delete',
+              style: AppTextStyles.sans(weight: FontWeight.w600),
+            ),
           ),
         ],
       ),
@@ -570,12 +604,19 @@ class _SessionActionsMenu extends StatelessWidget {
           value: _SessionAction.delete,
           child: Row(
             children: [
-              const Icon(Icons.delete_outline,
-                  size: 16, color: Color(0xFFEF4444)),
+              const Icon(
+                Icons.delete_outline,
+                size: 16,
+                color: Color(0xFFEF4444),
+              ),
               const SizedBox(width: 10),
-              Text('Delete',
-                  style: AppTextStyles.sans(
-                      size: 13, color: const Color(0xFFEF4444))),
+              Text(
+                'Delete',
+                style: AppTextStyles.sans(
+                  size: 13,
+                  color: const Color(0xFFEF4444),
+                ),
+              ),
             ],
           ),
         ),
@@ -601,7 +642,8 @@ class _ConnectChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = status == LaunchMonitorStatus.scanning ||
+    final isLoading =
+        status == LaunchMonitorStatus.scanning ||
         status == LaunchMonitorStatus.connecting;
     final isConnected = status == LaunchMonitorStatus.connected;
 
@@ -622,11 +664,11 @@ class _ConnectChip extends StatelessWidget {
             Text(
               isLoading
                   ? (status == LaunchMonitorStatus.scanning
-                      ? 'Scanning…'
-                      : 'Connecting…')
+                        ? 'Scanning…'
+                        : 'Connecting…')
                   : isConnected
-                      ? 'Connected'
-                      : 'Connect',
+                  ? 'Connected'
+                  : 'Connect',
               style: AppTextStyles.sans(
                 size: 12,
                 color: isConnected ? context.accent : AppColors.textMuted,

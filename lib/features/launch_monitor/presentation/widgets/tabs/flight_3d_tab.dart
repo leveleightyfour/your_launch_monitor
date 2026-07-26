@@ -45,10 +45,10 @@ enum _Density {
 
   /// Scales stroke widths, marker radii and label sizes.
   double get scale => switch (this) {
-        _Density.full => 1.0,
-        _Density.medium => 0.85,
-        _Density.compact => 0.7,
-      };
+    _Density.full => 1.0,
+    _Density.medium => 0.85,
+    _Density.compact => 0.7,
+  };
 }
 
 /// How long the airborne part of a replay lasts, in seconds.
@@ -185,10 +185,8 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
   double get _airborneSeconds =>
       airborneReplaySeconds(_shot?.trajectory.flightTime);
 
-  double get _groundSeconds => math.min(
-        _shot?.trajectory.groundTime ?? 0.0,
-        _maxGroundReplaySeconds,
-      );
+  double get _groundSeconds =>
+      math.min(_shot?.trajectory.groundTime ?? 0.0, _maxGroundReplaySeconds);
 
   /// Share of the replay spent in the air, so the painter can split progress
   /// between the flight and the bounce-and-roll.
@@ -198,8 +196,8 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
   }
 
   Duration _replayDuration() => Duration(
-        milliseconds: ((_airborneSeconds + _groundSeconds) * 1000).round(),
-      );
+    milliseconds: ((_airborneSeconds + _groundSeconds) * 1000).round(),
+  );
 
   void _play() {
     _lastAnimatedShot = _shot;
@@ -358,8 +356,10 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
           }
           final delta = details.localFocalPoint - _gestureFocal;
           _yaw = _gestureYaw + delta.dx * 0.006;
-          _pitch =
-              (_gesturePitch + delta.dy * 0.005).clamp(_minPitch, _maxPitch);
+          _pitch = (_gesturePitch + delta.dy * 0.005).clamp(
+            _minPitch,
+            _maxPitch,
+          );
         });
       },
       child: AnimatedBuilder(
@@ -493,15 +493,15 @@ class _Message extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.sans(color: AppColors.textMuted),
-          ),
-        ),
-      );
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: AppTextStyles.sans(color: AppColors.textMuted),
+      ),
+    ),
+  );
 }
 
 // ── Stat bar ─────────────────────────────────────────────────────────────────
@@ -736,9 +736,9 @@ class _Camera {
 
   /// Camera-space point → screen. Only valid for points with `z >= near`.
   Offset toScreen(Vec3 cam) => Offset(
-        centre.dx + focal * cam.x / cam.z,
-        centre.dy - focal * cam.y / cam.z,
-      );
+    centre.dx + focal * cam.x / cam.z,
+    centre.dy - focal * cam.y / cam.z,
+  );
 
   /// Project a world point, or null when it sits behind the near plane.
   Offset? project(Vec3 world) {
@@ -871,16 +871,11 @@ class _FlightPainter extends CustomPainter {
     final course = hole;
     final halfWidth = math.max(
       math.max(rest.x.abs() + 2 * gridStep, 3 * gridStep),
-      math.max(
-        range * 0.3,
-        course == null ? 0.0 : course.fairwayWidth * 0.9,
-      ),
+      math.max(range * 0.3, course == null ? 0.0 : course.fairwayWidth * 0.9),
     );
     // The hole has to be drawn even when the shot falls well short of it.
-    final maxDepth = math.max(
-          range,
-          course == null ? 0.0 : course.greenBack + 20,
-        ) +
+    final maxDepth =
+        math.max(range, course == null ? 0.0 : course.greenBack + 20) +
         2 * gridStep;
 
     final _Camera camera;
@@ -921,8 +916,7 @@ class _FlightPainter extends CustomPainter {
 
     if (_hasLanded) _paintLandingMarks(canvas, camera);
 
-    final flightSegments =
-        _visibleSegments(trajectory.points, _flightProgress);
+    final flightSegments = _visibleSegments(trajectory.points, _flightProgress);
     _paintCurtain(canvas, camera, flightSegments);
     _paintShadow(canvas, camera, trajectory.points, flightSegments);
     _paintFlightPath(canvas, camera, flightSegments);
@@ -1033,13 +1027,13 @@ class _FlightPainter extends CustomPainter {
     var principal = safeCentre;
 
     _Camera cameraAt(double distance) => _Camera.orbit(
-          focus: focus,
-          yaw: yaw,
-          pitch: pitch,
-          distance: distance,
-          size: size,
-          principalPoint: principal,
-        );
+      focus: focus,
+      yaw: yaw,
+      pitch: pitch,
+      distance: distance,
+      size: size,
+      principalPoint: principal,
+    );
 
     /// How far outside the safe frame the worst point sits; ≤ 1 means it fits.
     double overflow(double distance) {
@@ -1089,10 +1083,14 @@ class _FlightPainter extends CustomPainter {
     }
     if (minSx.isFinite) {
       final shift = Offset(
-        (safeCentre.dx - (minSx + maxSx) / 2)
-            .clamp(-size.width * 0.3, size.width * 0.3),
-        (safeCentre.dy - (minSy + maxSy) / 2)
-            .clamp(-size.height * 0.3, size.height * 0.3),
+        (safeCentre.dx - (minSx + maxSx) / 2).clamp(
+          -size.width * 0.3,
+          size.width * 0.3,
+        ),
+        (safeCentre.dy - (minSy + maxSy) / 2).clamp(
+          -size.height * 0.3,
+          size.height * 0.3,
+        ),
       );
       principal = safeCentre + shift;
     }
@@ -1142,8 +1140,11 @@ class _FlightPainter extends CustomPainter {
 
     for (var i = 0; i < upTo; i++) {
       final a = Vec3(points[i].x, flatten ? 0 : points[i].y, points[i].z);
-      final b =
-          Vec3(points[i + 1].x, flatten ? 0 : points[i + 1].y, points[i + 1].z);
+      final b = Vec3(
+        points[i + 1].x,
+        flatten ? 0 : points[i + 1].y,
+        points[i + 1].z,
+      );
       final clipped = _clipSegment(camera.toCamera(a), camera.toCamera(b));
       if (clipped == null) {
         open = false;
@@ -1226,7 +1227,8 @@ class _FlightPainter extends CustomPainter {
         Vec3(outerWidth, 0, outerDepth),
         Vec3(-outerWidth, 0, outerDepth),
       ],
-      Paint()..color = course != null ? AppColors.turfRough : AppColors.turfGround,
+      Paint()
+        ..color = course != null ? AppColors.turfRough : AppColors.turfGround,
     );
 
     // Fairway down the target line. With a hole configured it is the width the
@@ -1243,8 +1245,7 @@ class _FlightPainter extends CustomPainter {
     for (var i = 0; i < stripes; i++) {
       final left = -fairwayHalf + i * _stripeWidth;
       // Overlap the neighbour a hair; abutting fills leave an antialiased seam.
-      final right =
-          math.min(left + _stripeWidth + 0.05, fairwayHalf);
+      final right = math.min(left + _stripeWidth + 0.05, fairwayHalf);
       if (right - left < 0.01) continue;
       _polygon3(
         canvas,
@@ -1255,14 +1256,19 @@ class _FlightPainter extends CustomPainter {
           Vec3(right, 0, fairwayEnd),
           Vec3(left, 0, fairwayEnd),
         ],
-        Paint()..color = i.isEven ? AppColors.turfFairway : AppColors.turfFairwayStripe,
+        Paint()
+          ..color = i.isEven
+              ? AppColors.turfFairway
+              : AppColors.turfFairwayStripe,
       );
     }
 
     // Cross lines — faded with distance so the horizon doesn't turn solid.
     for (var z = 0.0; z <= maxDepth; z += gridStep) {
-      final fade = (1 - camera.depthOf(Vec3(0, 0, z)) / (maxDepth * 1.6))
-          .clamp(0.12, 1.0);
+      final fade = (1 - camera.depthOf(Vec3(0, 0, z)) / (maxDepth * 1.6)).clamp(
+        0.12,
+        1.0,
+      );
       _line3(
         canvas,
         camera,
@@ -1391,8 +1397,9 @@ class _FlightPainter extends CustomPainter {
     for (var i = 0; i < upTo; i++) {
       final quad = _clipPolygon([
         camera.toCamera(Vec3(points[i].x, points[i].y, points[i].z)),
-        camera
-            .toCamera(Vec3(points[i + 1].x, points[i + 1].y, points[i + 1].z)),
+        camera.toCamera(
+          Vec3(points[i + 1].x, points[i + 1].y, points[i + 1].z),
+        ),
         camera.toCamera(Vec3(points[i + 1].x, 0, points[i + 1].z)),
         camera.toCamera(Vec3(points[i].x, 0, points[i].z)),
       ]);
@@ -1477,11 +1484,7 @@ class _FlightPainter extends CustomPainter {
       if (ground[i].y > 0.01 || ground[i - 1].y <= 0.01) continue;
       final at = camera.project(Vec3(ground[i].x, 0, ground[i].z));
       if (at == null) continue;
-      canvas.drawCircle(
-        at,
-        2.0 * _s,
-        Paint()..color = accent.withAlpha(200),
-      );
+      canvas.drawCircle(at, 2.0 * _s, Paint()..color = accent.withAlpha(200));
     }
   }
 
@@ -1504,7 +1507,11 @@ class _FlightPainter extends CustomPainter {
         ..color = Colors.white.withAlpha(40)
         ..strokeWidth = 1,
     );
-    canvas.drawCircle(top, 2.5 * _s, Paint()..color = Colors.white.withAlpha(170));
+    canvas.drawCircle(
+      top,
+      2.5 * _s,
+      Paint()..color = Colors.white.withAlpha(170),
+    );
     _label(
       canvas,
       'APEX ${prefs.dist(trajectory.apex).toStringAsFixed(0)} ${prefs.distLabel}',

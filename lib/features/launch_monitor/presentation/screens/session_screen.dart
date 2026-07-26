@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +11,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/device_picker_sheet.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/error_banner.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_optimizer_panel.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_list_panel.dart';
@@ -138,80 +141,59 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       _ActiveView.optimizer => const ShotOptimizerPanel(showLeftBorder: false),
     };
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _ActiveSessionTopBar(
-              status: status,
-              name: widget.initialName,
-              batteryPercent: battery,
-              capacitorReady: capacitorReady,
-              detecting: detecting,
-              ballDetected: ballDetected,
-              ballReady: ballReady,
-              onToggleArm: status == LaunchMonitorStatus.connected
-                  ? () => detecting
-                        ? notifier.disarmBallDetection()
-                        : notifier.armBallDetection()
-                  : null,
-              onClose: () => _confirmFinish(context),
-              onSimulateShot: ref.watch(unitPrefsProvider
-                      .select((p) => p.showTestShotButton))
-                  ? () => notifier.simulateShot()
-                  : null,
-            ),
-            _ActiveNavBar(
-              view: _view,
-              onChanged: (v) => setState(() => _view = v),
-            ),
-            if (error != null) ErrorBanner(message: error),
-            Expanded(
-              child: isUltraWide(context)
-                  // ── Ultra-wide: shot list always pinned + content + analysis panel
-                  ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                          width: 280,
-                          child: ShotListPanel(
-                            allShots: allShots,
-                            clubs: clubs,
-                            selectedShotIndex: safeIdx,
-                            metric: _shotListMetric,
-                            onMetricChanged: (m) =>
-                                setState(() => _shotListMetric = m),
-                            onShotSelected: (i) =>
-                                ref
-                                        .read(
-                                          selectedShotIndexProvider.notifier,
-                                        )
-                                        .state =
-                                    i,
-                            onClearShots: notifier.clearShots,
-                            onUpdateShotTags: notifier.updateShotTags,
-                            onDeleteShots: notifier.deleteShots,
-                          ),
-                        ),
-                        Expanded(child: content),
-                        SizedBox(width: 380, child: const ShotOptimizerPanel()),
-                      ],
+    // The system back gesture must never skip the finish flow: with shots on
+    // the board it routes through the same confirm dialog as the X button.
+    // An empty session may leave freely (discarding any empty draft row).
+    return PopScope(
+      canPop: allShots.isEmpty,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          unawaited(ref.read(launchMonitorProvider.notifier).abandonSession());
+          return;
+        }
+        _confirmFinish(context);
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _ActiveSessionTopBar(
+                status: status,
+                name: widget.initialName,
+                batteryPercent: battery,
+                capacitorReady: capacitorReady,
+                detecting: detecting,
+                ballDetected: ballDetected,
+                ballReady: ballReady,
+                onToggleArm: status == LaunchMonitorStatus.connected
+                    ? () => detecting
+                          ? notifier.disarmBallDetection()
+                          : notifier.armBallDetection()
+                    : null,
+                onClose: () => _confirmFinish(context),
+                onSimulateShot:
+                    ref.watch(
+                      unitPrefsProvider.select((p) => p.showTestShotButton),
                     )
-                  : isTablet(context)
-                  ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 220),
-                          curve: Curves.easeInOut,
-                          width: _showShotList ? 300.0 : 0.0,
-                          clipBehavior: Clip.hardEdge,
-                          decoration: const BoxDecoration(
-                            color: AppColors.background,
-                          ),
-                          child: SizedBox(
-                            width: 300,
+                    ? () => notifier.simulateShot()
+                    : null,
+              ),
+              _ActiveNavBar(
+                view: _view,
+                onChanged: (v) => setState(() => _view = v),
+              ),
+              if (status != LaunchMonitorStatus.connected)
+                _ConnectionBanner(status: status),
+              if (error != null) ErrorBanner(message: error),
+              Expanded(
+                child: isUltraWide(context)
+                    // ── Ultra-wide: shot list always pinned + content + analysis panel
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                            width: 280,
                             child: ShotListPanel(
                               allShots: allShots,
                               clubs: clubs,
@@ -226,105 +208,146 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                           )
                                           .state =
                                       i,
-                              onClearShots: notifier.clearShots,
                               onUpdateShotTags: notifier.updateShotTags,
                               onDeleteShots: notifier.deleteShots,
                             ),
                           ),
-                        ),
-                        Expanded(child: content),
-                      ],
-                    )
-                  : GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onHorizontalDragEnd: (details) {
-                        final vx = details.velocity.pixelsPerSecond.dx;
-                        if (!_showShotList && vx > 300) {
-                          setState(() => _showShotList = true);
-                        } else if (_showShotList && vx < -300) {
-                          setState(() => _showShotList = false);
-                        }
-                      },
-                      child: Stack(
-                        children: [
-                          Positioned.fill(child: content),
-                          IgnorePointer(
-                            ignoring: !_showShotList,
-                            child: AnimatedOpacity(
-                              opacity: _showShotList ? 1.0 : 0.0,
-                              duration: const Duration(milliseconds: 220),
-                              child: GestureDetector(
-                                onTap: () =>
-                                    setState(() => _showShotList = false),
-                                child: const ColoredBox(
-                                  color: AppColors.scrim,
-                                  child: SizedBox.expand(),
-                                ),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            top: 0,
-                            bottom: 0,
-                            left: 0,
-                            child: AnimatedSlide(
-                              offset: _showShotList
-                                  ? Offset.zero
-                                  : const Offset(-1, 0),
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeInOut,
-                              child: Container(
-                                width: 300,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.background,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black26,
-                                      blurRadius: 12,
-                                      offset: Offset(4, 0),
-                                    ),
-                                  ],
-                                ),
-                                child: ShotListPanel(
-                                  allShots: allShots,
-                                  clubs: clubs,
-                                  selectedShotIndex: safeIdx,
-                                  metric: _shotListMetric,
-                                  onMetricChanged: (m) =>
-                                      setState(() => _shotListMetric = m),
-                                  onShotSelected: (i) {
-                                    ref
-                                        .read(
-                                          selectedShotIndexProvider.notifier,
-                                        )
-                                        .state = i;
-                                    // Picking a shot is the whole point of
-                                    // this drawer, and here it covers the
-                                    // view — get out of the way so the shot
-                                    // is visible.
-                                    setState(() => _showShotList = false);
-                                  },
-                                  onClearShots: notifier.clearShots,
-                                  onUpdateShotTags: notifier.updateShotTags,
-                                  onDeleteShots: notifier.deleteShots,
-                                ),
-                              ),
-                            ),
+                          Expanded(child: content),
+                          SizedBox(
+                            width: 380,
+                            child: const ShotOptimizerPanel(),
                           ),
                         ],
+                      )
+                    : isTablet(context)
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeInOut,
+                            width: _showShotList ? 300.0 : 0.0,
+                            clipBehavior: Clip.hardEdge,
+                            decoration: const BoxDecoration(
+                              color: AppColors.background,
+                            ),
+                            child: SizedBox(
+                              width: 300,
+                              child: ShotListPanel(
+                                allShots: allShots,
+                                clubs: clubs,
+                                selectedShotIndex: safeIdx,
+                                metric: _shotListMetric,
+                                onMetricChanged: (m) =>
+                                    setState(() => _shotListMetric = m),
+                                onShotSelected: (i) =>
+                                    ref
+                                            .read(
+                                              selectedShotIndexProvider
+                                                  .notifier,
+                                            )
+                                            .state =
+                                        i,
+                                onUpdateShotTags: notifier.updateShotTags,
+                                onDeleteShots: notifier.deleteShots,
+                              ),
+                            ),
+                          ),
+                          Expanded(child: content),
+                        ],
+                      )
+                    : GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onHorizontalDragEnd: (details) {
+                          final vx = details.velocity.pixelsPerSecond.dx;
+                          if (!_showShotList && vx > 300) {
+                            setState(() => _showShotList = true);
+                          } else if (_showShotList && vx < -300) {
+                            setState(() => _showShotList = false);
+                          }
+                        },
+                        child: Stack(
+                          children: [
+                            Positioned.fill(child: content),
+                            IgnorePointer(
+                              ignoring: !_showShotList,
+                              child: AnimatedOpacity(
+                                opacity: _showShotList ? 1.0 : 0.0,
+                                duration: const Duration(milliseconds: 220),
+                                child: GestureDetector(
+                                  onTap: () =>
+                                      setState(() => _showShotList = false),
+                                  child: const ColoredBox(
+                                    color: AppColors.scrim,
+                                    child: SizedBox.expand(),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              top: 0,
+                              bottom: 0,
+                              left: 0,
+                              child: AnimatedSlide(
+                                offset: _showShotList
+                                    ? Offset.zero
+                                    : const Offset(-1, 0),
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeInOut,
+                                child: Container(
+                                  width: 300,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.background,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black26,
+                                        blurRadius: 12,
+                                        offset: Offset(4, 0),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ShotListPanel(
+                                    allShots: allShots,
+                                    clubs: clubs,
+                                    selectedShotIndex: safeIdx,
+                                    metric: _shotListMetric,
+                                    onMetricChanged: (m) =>
+                                        setState(() => _shotListMetric = m),
+                                    onShotSelected: (i) {
+                                      ref
+                                              .read(
+                                                selectedShotIndexProvider
+                                                    .notifier,
+                                              )
+                                              .state =
+                                          i;
+                                      // Picking a shot is the whole point of
+                                      // this drawer, and here it covers the
+                                      // view — get out of the way so the shot
+                                      // is visible.
+                                      setState(() => _showShotList = false);
+                                    },
+                                    onUpdateShotTags: notifier.updateShotTags,
+                                    onDeleteShots: notifier.deleteShots,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-            ),
-            _ActiveBottomBar(
-              shotCount: allShots.length,
-              activeClub: activeClub,
-              onClubTap: () => _showClubPicker(context, clubs, activeClub),
-              onShotListToggle: () =>
-                  setState(() => _showShotList = !_showShotList),
-              showShotList: _showShotList,
-              hideShotListToggle: isUltraWide(context),
-            ),
-          ],
+              ),
+              _ActiveBottomBar(
+                shotCount: allShots.length,
+                activeClub: activeClub,
+                onClubTap: () => _showClubPicker(context, clubs, activeClub),
+                onShotListToggle: () =>
+                    setState(() => _showShotList = !_showShotList),
+                showShotList: _showShotList,
+                hideShotListToggle: isUltraWide(context),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -334,6 +357,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final allShots = ref.read(launchMonitorProvider.select((s) => s.shots));
     final clubs = ref.read(clubsProvider);
     final notifier = ref.read(launchMonitorProvider.notifier);
+
+    // Nothing recorded — nothing worth a dialog or an empty saved session.
+    // Leave directly, discarding any empty draft row left by bulk-delete.
+    if (allShots.isEmpty) {
+      unawaited(notifier.abandonSession());
+      context.pop();
+      return;
+    }
 
     showDialog<void>(
       context: context,
@@ -353,7 +384,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
           });
         },
         onAbandon: () {
-          notifier.clearShots();
+          unawaited(notifier.abandonSession());
           Navigator.of(dialogCtx).pop();
           context.pop(); // ignore: use_build_context_synchronously
         },
@@ -460,6 +491,7 @@ class _ActiveSessionTopBar extends StatelessWidget {
         children: [
           _CircleButton(
             onTap: onClose,
+            label: 'Finish session',
             child: const Icon(
               Icons.close,
               size: 14,
@@ -507,6 +539,7 @@ class _ActiveSessionTopBar extends StatelessWidget {
             if (!capacitorReady) ...[
               const _CircleButton(
                 onTap: null,
+                label: 'Capacitor charging',
                 child: Icon(
                   Icons.battery_charging_full,
                   size: 14,
@@ -518,6 +551,7 @@ class _ActiveSessionTopBar extends StatelessWidget {
             // Arm / disarm ball detection.
             _CircleButton(
               onTap: onToggleArm,
+              label: detecting ? 'Stop ball detection' : 'Start ball detection',
               child: Icon(
                 detecting ? Icons.gps_fixed : Icons.gps_not_fixed,
                 size: 14,
@@ -540,12 +574,22 @@ class _ActiveSessionTopBar extends StatelessWidget {
           if (onSimulateShot != null) ...[
             _CircleButton(
               onTap: onSimulateShot,
+              label: 'Add test shot',
               child: Icon(Icons.bolt, size: 14, color: context.accent),
             ),
             const SizedBox(width: 8),
           ],
           _CircleButton(
-            onTap: () {},
+            onTap: status == LaunchMonitorStatus.disconnected
+                ? () => DevicePickerSheet.show(context)
+                : null,
+            label: switch (status) {
+              LaunchMonitorStatus.connected => 'Connected',
+              LaunchMonitorStatus.connecting => 'Connecting',
+              LaunchMonitorStatus.scanning => 'Scanning for devices',
+              LaunchMonitorStatus.disconnected =>
+                'Disconnected. Tap to connect',
+            },
             child: Icon(
               Icons.circle,
               size: 10,
@@ -557,6 +601,87 @@ class _ActiveSessionTopBar extends StatelessWidget {
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Connection banner ──────────────────────────────────────────────────────────
+
+/// Persistent banner shown whenever the device is anything but connected, so
+/// a mid-bucket drop is never silent: without a connection, swings simply
+/// don't register. Reconnection happens in place via the device picker.
+class _ConnectionBanner extends StatelessWidget {
+  final LaunchMonitorStatus status;
+
+  const _ConnectionBanner({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final busy =
+        status == LaunchMonitorStatus.connecting ||
+        status == LaunchMonitorStatus.scanning;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: busy ? AppColors.surface : AppColors.errorBackground,
+        border: const Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          if (busy)
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.textMuted,
+              ),
+            )
+          else
+            const Icon(
+              Icons.bluetooth_disabled,
+              size: 14,
+              color: AppColors.errorText,
+            ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              busy
+                  ? (status == LaunchMonitorStatus.scanning
+                        ? 'Scanning for devices…'
+                        : 'Connecting…')
+                  : "Device not connected. Swings won't be captured.",
+              style: AppTextStyles.sans(
+                size: 12,
+                color: busy ? AppColors.textMuted : AppColors.errorText,
+              ),
+            ),
+          ),
+          if (!busy)
+            GestureDetector(
+              onTap: () => DevicePickerSheet.show(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.errorText),
+                ),
+                child: Text(
+                  'Connect',
+                  style: AppTextStyles.sans(
+                    size: 12,
+                    weight: FontWeight.w600,
+                    color: AppColors.errorText,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -637,47 +762,52 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = active ? context.accent : AppColors.textMuted;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        height: 56,
-        child: Stack(
-          children: [
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(icon, size: 18, color: color),
-                    const SizedBox(height: 4),
-                    Text(
-                      label,
-                      style: AppTextStyles.sans(
-                        size: 10,
-                        weight: active ? FontWeight.w600 : FontWeight.w400,
-                        color: color,
+    return Semantics(
+      button: true,
+      selected: active,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          height: 56,
+          child: Stack(
+            children: [
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, size: 18, color: color),
+                      const SizedBox(height: 4),
+                      Text(
+                        label,
+                        style: AppTextStyles.sans(
+                          size: 10,
+                          weight: active ? FontWeight.w600 : FontWeight.w400,
+                          color: color,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (active)
-              Positioned(
-                bottom: 0,
-                left: 8,
-                right: 8,
-                child: Container(
-                  height: 2,
-                  decoration: BoxDecoration(
-                    color: context.accent,
-                    borderRadius: BorderRadius.circular(1),
+                    ],
                   ),
                 ),
               ),
-          ],
+              if (active)
+                Positioned(
+                  bottom: 0,
+                  left: 8,
+                  right: 8,
+                  child: Container(
+                    height: 2,
+                    decoration: BoxDecoration(
+                      color: context.accent,
+                      borderRadius: BorderRadius.circular(1),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -713,10 +843,15 @@ class _ActiveSplitView extends StatelessWidget {
     required this.onShotSelected,
   });
 
-  Widget _paneContent(_ActivePaneView view) {
+  Widget _paneContent(_ActivePaneView view, String paneId) {
     switch (view) {
       case _ActivePaneView.tiles:
-        return TilesTab(shots: shots, selectedShot: highlightedShot);
+        return TilesTab(
+          shots: shots,
+          selectedShot: highlightedShot,
+          // Both panes can show tiles at once; Hero tags must stay unique.
+          heroTag: 'tiles_fullscreen_$paneId',
+        );
       case _ActivePaneView.dispersion:
         return DispersionTab(
           allShots: allShots,
@@ -748,11 +883,15 @@ class _ActiveSplitView extends StatelessWidget {
     }
   }
 
-  Widget _pane(_ActivePaneView view, ValueChanged<_ActivePaneView> onChanged) {
+  Widget _pane(
+    _ActivePaneView view,
+    ValueChanged<_ActivePaneView> onChanged,
+    String paneId,
+  ) {
     return Column(
       children: [
         _ActivePaneHeader(current: view, onChanged: onChanged),
-        Expanded(child: _paneContent(view)),
+        Expanded(child: _paneContent(view, paneId)),
       ],
     );
   }
@@ -763,21 +902,21 @@ class _ActiveSplitView extends StatelessWidget {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(child: _pane(leftPane, onLeftChanged)),
+          Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
           const VerticalDivider(
             width: 1,
             thickness: 1,
             color: AppColors.border,
           ),
-          Expanded(child: _pane(rightPane, onRightChanged)),
+          Expanded(child: _pane(rightPane, onRightChanged, 'right')),
         ],
       );
     }
     return Column(
       children: [
-        Expanded(child: _pane(leftPane, onLeftChanged)),
+        Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
         const Divider(height: 1, color: AppColors.border),
-        Expanded(child: _pane(rightPane, onRightChanged)),
+        Expanded(child: _pane(rightPane, onRightChanged, 'right')),
       ],
     );
   }
@@ -810,31 +949,35 @@ class _ActivePaneHeader extends StatelessWidget {
         border: Border(bottom: BorderSide(color: AppColors.border)),
         color: AppColors.surface,
       ),
-      child: GestureDetector(
-        onTap: () => _showPicker(context),
-        behavior: HitTestBehavior.opaque,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(_icon, size: 14, color: Colors.white),
-              const SizedBox(width: 6),
-              Text(
-                _label,
-                style: AppTextStyles.sans(
-                  size: 13,
-                  weight: FontWeight.w600,
-                  color: Colors.white,
+      child: Semantics(
+        button: true,
+        label: 'Change pane view. Current: $_label',
+        child: GestureDetector(
+          onTap: () => _showPicker(context),
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(_icon, size: 14, color: Colors.white),
+                const SizedBox(width: 6),
+                Text(
+                  _label,
+                  style: AppTextStyles.sans(
+                    size: 13,
+                    weight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              const Icon(
-                Icons.keyboard_arrow_down,
-                size: 16,
-                color: AppColors.textMuted,
-              ),
-            ],
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.keyboard_arrow_down,
+                  size: 16,
+                  color: AppColors.textMuted,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -919,8 +1062,7 @@ class _TableWrapper extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final club = ref.watch(selectedClubProvider);
-    final allShots =
-        ref.watch(launchMonitorProvider.select((s) => s.shots));
+    final allShots = ref.watch(launchMonitorProvider.select((s) => s.shots));
     return TableTab(
       shots: shots,
       club: club,
@@ -965,109 +1107,139 @@ class _ActiveBottomBar extends StatelessWidget {
           if (!hideShotListToggle)
             Align(
               alignment: Alignment.centerLeft,
-              child: GestureDetector(
-                onTap: onShotListToggle,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: showShotList
-                            ? context.accentSubtle
-                            : AppColors.card,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: showShotList
-                              ? context.accent
-                              : AppColors.border2,
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.menu,
-                        size: 16,
-                        color: showShotList
-                            ? context.accent
-                            : AppColors.textMuted,
-                      ),
-                    ),
-                    if (shotCount > 0)
-                      Positioned(
-                        top: -3,
-                        right: -3,
-                        child: Container(
-                          width: 15,
-                          height: 15,
-                          decoration: BoxDecoration(
-                            color: context.accent,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Text(
-                              '$shotCount',
-                              style: AppTextStyles.sans(
-                                size: 8,
-                                weight: FontWeight.w600,
-                                color: Colors.black,
+              child: Tooltip(
+                message: showShotList ? 'Hide shot list' : 'Show shot list',
+                child: Semantics(
+                  button: true,
+                  selected: showShotList,
+                  label: showShotList ? 'Hide shot list' : 'Show shot list',
+                  child: GestureDetector(
+                    onTap: onShotListToggle,
+                    behavior: HitTestBehavior.opaque,
+                    // 44px hit target around the 36px visual circle.
+                    child: SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.center,
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: showShotList
+                                  ? context.accentSubtle
+                                  : AppColors.card,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: showShotList
+                                    ? context.accent
+                                    : AppColors.border2,
                               ),
                             ),
+                            child: Icon(
+                              Icons.menu,
+                              size: 16,
+                              color: showShotList
+                                  ? context.accent
+                                  : AppColors.textMuted,
+                            ),
                           ),
-                        ),
+                          if (shotCount > 0)
+                            Positioned(
+                              top: 0,
+                              right: -2,
+                              child: Container(
+                                // Sizes to content so 3-digit counts never
+                                // clip; a fixed 15px circle broke at 100+.
+                                constraints: const BoxConstraints(minWidth: 15),
+                                height: 15,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: context.accent,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    shotCount > 999 ? '999+' : '$shotCount',
+                                    style: AppTextStyles.sans(
+                                      size: 8,
+                                      weight: FontWeight.w600,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
+                    ),
+                  ),
                 ),
               ),
             ),
           // Centre: active club pill
-          GestureDetector(
-            onTap: onClubTap,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: activeClub?.color ?? AppColors.border2,
-                  width: activeClub != null ? 1.5 : 1,
+          Semantics(
+            button: true,
+            label: activeClub == null
+                ? 'Select club'
+                : 'Active club: ${activeClub!.shortName}',
+            child: GestureDetector(
+              onTap: onClubTap,
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 44),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
                 ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (activeClub != null) ...[
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: activeClub!.color,
-                        shape: BoxShape.circle,
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: activeClub?.color ?? AppColors.border2,
+                    width: activeClub != null ? 1.5 : 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (activeClub != null) ...[
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: activeClub!.color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ] else ...[
+                      const Icon(
+                        Icons.sports_golf,
+                        size: 14,
+                        color: AppColors.textMuted,
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Text(
+                      activeClub?.shortName ?? 'Select Club',
+                      style: AppTextStyles.sans(
+                        size: 13,
+                        weight: FontWeight.w600,
+                        color: activeClub?.color ?? Colors.white,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                  ] else ...[
+                    const SizedBox(width: 4),
                     const Icon(
-                      Icons.sports_golf,
+                      Icons.keyboard_arrow_down,
                       size: 14,
                       color: AppColors.textMuted,
                     ),
-                    const SizedBox(width: 6),
                   ],
-                  Text(
-                    activeClub?.shortName ?? 'Select Club',
-                    style: AppTextStyles.sans(
-                      size: 13,
-                      weight: FontWeight.w600,
-                      color: activeClub?.color ?? Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(
-                    Icons.keyboard_arrow_down,
-                    size: 14,
-                    color: AppColors.textMuted,
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -1083,21 +1255,45 @@ class _CircleButton extends StatelessWidget {
   final VoidCallback? onTap;
   final Widget child;
 
-  const _CircleButton({required this.onTap, required this.child});
+  /// Announced by screen readers and shown as the tooltip. Icon-only
+  /// controls are illegible to assistive tech without it.
+  final String label;
+
+  const _CircleButton({
+    required this.onTap,
+    required this.child,
+    required this.label,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.border2),
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        enabled: onTap != null,
+        label: label,
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          // 44px minimum hit target; the visible circle stays 32px.
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.border2),
+                ),
+                child: Center(child: child),
+              ),
+            ),
+          ),
         ),
-        child: Center(child: child),
       ),
     );
   }
@@ -1128,35 +1324,51 @@ class _BallReadyIndicator extends StatelessWidget {
         : ballReady
         ? (Colors.green, 'Ball ready')
         : ballDetected
-        ? (Colors.orange, 'Ball detected — not ready')
+        ? (Colors.orange, 'Ball detected, not ready')
         : (Colors.red, 'No ball detected');
+
+    // State reads through shape as well as hue, so red-vs-green is never
+    // the only signal: hollow ring = no ball, filled dot = ball detected,
+    // filled dot with glow = ready to hit.
+    final hollow = !detecting || (!ballDetected && !ballReady);
 
     return Tooltip(
       message: tooltip,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.border2),
-        ),
-        child: Center(
-          child: Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              boxShadow: detecting && ballReady
-                  ? [
-                      BoxShadow(
-                        color: color.withAlpha(153),
-                        blurRadius: 6,
-                        spreadRadius: 1,
-                      ),
-                    ]
-                  : null,
+      child: Semantics(
+        label: tooltip,
+        // Sized to align with the 44px _CircleButton targets beside it.
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.border2),
+              ),
+              child: Center(
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: hollow ? Colors.transparent : color,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: color, width: 2),
+                    boxShadow: detecting && ballReady
+                        ? [
+                            BoxShadow(
+                              color: color.withAlpha(153),
+                              blurRadius: 6,
+                              spreadRadius: 1,
+                            ),
+                          ]
+                        : null,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -1197,7 +1409,10 @@ class _BatteryChip extends StatelessWidget {
 
 // ── Step 1: confirm dialog ─────────────────────────────────────────────────────
 
-class _FinishConfirmDialog extends StatelessWidget {
+/// Two-stage finish dialog. Stage one offers the save path; choosing
+/// "Abandon Session" swaps to an explicit red confirm naming exactly what is
+/// destroyed, so one stray tap can never delete a session.
+class _FinishConfirmDialog extends StatefulWidget {
   final int shotCount;
   final VoidCallback onFinish;
   final VoidCallback onAbandon;
@@ -1211,75 +1426,158 @@ class _FinishConfirmDialog extends StatelessWidget {
   });
 
   @override
+  State<_FinishConfirmDialog> createState() => _FinishConfirmDialogState();
+}
+
+class _FinishConfirmDialogState extends State<_FinishConfirmDialog> {
+  bool _confirmingAbandon = false;
+
+  @override
   Widget build(BuildContext context) {
+    final count = widget.shotCount;
+    final shotsWord = count == 1 ? 'shot' : 'shots';
     return Dialog(
       backgroundColor: AppColors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Finish Session?',
-              style: AppTextStyles.sans(size: 17, weight: FontWeight.w600),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '$shotCount ${shotCount == 1 ? 'shot' : 'shots'} recorded.',
-              style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: context.accent,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+        child: _confirmingAbandon
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Abandon Session?',
+                    style: AppTextStyles.sans(
+                      size: 17,
+                      weight: FontWeight.w600,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                ),
-                onPressed: onFinish,
-                child: Text(
-                  'Continue to Summary',
-                  style: AppTextStyles.sans(
-                    weight: FontWeight.w600,
-                    color: Colors.black,
+                  const SizedBox(height: 8),
+                  Text(
+                    'This deletes all $count $shotsWord. '
+                    'It cannot be undone.',
+                    style: AppTextStyles.sans(
+                      size: 13,
+                      color: AppColors.textMuted,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.textMuted,
-                  side: const BorderSide(color: AppColors.border2),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.errorBackground,
+                        foregroundColor: AppColors.errorText,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: const BorderSide(color: AppColors.errorText),
+                        ),
+                      ),
+                      onPressed: widget.onAbandon,
+                      child: Text(
+                        'Delete $count $shotsWord',
+                        style: AppTextStyles.sans(
+                          weight: FontWeight.w600,
+                          color: AppColors.errorText,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                onPressed: onAbandon,
-                child: Text(
-                  'Abandon Session',
-                  style: AppTextStyles.sans(color: AppColors.textMuted),
-                ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: AppColors.border2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: widget.onNevermind,
+                      child: Text(
+                        'Keep Session',
+                        style: AppTextStyles.sans(
+                          weight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Finish Session?',
+                    style: AppTextStyles.sans(
+                      size: 17,
+                      weight: FontWeight.w600,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$count $shotsWord recorded.',
+                    style: AppTextStyles.sans(
+                      size: 13,
+                      color: AppColors.textMuted,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: context.accent,
+                        foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: widget.onFinish,
+                      child: Text(
+                        'Continue to Summary',
+                        style: AppTextStyles.sans(
+                          weight: FontWeight.w600,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textMuted,
+                        side: const BorderSide(color: AppColors.border2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: () =>
+                          setState(() => _confirmingAbandon = true),
+                      child: Text(
+                        'Abandon Session',
+                        style: AppTextStyles.sans(color: AppColors.textMuted),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: widget.onNevermind,
+                    child: Text(
+                      'Nevermind',
+                      style: AppTextStyles.sans(color: AppColors.textDimmed),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: onNevermind,
-              child: Text(
-                'Nevermind',
-                style: AppTextStyles.sans(color: AppColors.textDimmed),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

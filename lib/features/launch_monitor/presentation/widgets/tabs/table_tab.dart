@@ -47,10 +47,10 @@ String tableColumnValue(TableColumn col, ShotData s, UnitPrefs prefs) {
     TableColumn.launchAngle => '${s.launchAngle.toStringAsFixed(1)}°',
     TableColumn.launchDirection => '${s.launchDirection.toStringAsFixed(1)}°',
     TableColumn.offline => _fmtVal(
-        prefs.dist(_offlineYds(s)),
-        withDir: true,
-        rawForDir: _offlineYds(s),
-      ),
+      prefs.dist(_offlineYds(s)),
+      withDir: true,
+      rawForDir: _offlineYds(s),
+    ),
     TableColumn.spinRate => s.spinRate.toStringAsFixed(0),
     TableColumn.spinAxis => '${s.spinAxis.toStringAsFixed(1)}°',
     TableColumn.apex =>
@@ -60,14 +60,18 @@ String tableColumnValue(TableColumn col, ShotData s, UnitPrefs prefs) {
     TableColumn.totalDistance => prefs.dist(s.totalDistance).toStringAsFixed(1),
     TableColumn.clubSpeed => prefs.spd(s.clubSpeed).toStringAsFixed(1),
     TableColumn.smashFactor => s.smashFactor.toStringAsFixed(2),
-    TableColumn.swingPath => s.swingPath != null
-        ? '${s.swingPath!.abs().toStringAsFixed(1)}° ${s.swingPath! >= 0 ? 'R' : 'L'}'
-        : '--',
-    TableColumn.faceAngle => s.faceAngle != null
-        ? '${s.faceAngle!.abs().toStringAsFixed(1)}° ${s.faceAngle! >= 0 ? 'R' : 'L'}'
-        : '--',
+    TableColumn.swingPath =>
+      s.swingPath != null
+          ? '${s.swingPath!.abs().toStringAsFixed(1)}° ${s.swingPath! >= 0 ? 'R' : 'L'}'
+          : '--',
+    TableColumn.faceAngle =>
+      s.faceAngle != null
+          ? '${s.faceAngle!.abs().toStringAsFixed(1)}° ${s.faceAngle! >= 0 ? 'R' : 'L'}'
+          : '--',
     TableColumn.angleOfAttack =>
-      s.angleOfAttack != null ? '${s.angleOfAttack!.toStringAsFixed(1)}°' : '--',
+      s.angleOfAttack != null
+          ? '${s.angleOfAttack!.toStringAsFixed(1)}°'
+          : '--',
     TableColumn.dynamicLoft =>
       s.dynamicLoft != null ? '${s.dynamicLoft!.toStringAsFixed(1)}°' : '--',
   };
@@ -205,8 +209,10 @@ class _TableTabState extends ConsumerState<TableTab> {
 
     if (widget.shots.isEmpty) {
       return Center(
-        child: Text('No shots yet',
-            style: AppTextStyles.sans(color: AppColors.textMuted)),
+        child: Text(
+          'No shots yet',
+          style: AppTextStyles.sans(color: AppColors.textMuted),
+        ),
       );
     }
 
@@ -217,9 +223,8 @@ class _TableTabState extends ConsumerState<TableTab> {
       if (shots.length <= 1) return 0;
       final vals = shots.map((s) => _colRaw(col, s, prefs)).toList();
       final mean = vals.reduce((a, b) => a + b) / vals.length;
-      final v = vals
-              .map((x) => (x - mean) * (x - mean))
-              .reduce((a, b) => a + b) /
+      final v =
+          vals.map((x) => (x - mean) * (x - mean)).reduce((a, b) => a + b) /
           (shots.length - 1);
       return math.sqrt(v);
     }
@@ -254,8 +259,8 @@ class _TableTabState extends ConsumerState<TableTab> {
                     final dir = signed > 0.05
                         ? 'R'
                         : signed < -0.05
-                            ? 'L'
-                            : '';
+                        ? 'L'
+                        : '';
                     return dir.isNotEmpty
                         ? '$val $dir ${prefs.distLabel}'
                         : '$val ${prefs.distLabel}';
@@ -344,18 +349,19 @@ class _TableTabState extends ConsumerState<TableTab> {
               ),
               const Divider(height: 1, color: AppColors.border),
               ListTile(
-                leading:
-                    Icon(Icons.table_rows, size: 18, color: ctx.accent),
-                title: Text('All shots (${all.length})',
-                    style: AppTextStyles.sans(size: 14)),
+                leading: Icon(Icons.table_rows, size: 18, color: ctx.accent),
+                title: Text(
+                  'All shots (${all.length})',
+                  style: AppTextStyles.sans(size: 14),
+                ),
                 onTap: () => Navigator.pop(ctx, all),
               ),
               ListTile(
-                leading:
-                    Icon(Icons.filter_alt, size: 18, color: ctx.accent),
+                leading: Icon(Icons.filter_alt, size: 18, color: ctx.accent),
                 title: Text(
-                    '${club.shortName} only (${filtered.length})',
-                    style: AppTextStyles.sans(size: 14)),
+                  '${club.shortName} only (${filtered.length})',
+                  style: AppTextStyles.sans(size: 14),
+                ),
                 onTap: () => Navigator.pop(ctx, filtered),
               ),
               const SizedBox(height: 8),
@@ -439,7 +445,9 @@ class _ClubHeaderBar extends StatelessWidget {
                 Text(
                   '$shotCount Shots',
                   style: AppTextStyles.sans(
-                      size: 12, color: AppColors.textMuted),
+                    size: 12,
+                    color: AppColors.textMuted,
+                  ),
                 ),
                 const SizedBox(width: 4),
                 Icon(
@@ -503,8 +511,10 @@ class _DynamicTableHeader extends StatelessWidget {
                   if (tableColUnit(col, prefs).isNotEmpty)
                     Text(
                       tableColUnit(col, prefs),
-                      style:
-                          AppTextStyles.sans(size: 7, color: AppColors.border2),
+                      style: AppTextStyles.sans(
+                        size: 7,
+                        color: AppColors.border2,
+                      ),
                     ),
                 ],
               ),
@@ -543,9 +553,10 @@ class _DynamicStatsRow extends StatelessWidget {
         children: [
           SizedBox(
             width: _shotColW,
-            child: Text(label,
-                style:
-                    AppTextStyles.mono(size: 10, color: AppColors.textMuted)),
+            child: Text(
+              label,
+              style: AppTextStyles.mono(size: 10, color: AppColors.textMuted),
+            ),
           ),
           ...columns.map(
             (col) => Expanded(
@@ -604,8 +615,10 @@ class _DynamicShotRow extends StatelessWidget {
               width: _shotColW,
               child: Text(
                 number.toString().padLeft(2, '0'),
-                style:
-                    AppTextStyles.mono(size: 11, color: AppColors.textDimmed),
+                style: AppTextStyles.mono(
+                  size: 11,
+                  color: AppColors.textDimmed,
+                ),
               ),
             ),
             ...columns.map(
@@ -742,7 +755,9 @@ class _TableCustomizeSheetState extends State<_TableCustomizeSheet> {
                   child: Text(
                     'Clear all',
                     style: AppTextStyles.sans(
-                        size: 12, color: AppColors.textMuted),
+                      size: 12,
+                      color: AppColors.textMuted,
+                    ),
                   ),
                 ),
               ],
@@ -753,8 +768,7 @@ class _TableCustomizeSheetState extends State<_TableCustomizeSheet> {
           Expanded(
             child: ListView(
               controller: scrollCtrl,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               children: [
                 _ColSection(
                   title: 'Ball data',
@@ -786,8 +800,9 @@ class _TableCustomizeSheetState extends State<_TableCustomizeSheet> {
                   ),
                 ),
                 onPressed: () {
-                  final ordered =
-                      TableColumn.values.where(_selected.contains).toList();
+                  final ordered = TableColumn.values
+                      .where(_selected.contains)
+                      .toList();
                   widget.onApply(ordered);
                   Navigator.pop(context);
                 },
@@ -801,12 +816,12 @@ class _TableCustomizeSheetState extends State<_TableCustomizeSheet> {
   }
 
   void _toggle(TableColumn col) => setState(() {
-        if (_selected.contains(col)) {
-          _selected.remove(col);
-        } else {
-          _selected.add(col);
-        }
-      });
+    if (_selected.contains(col)) {
+      _selected.remove(col);
+    } else {
+      _selected.add(col);
+    }
+  });
 }
 
 // ── Animated row reveal ───────────────────────────────────────────────────────
@@ -870,10 +885,10 @@ class _RowRevealState extends State<_RowReveal>
 
   @override
   Widget build(BuildContext context) {
-    final slide = Tween<Offset>(
-      begin: const Offset(0, -1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: widget.entry, curve: Curves.easeOutCubic));
+    final slide = Tween<Offset>(begin: const Offset(0, -1), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: widget.entry, curve: Curves.easeOutCubic),
+        );
 
     return SizeTransition(
       sizeFactor: widget.entry,
@@ -887,8 +902,9 @@ class _RowRevealState extends State<_RowReveal>
             builder: (_, child) {
               final flash = _flashCtrl.value;
               // Hold full intensity briefly, then fade — ease-out to 0.
-              final intensity =
-                  flash == 0 ? 0.0 : (1.0 - flash).clamp(0.0, 1.0);
+              final intensity = flash == 0
+                  ? 0.0
+                  : (1.0 - flash).clamp(0.0, 1.0);
               return Stack(
                 children: [
                   child!,
@@ -953,9 +969,7 @@ class _ColSection extends StatelessWidget {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: active
-                      ? context.accentFaint
-                      : Colors.transparent,
+                  color: active ? context.accentFaint : Colors.transparent,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: active ? context.accent : AppColors.border2,

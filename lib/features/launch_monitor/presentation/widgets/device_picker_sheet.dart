@@ -58,14 +58,14 @@ class _DevicePickerSheetState extends ConsumerState<DevicePickerSheet> {
     _sub = notifier
         .scanForDevices(timeout: const Duration(seconds: 30))
         .listen(
-      (devices) => setState(() => _devices = devices),
-      onDone: () {
-        if (mounted) setState(() => _scanning = false);
-      },
-      onError: (Object _) {
-        if (mounted) setState(() => _scanning = false);
-      },
-    );
+          (devices) => setState(() => _devices = devices),
+          onDone: () {
+            if (mounted) setState(() => _scanning = false);
+          },
+          onError: (Object _) {
+            if (mounted) setState(() => _scanning = false);
+          },
+        );
   }
 
   @override
@@ -149,8 +149,8 @@ class _DevicePickerSheetState extends ConsumerState<DevicePickerSheet> {
               _scanning
                   ? 'Scanning for nearby Square Golf devices…'
                   : _devices.isEmpty
-                      ? 'No devices found.'
-                      : 'Tap a device to connect.',
+                  ? 'No devices found.'
+                  : 'Tap a device to connect.',
               style: AppTextStyles.sans(size: 11, color: AppColors.textMuted),
             ),
             const SizedBox(height: 12),
@@ -165,50 +165,56 @@ class _DevicePickerSheetState extends ConsumerState<DevicePickerSheet> {
                       shrinkWrap: true,
                       itemCount: _devices.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (_, i) =>
-                          _DeviceTile(device: _devices[i], onTap: _selectDevice),
+                      itemBuilder: (_, i) => _DeviceTile(
+                        device: _devices[i],
+                        onTap: _selectDevice,
+                      ),
                     ),
             ),
             // Forget action — only when a previous device was remembered.
-            Consumer(builder: (ctx, ref, _) {
-              final last = ref.watch(lastDeviceProvider);
-              if (last == null) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Auto-reconnect: ${last.name.isEmpty ? last.id : last.name}',
-                        style: AppTextStyles.sans(
-                          size: 11,
-                          color: AppColors.textMuted,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _forgetSavedDevice,
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFFEF4444),
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        'Forget',
-                        style: AppTextStyles.sans(
-                          size: 12,
-                          weight: FontWeight.w600,
-                          color: const Color(0xFFEF4444),
+            Consumer(
+              builder: (ctx, ref, _) {
+                final last = ref.watch(lastDeviceProvider);
+                if (last == null) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Auto-reconnect: ${last.name.isEmpty ? last.id : last.name}',
+                          style: AppTextStyles.sans(
+                            size: 11,
+                            color: AppColors.textMuted,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              );
-            }),
+                      TextButton(
+                        onPressed: _forgetSavedDevice,
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFEF4444),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          'Forget',
+                          style: AppTextStyles.sans(
+                            size: 12,
+                            weight: FontWeight.w600,
+                            color: const Color(0xFFEF4444),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -262,8 +268,11 @@ class _DeviceTile extends StatelessWidget {
             const SizedBox(width: 8),
             _DeviceTypeBadge(type: device.type),
             const SizedBox(width: 6),
-            const Icon(Icons.chevron_right,
-                size: 18, color: AppColors.textDimmed),
+            const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: AppColors.textDimmed,
+            ),
           ],
         ),
       ),

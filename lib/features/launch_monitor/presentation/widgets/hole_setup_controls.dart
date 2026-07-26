@@ -174,8 +174,10 @@ class _ToggleRow extends StatelessWidget {
               onTap: () => onChanged(i == 1),
               child: Container(
                 margin: EdgeInsets.only(left: i == 0 ? 0 : 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: (i == 1) == value
                       ? context.accentSubtle

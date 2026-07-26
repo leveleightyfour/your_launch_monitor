@@ -88,17 +88,18 @@ class _OptimizerContent extends StatelessWidget {
         _SummarySection(analysis: analysis, prefs: prefs),
         const Divider(height: 1, color: AppColors.border),
         if (analysis.diagnostics.isNotEmpty) ...[
-          _DiagnosticsSection(
-              diagnostics: analysis.diagnostics, prefs: prefs),
+          _DiagnosticsSection(diagnostics: analysis.diagnostics, prefs: prefs),
           const Divider(height: 1, color: AppColors.border),
         ],
         if (analysis.recommendations.isNotEmpty) ...[
           _RecommendationsSection(
-              recommendations: analysis.recommendations, prefs: prefs),
+            recommendations: analysis.recommendations,
+            prefs: prefs,
+          ),
           const Divider(height: 1, color: AppColors.border),
         ],
         if (sessionSummary != null)
-          _SessionSummarySection(summary: sessionSummary!,  prefs: prefs),
+          _SessionSummarySection(summary: sessionSummary!, prefs: prefs),
         const SizedBox(height: 16),
       ],
     );
@@ -132,7 +133,9 @@ class _SummarySection extends StatelessWidget {
                 child: Text(
                   analysis.summary,
                   style: AppTextStyles.sans(
-                      size: 11, color: AppColors.textMuted),
+                    size: 11,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ),
             ],
@@ -145,7 +148,8 @@ class _SummarySection extends StatelessWidget {
                 color: const Color(0xFFF59E0B).withAlpha(15),
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
-                    color: const Color(0xFFF59E0B).withAlpha(50)),
+                  color: const Color(0xFFF59E0B).withAlpha(50),
+                ),
               ),
               child: Row(
                 children: [
@@ -154,13 +158,18 @@ class _SummarySection extends StatelessWidget {
                     style: AppTextStyles.mono(size: 11, color: Colors.white),
                   ),
                   const SizedBox(width: 6),
-                  const Icon(Icons.arrow_forward, size: 12,
-                      color: Color(0xFFF59E0B)),
+                  const Icon(
+                    Icons.arrow_forward,
+                    size: 12,
+                    color: Color(0xFFF59E0B),
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     'Optimal: ${prefs.dist(analysis.optimalCarry!).toStringAsFixed(0)} ${prefs.distLabel}',
                     style: AppTextStyles.mono(
-                        size: 11, color: const Color(0xFFF59E0B)),
+                      size: 11,
+                      color: const Color(0xFFF59E0B),
+                    ),
                   ),
                   const Spacer(),
                   Text(
@@ -194,10 +203,7 @@ class _SummarySection extends StatelessWidget {
                 value: '${shot.launchAngle.toStringAsFixed(1)}°',
               ),
               const SizedBox(width: 16),
-              _MiniStat(
-                label: 'Spin',
-                value: '${shot.spinRate.toInt()} rpm',
-              ),
+              _MiniStat(label: 'Spin', value: '${shot.spinRate.toInt()} rpm'),
             ],
           ),
         ],
@@ -237,7 +243,10 @@ class _StatusBadge extends StatelessWidget {
       child: Text(
         label,
         style: AppTextStyles.sans(
-            size: 10, weight: FontWeight.w600, color: color),
+          size: 10,
+          weight: FontWeight.w600,
+          color: color,
+        ),
       ),
     );
   }
@@ -255,11 +264,11 @@ class _MiniStat extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style:
-                  AppTextStyles.sans(size: 9, color: AppColors.textDimmed)),
-          Text(value,
-              style: AppTextStyles.mono(size: 12, color: Colors.white)),
+          Text(
+            label,
+            style: AppTextStyles.sans(size: 9, color: AppColors.textDimmed),
+          ),
+          Text(value, style: AppTextStyles.mono(size: 12, color: Colors.white)),
         ],
       ),
     );
@@ -284,9 +293,10 @@ class _DiagnosticsSection extends StatelessWidget {
           Text(
             'DIAGNOSTICS',
             style: AppTextStyles.sans(
-                size: 9,
-                weight: FontWeight.w600,
-                color: AppColors.textDimmed),
+              size: 9,
+              weight: FontWeight.w600,
+              color: AppColors.textDimmed,
+            ),
           ),
           const SizedBox(height: 8),
           for (final diag in diagnostics)
@@ -304,16 +314,16 @@ class _DiagnosticTile extends StatelessWidget {
   const _DiagnosticTile({required this.diagnostic, required this.prefs});
 
   Color get _severityColor => switch (diagnostic.severity) {
-        Severity.critical => const Color(0xFFEF4444),
-        Severity.high => const Color(0xFFF59E0B),
-        _ => const Color(0xFF60A5FA),
-      };
+    Severity.critical => const Color(0xFFEF4444),
+    Severity.high => const Color(0xFFF59E0B),
+    _ => const Color(0xFF60A5FA),
+  };
 
   IconData get _icon => switch (diagnostic.severity) {
-        Severity.critical => Icons.error_outline,
-        Severity.high => Icons.warning_amber_rounded,
-        _ => Icons.info_outline,
-      };
+    Severity.critical => Icons.error_outline,
+    Severity.high => Icons.warning_amber_rounded,
+    _ => Icons.info_outline,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -341,16 +351,16 @@ class _DiagnosticTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   _humanizeMetric(diagnostic.metric),
-                  style: AppTextStyles.sans(
-                      size: 12, weight: FontWeight.w600),
+                  style: AppTextStyles.sans(size: 12, weight: FontWeight.w600),
                 ),
               ),
               Text(
                 diagnostic.severity.name.toUpperCase(),
                 style: AppTextStyles.sans(
-                    size: 9,
-                    weight: FontWeight.w600,
-                    color: _severityColor),
+                  size: 9,
+                  weight: FontWeight.w600,
+                  color: _severityColor,
+                ),
               ),
             ],
           ),
@@ -359,58 +369,58 @@ class _DiagnosticTile extends StatelessWidget {
             children: [
               Text(
                 'Measured: ${_formatValue(diagnostic.measured, diagnostic.metric)}',
-                style:
-                    AppTextStyles.mono(size: 11, color: Colors.white),
+                style: AppTextStyles.mono(size: 11, color: Colors.white),
               ),
               const SizedBox(width: 12),
               Text(
                 'Optimal: ${_formatValue(diagnostic.minOptimal, diagnostic.metric)}'
                 ' – ${_formatValue(diagnostic.maxOptimal, diagnostic.metric)}',
-                style:
-                    AppTextStyles.sans(size: 10, color: AppColors.textMuted),
+                style: AppTextStyles.sans(size: 10, color: AppColors.textMuted),
               ),
             ],
           ),
           const SizedBox(height: 6),
           // Deviation bar
-          LayoutBuilder(builder: (context, constraints) {
-            return Stack(
-              children: [
-                Container(
-                  height: 3,
-                  decoration: BoxDecoration(
-                    color: AppColors.border2,
-                    borderRadius: BorderRadius.circular(2),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return Stack(
+                children: [
+                  Container(
+                    height: 3,
+                    decoration: BoxDecoration(
+                      color: AppColors.border2,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-                Container(
-                  height: 3,
-                  width: constraints.maxWidth * barFraction,
-                  decoration: BoxDecoration(
-                    color: _severityColor,
-                    borderRadius: BorderRadius.circular(2),
+                  Container(
+                    height: 3,
+                    width: constraints.maxWidth * barFraction,
+                    decoration: BoxDecoration(
+                      color: _severityColor,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-              ],
-            );
-          }),
+                ],
+              );
+            },
+          ),
           if (diagnostic.estimatedYardsLost != null &&
               diagnostic.estimatedYardsLost! > 1.0) ...[
             const SizedBox(height: 4),
             Text(
               '~${prefs.dist(diagnostic.estimatedYardsLost!).toStringAsFixed(0)} ${prefs.distLabel} lost',
               style: AppTextStyles.sans(
-                  size: 10,
-                  weight: FontWeight.w600,
-                  color: const Color(0xFFF59E0B)),
+                size: 10,
+                weight: FontWeight.w600,
+                color: const Color(0xFFF59E0B),
+              ),
             ),
           ],
           if (diagnostic.possibleRootCauses.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
               'Possible: ${diagnostic.possibleRootCauses.take(2).map(_humanizeCause).join(', ')}',
-              style:
-                  AppTextStyles.sans(size: 10, color: AppColors.textDimmed),
+              style: AppTextStyles.sans(size: 10, color: AppColors.textDimmed),
             ),
           ],
         ],
@@ -419,29 +429,28 @@ class _DiagnosticTile extends StatelessWidget {
   }
 
   static String _humanizeMetric(String metric) => switch (metric) {
-        'smashFactor' => 'Smash Factor',
-        'launchAngle' => 'Launch Angle',
-        'spinRate' => 'Spin Rate',
-        'spinLoftMismatch' => 'Spin Loft Mismatch',
-        'carryDistance' => 'Carry Distance',
-        'pathFaceAngleAlignment' => 'Path-Face Alignment',
-        'attackAngle' => 'Attack Angle',
-        'impactLocation' => 'Impact Location',
-        _ => metric,
-      };
+    'smashFactor' => 'Smash Factor',
+    'launchAngle' => 'Launch Angle',
+    'spinRate' => 'Spin Rate',
+    'spinLoftMismatch' => 'Spin Loft Mismatch',
+    'carryDistance' => 'Carry Distance',
+    'pathFaceAngleAlignment' => 'Path-Face Alignment',
+    'attackAngle' => 'Attack Angle',
+    'impactLocation' => 'Impact Location',
+    _ => metric,
+  };
 
   static String _formatValue(double value, String metric) => switch (metric) {
-        'smashFactor' => value.toStringAsFixed(2),
-        'spinRate' || 'spinLoftMismatch' => '${value.toInt()} rpm',
-        'launchAngle' || 'attackAngle' => '${value.toStringAsFixed(1)}°',
-        'carryDistance' => '${value.toStringAsFixed(0)} yds',
-        'pathFaceAngleAlignment' => '${value.toStringAsFixed(1)}°',
-        'impactLocation' => '${value.toStringAsFixed(2)}"',
-        _ => value.toStringAsFixed(1),
-      };
+    'smashFactor' => value.toStringAsFixed(2),
+    'spinRate' || 'spinLoftMismatch' => '${value.toInt()} rpm',
+    'launchAngle' || 'attackAngle' => '${value.toStringAsFixed(1)}°',
+    'carryDistance' => '${value.toStringAsFixed(0)} yds',
+    'pathFaceAngleAlignment' => '${value.toStringAsFixed(1)}°',
+    'impactLocation' => '${value.toStringAsFixed(2)}"',
+    _ => value.toStringAsFixed(1),
+  };
 
-  static String _humanizeCause(String cause) =>
-      cause.replaceAll('_', ' ');
+  static String _humanizeCause(String cause) => cause.replaceAll('_', ' ');
 }
 
 // ── Recommendations section ──────────────────────────────────────────────────
@@ -465,9 +474,10 @@ class _RecommendationsSection extends StatelessWidget {
           Text(
             'RECOMMENDATIONS',
             style: AppTextStyles.sans(
-                size: 9,
-                weight: FontWeight.w600,
-                color: AppColors.textDimmed),
+              size: 9,
+              weight: FontWeight.w600,
+              color: AppColors.textDimmed,
+            ),
           ),
           const SizedBox(height: 8),
           for (final rec in recommendations.take(3))
@@ -512,8 +522,7 @@ class _RecommendationTile extends StatelessWidget {
                 ),
                 child: Text(
                   '${recommendation.priority}',
-                  style: AppTextStyles.mono(
-                      size: 10, color: AppColors.accent),
+                  style: AppTextStyles.mono(size: 10, color: AppColors.accent),
                 ),
               ),
               const SizedBox(width: 8),
@@ -532,8 +541,7 @@ class _RecommendationTile extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             recommendation.description,
-            style:
-                AppTextStyles.sans(size: 10, color: AppColors.textMuted),
+            style: AppTextStyles.sans(size: 10, color: AppColors.textMuted),
           ),
           if (recommendation.expectedGainYards != null &&
               recommendation.expectedGainYards! > 1.0) ...[
@@ -541,9 +549,10 @@ class _RecommendationTile extends StatelessWidget {
             Text(
               'Estimated gain: +${prefs.dist(recommendation.expectedGainYards!).toStringAsFixed(0)} ${prefs.distLabel}',
               style: AppTextStyles.sans(
-                  size: 10,
-                  weight: FontWeight.w600,
-                  color: AppColors.accent),
+                size: 10,
+                weight: FontWeight.w600,
+                color: AppColors.accent,
+              ),
             ),
           ],
         ],
@@ -558,10 +567,7 @@ class _SessionSummarySection extends StatelessWidget {
   final SessionOptSummary summary;
   final UnitPrefs prefs;
 
-  const _SessionSummarySection({
-    required this.summary,
-    required this.prefs,
-  });
+  const _SessionSummarySection({required this.summary, required this.prefs});
 
   @override
   Widget build(BuildContext context) {
@@ -573,9 +579,10 @@ class _SessionSummarySection extends StatelessWidget {
           Text(
             'SESSION SUMMARY',
             style: AppTextStyles.sans(
-                size: 9,
-                weight: FontWeight.w600,
-                color: AppColors.textDimmed),
+              size: 9,
+              weight: FontWeight.w600,
+              color: AppColors.textDimmed,
+            ),
           ),
           const SizedBox(height: 8),
           Container(
@@ -587,8 +594,7 @@ class _SessionSummarySection extends StatelessWidget {
             ),
             child: Row(
               children: [
-                _SessionStat(
-                    label: 'Shots', value: '${summary.totalShots}'),
+                _SessionStat(label: 'Shots', value: '${summary.totalShots}'),
                 _SessionStat(
                   label: 'Avg Carry',
                   value:
@@ -611,8 +617,7 @@ class _SessionSummarySection extends StatelessWidget {
           if (summary.topIssueMetric != null) ...[
             const SizedBox(height: 8),
             Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: AppColors.surface,
                 borderRadius: BorderRadius.circular(10),
@@ -620,24 +625,30 @@ class _SessionSummarySection extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.insights,
-                      size: 13, color: Color(0xFFF59E0B)),
+                  const Icon(
+                    Icons.insights,
+                    size: 13,
+                    color: Color(0xFFF59E0B),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Top issue: ${_DiagnosticTile._humanizeMetric(summary.topIssueMetric!)}'
                       ' (${summary.topIssueCount}× this session)',
                       style: AppTextStyles.sans(
-                          size: 10, color: AppColors.textMuted),
+                        size: 10,
+                        color: AppColors.textMuted,
+                      ),
                     ),
                   ),
                   if (summary.totalYardsLost > 1)
                     Text(
                       '~${prefs.dist(summary.totalYardsLost).toStringAsFixed(0)} ${prefs.distLabel} lost',
                       style: AppTextStyles.sans(
-                          size: 10,
-                          weight: FontWeight.w600,
-                          color: const Color(0xFFF59E0B)),
+                        size: 10,
+                        weight: FontWeight.w600,
+                        color: const Color(0xFFF59E0B),
+                      ),
                     ),
                 ],
               ),
@@ -665,14 +676,17 @@ class _SessionStat extends StatelessWidget {
     return Expanded(
       child: Column(
         children: [
-          Text(label,
-              style:
-                  AppTextStyles.sans(size: 9, color: AppColors.textDimmed)),
+          Text(
+            label,
+            style: AppTextStyles.sans(size: 9, color: AppColors.textDimmed),
+          ),
           const SizedBox(height: 2),
           Text(
             value,
             style: AppTextStyles.mono(
-                size: 12, color: valueColor ?? Colors.white),
+              size: 12,
+              color: valueColor ?? Colors.white,
+            ),
           ),
         ],
       ),

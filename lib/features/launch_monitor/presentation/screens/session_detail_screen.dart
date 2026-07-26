@@ -49,11 +49,16 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
   ShotListMetric _shotListMetric = ShotListMetric.carry;
 
   Future<void> _updateShotTags(
-      List<ShotData> allShots, int shotIndex, List<int> tagIds) async {
+    List<ShotData> allShots,
+    int shotIndex,
+    List<int> tagIds,
+  ) async {
     if (shotIndex >= allShots.length) return;
     final shot = allShots[shotIndex];
     if (shot.dbId != null) {
-      await ref.read(sessionsProvider.notifier).updateShotTags(shot.dbId!, tagIds);
+      await ref
+          .read(sessionsProvider.notifier)
+          .updateShotTags(shot.dbId!, tagIds);
     }
   }
 
@@ -75,8 +80,10 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
     // Watch live session so tag updates reflect immediately.
     final allShots = ref
         .watch(sessionsProvider)
-        .firstWhere((s) => s.id == widget.session.id,
-            orElse: () => widget.session)
+        .firstWhere(
+          (s) => s.id == widget.session.id,
+          orElse: () => widget.session,
+        )
         .shots;
 
     final safeIdx = allShots.isEmpty
@@ -89,48 +96,51 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
 
     Widget content = switch (_view) {
       _TopView.split => _SplitViewConfigurable(
-          shots: shots,
-          allShots: allShots,
-          clubs: clubs,
-          highlightedShot: highlighted,
-          leftPane: _splitLeft,
-          rightPane: _splitRight,
-          selectedShotIndex: selectedInClub >= 0 ? selectedInClub : 0,
-          onLeftChanged: (v) => setState(() => _splitLeft = v),
-          onRightChanged: (v) => setState(() => _splitRight = v),
-          onShotSelected: (i) => setState(() {
-            if (i != null && i < shots.length) {
-              final allIdx = allShots.indexOf(shots[i]);
-              _selectedShotIndex = allIdx >= 0 ? allIdx : 0;
-            }
-          }),
-        ),
+        shots: shots,
+        allShots: allShots,
+        clubs: clubs,
+        highlightedShot: highlighted,
+        leftPane: _splitLeft,
+        rightPane: _splitRight,
+        selectedShotIndex: selectedInClub >= 0 ? selectedInClub : 0,
+        onLeftChanged: (v) => setState(() => _splitLeft = v),
+        onRightChanged: (v) => setState(() => _splitRight = v),
+        onShotSelected: (i) => setState(() {
+          if (i != null && i < shots.length) {
+            final allIdx = allShots.indexOf(shots[i]);
+            _selectedShotIndex = allIdx >= 0 ? allIdx : 0;
+          }
+        }),
+      ),
       _TopView.tiles => TilesTab(shots: shots, selectedShot: highlighted),
       _TopView.dispersion => DispersionTab(
-          allShots: allShots,
-          clubs: clubs,
-          highlightedShot: highlighted,
-          onClubSelected: (_) {},
-        ),
+        allShots: allShots,
+        clubs: clubs,
+        highlightedShot: highlighted,
+        onClubSelected: (_) {},
+      ),
       _TopView.flight => Flight3DTab(
-          shots: shots,
-          selectedShot: highlighted,
-          clubs: clubs,
-        ),
-      _TopView.club =>
-        ClubTab(shots: shots, clubs: clubs, selectedShot: highlighted),
+        shots: shots,
+        selectedShot: highlighted,
+        clubs: clubs,
+      ),
+      _TopView.club => ClubTab(
+        shots: shots,
+        clubs: clubs,
+        selectedShot: highlighted,
+      ),
       _TopView.table => TableTab(
-          shots: shots,
-          allShots: allShots,
-          exportName: widget.session.name,
-          selectedIndex: selectedInClub >= 0 ? selectedInClub : 0,
-          onRowTap: (i) => setState(() {
-            if (i < shots.length) {
-              final allIdx = allShots.indexOf(shots[i]);
-              _selectedShotIndex = allIdx >= 0 ? allIdx : 0;
-            }
-          }),
-        ),
+        shots: shots,
+        allShots: allShots,
+        exportName: widget.session.name,
+        selectedIndex: selectedInClub >= 0 ? selectedInClub : 0,
+        onRowTap: (i) => setState(() {
+          if (i < shots.length) {
+            final allIdx = allShots.indexOf(shots[i]);
+            _selectedShotIndex = allIdx >= 0 ? allIdx : 0;
+          }
+        }),
+      ),
     };
 
     return Scaffold(
@@ -138,14 +148,8 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            _DetailTopBar(
-              session: widget.session,
-              onBack: () => context.pop(),
-            ),
-            _TopNav(
-              view: _view,
-              onChanged: (v) => setState(() => _view = v),
-            ),
+            _DetailTopBar(session: widget.session, onBack: () => context.pop()),
+            _TopNav(view: _view, onChanged: (v) => setState(() => _view = v)),
             Expanded(
               child: isTablet(context)
                   ? Row(
@@ -416,10 +420,15 @@ class _SplitViewConfigurable extends StatelessWidget {
     required this.onShotSelected,
   });
 
-  Widget _paneContent(_PaneView view) {
+  Widget _paneContent(_PaneView view, String paneId) {
     switch (view) {
       case _PaneView.tiles:
-        return TilesTab(shots: shots, selectedShot: highlightedShot);
+        return TilesTab(
+          shots: shots,
+          selectedShot: highlightedShot,
+          // Both panes can show tiles at once; Hero tags must stay unique.
+          heroTag: 'tiles_fullscreen_detail_$paneId',
+        );
       case _PaneView.dispersion:
         return DispersionTab(
           allShots: allShots,
@@ -434,7 +443,11 @@ class _SplitViewConfigurable extends StatelessWidget {
           clubs: clubs,
         );
       case _PaneView.club:
-        return ClubTab(shots: shots, clubs: clubs, selectedShot: highlightedShot);
+        return ClubTab(
+          shots: shots,
+          clubs: clubs,
+          selectedShot: highlightedShot,
+        );
       case _PaneView.table:
         return TableTab(
           shots: shots,
@@ -445,11 +458,15 @@ class _SplitViewConfigurable extends StatelessWidget {
     }
   }
 
-  Widget _pane(_PaneView view, ValueChanged<_PaneView> onChanged) {
+  Widget _pane(
+    _PaneView view,
+    ValueChanged<_PaneView> onChanged,
+    String paneId,
+  ) {
     return Column(
       children: [
         _PaneHeader(current: view, onChanged: onChanged),
-        Expanded(child: _paneContent(view)),
+        Expanded(child: _paneContent(view, paneId)),
       ],
     );
   }
@@ -460,18 +477,21 @@ class _SplitViewConfigurable extends StatelessWidget {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(child: _pane(leftPane, onLeftChanged)),
+          Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
           const VerticalDivider(
-              width: 1, thickness: 1, color: AppColors.border),
-          Expanded(child: _pane(rightPane, onRightChanged)),
+            width: 1,
+            thickness: 1,
+            color: AppColors.border,
+          ),
+          Expanded(child: _pane(rightPane, onRightChanged, 'right')),
         ],
       );
     }
     return Column(
       children: [
-        Expanded(child: _pane(leftPane, onLeftChanged)),
+        Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
         const Divider(height: 1, color: AppColors.border),
-        Expanded(child: _pane(rightPane, onRightChanged)),
+        Expanded(child: _pane(rightPane, onRightChanged, 'right')),
       ],
     );
   }
@@ -493,11 +513,9 @@ class _PaneHeader extends StatelessWidget {
     (_PaneView.table, Icons.table_rows, 'Table'),
   ];
 
-  String get _label =>
-      _options.firstWhere((o) => o.$1 == current).$3;
+  String get _label => _options.firstWhere((o) => o.$1 == current).$3;
 
-  IconData get _icon =>
-      _options.firstWhere((o) => o.$1 == current).$2;
+  IconData get _icon => _options.firstWhere((o) => o.$1 == current).$2;
 
   @override
   Widget build(BuildContext context) {
@@ -525,8 +543,11 @@ class _PaneHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 4),
-              const Icon(Icons.keyboard_arrow_down,
-                  size: 16, color: AppColors.textMuted),
+              const Icon(
+                Icons.keyboard_arrow_down,
+                size: 16,
+                color: AppColors.textMuted,
+              ),
             ],
           ),
         ),
@@ -577,9 +598,10 @@ class _PanePickerSheet extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Row(
             children: [
-              Text('Select View',
-                  style: AppTextStyles.sans(
-                      size: 16, weight: FontWeight.w600)),
+              Text(
+                'Select View',
+                style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+              ),
             ],
           ),
         ),
@@ -588,9 +610,11 @@ class _PanePickerSheet extends StatelessWidget {
           final (view, icon, label) = opt;
           final isSel = view == current;
           return ListTile(
-            leading: Icon(icon,
-                size: 18,
-                color: isSel ? context.accent : AppColors.textMuted),
+            leading: Icon(
+              icon,
+              size: 18,
+              color: isSel ? context.accent : AppColors.textMuted,
+            ),
             title: Text(
               label,
               style: AppTextStyles.sans(
@@ -618,10 +642,7 @@ class _DetailTopBar extends StatelessWidget {
   final Session session;
   final VoidCallback onBack;
 
-  const _DetailTopBar({
-    required this.session,
-    required this.onBack,
-  });
+  const _DetailTopBar({required this.session, required this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -640,8 +661,11 @@ class _DetailTopBar extends StatelessWidget {
                 border: Border.all(color: AppColors.border2),
               ),
               child: const Center(
-                child: Icon(Icons.arrow_back,
-                    size: 14, color: AppColors.textMuted),
+                child: Icon(
+                  Icons.arrow_back,
+                  size: 14,
+                  color: AppColors.textMuted,
+                ),
               ),
             ),
           ),
@@ -652,14 +676,15 @@ class _DetailTopBar extends StatelessWidget {
               children: [
                 Text(
                   session.name,
-                  style:
-                      AppTextStyles.sans(size: 15, weight: FontWeight.w600),
+                  style: AppTextStyles.sans(size: 15, weight: FontWeight.w600),
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
                   _formatDate(session.createdAt),
                   style: AppTextStyles.sans(
-                      size: 11, color: AppColors.textMuted),
+                    size: 11,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ],
             ),
@@ -671,8 +696,18 @@ class _DetailTopBar extends StatelessWidget {
 
   String _formatDate(DateTime dt) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
   }

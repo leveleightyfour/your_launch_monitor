@@ -270,7 +270,9 @@ class _UnitToggleRow extends StatelessWidget {
                   child: Container(
                     margin: EdgeInsets.only(left: i == 0 ? 0 : 6),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 5),
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       color: i == selected
                           ? context.accentSubtle
@@ -308,7 +310,6 @@ class _UnitToggleRow extends StatelessWidget {
 
 /// A distance setting the user steps up and down. Values are stored in yards
 /// and shown in whatever unit they've chosen.
-
 
 // ── Accent colour picker ──────────────────────────────────────────────────────
 
@@ -401,8 +402,10 @@ class _ProtocolLoggingRowState extends State<_ProtocolLoggingRow> {
             const Icon(Icons.terminal, size: 18, color: AppColors.textMuted),
             const SizedBox(width: 12),
             Expanded(
-              child: Text('Protocol logging',
-                  style: AppTextStyles.sans(size: 14)),
+              child: Text(
+                'Protocol logging',
+                style: AppTextStyles.sans(size: 14),
+              ),
             ),
             Switch.adaptive(
               value: lmLoggingEnabled,

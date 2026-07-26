@@ -67,21 +67,27 @@ class UpdateCheckCta extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Later',
-                style: AppTextStyles.sans(color: AppColors.textMuted)),
+            child: Text(
+              'Later',
+              style: AppTextStyles.sans(color: AppColors.textMuted),
+            ),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: ctx.accent,
               foregroundColor: Colors.black,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
-                service.quitOnlyRestart ? 'Quit now' : 'Restart now',
-                style: AppTextStyles.sans(
-                    weight: FontWeight.w600, color: Colors.black)),
+              service.quitOnlyRestart ? 'Quit now' : 'Restart now',
+              style: AppTextStyles.sans(
+                weight: FontWeight.w600,
+                color: Colors.black,
+              ),
+            ),
           ),
         ],
       ),
@@ -154,8 +160,10 @@ class _Progress extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Text(label,
-              style: AppTextStyles.sans(size: 12, color: AppColors.textMuted)),
+          Text(
+            label,
+            style: AppTextStyles.sans(size: 12, color: AppColors.textMuted),
+          ),
         ],
       ),
     );

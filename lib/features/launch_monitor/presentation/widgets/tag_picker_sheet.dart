@@ -21,10 +21,8 @@ Future<void> showTagPickerSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
-    builder: (_) => TagPickerSheet(
-      currentTagIds: currentTagIds,
-      onDone: onDone,
-    ),
+    builder: (_) =>
+        TagPickerSheet(currentTagIds: currentTagIds, onDone: onDone),
   );
 }
 
@@ -87,18 +85,20 @@ class _TagPickerSheetState extends ConsumerState<TagPickerSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                Text('Tags',
-                    style: AppTextStyles.sans(
-                        size: 16, weight: FontWeight.w600)),
+                Text(
+                  'Tags',
+                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+                ),
                 const Spacer(),
                 GestureDetector(
                   onTap: () {
                     widget.onDone(_selected.toList());
                     Navigator.of(context).pop();
                   },
-                  child: Text('Done',
-                      style: AppTextStyles.sans(
-                          size: 14, color: context.accent)),
+                  child: Text(
+                    'Done',
+                    style: AppTextStyles.sans(size: 14, color: context.accent),
+                  ),
                 ),
               ],
             ),
@@ -113,15 +113,21 @@ class _TagPickerSheetState extends ConsumerState<TagPickerSheet> {
             ),
             error: (e, _) => Padding(
               padding: const EdgeInsets.all(24),
-              child: Text('Error loading tags',
-                  style: AppTextStyles.sans(color: AppColors.textMuted)),
+              child: Text(
+                'Error loading tags',
+                style: AppTextStyles.sans(color: AppColors.textMuted),
+              ),
             ),
             data: (tags) => tags.isEmpty && !_showNewForm
                 ? Padding(
                     padding: const EdgeInsets.symmetric(vertical: 20),
-                    child: Text('No tags yet — create one below',
-                        style: AppTextStyles.sans(
-                            size: 13, color: AppColors.textMuted)),
+                    child: Text(
+                      'No tags yet — create one below',
+                      style: AppTextStyles.sans(
+                        size: 13,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
                   )
                 : ListView.builder(
                     shrinkWrap: true,
@@ -195,9 +201,13 @@ class _TagPickerSheetState extends ConsumerState<TagPickerSheet> {
                     children: [
                       Icon(Icons.add, size: 16, color: context.accent),
                       const SizedBox(width: 6),
-                      Text('New tag',
-                          style: AppTextStyles.sans(
-                              size: 13, color: context.accent)),
+                      Text(
+                        'New tag',
+                        style: AppTextStyles.sans(
+                          size: 13,
+                          color: context.accent,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -244,8 +254,7 @@ class _TagRow extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(tag.name,
-                  style: AppTextStyles.sans(size: 14)),
+              child: Text(tag.name, style: AppTextStyles.sans(size: 14)),
             ),
             if (active)
               Icon(Icons.check, size: 18, color: context.accent)
@@ -255,8 +264,11 @@ class _TagRow extends StatelessWidget {
                 behavior: HitTestBehavior.opaque,
                 child: Padding(
                   padding: const EdgeInsets.all(14),
-                  child: Icon(Icons.close,
-                      size: 16, color: AppColors.textMuted),
+                  child: Icon(
+                    Icons.close,
+                    size: 16,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ),
           ],
@@ -296,12 +308,16 @@ class _NewTagForm extends StatelessWidget {
             style: AppTextStyles.sans(size: 14),
             decoration: InputDecoration(
               hintText: 'Tag name',
-              hintStyle:
-                  AppTextStyles.sans(size: 14, color: AppColors.textMuted),
+              hintStyle: AppTextStyles.sans(
+                size: 14,
+                color: AppColors.textMuted,
+              ),
               filled: true,
               fillColor: AppColors.background,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: const BorderSide(color: AppColors.border2),
@@ -337,8 +353,7 @@ class _NewTagForm extends StatelessWidget {
                         : null,
                   ),
                   child: isSelected
-                      ? const Icon(Icons.check,
-                          size: 14, color: Colors.white)
+                      ? const Icon(Icons.check, size: 14, color: Colors.white)
                       : null,
                 ),
               );
@@ -350,9 +365,13 @@ class _NewTagForm extends StatelessWidget {
             children: [
               TextButton(
                 onPressed: onCancel,
-                child: Text('Cancel',
-                    style: AppTextStyles.sans(
-                        size: 13, color: AppColors.textMuted)),
+                child: Text(
+                  'Cancel',
+                  style: AppTextStyles.sans(
+                    size: 13,
+                    color: AppColors.textMuted,
+                  ),
+                ),
               ),
               const SizedBox(width: 8),
               ElevatedButton(
@@ -360,15 +379,19 @@ class _NewTagForm extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: context.accent,
                   foregroundColor: Colors.black,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 8,
+                  ),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                   elevation: 0,
                 ),
-                child: Text('Add',
-                    style: AppTextStyles.sans(
-                        size: 13, weight: FontWeight.w600)),
+                child: Text(
+                  'Add',
+                  style: AppTextStyles.sans(size: 13, weight: FontWeight.w600),
+                ),
               ),
             ],
           ),

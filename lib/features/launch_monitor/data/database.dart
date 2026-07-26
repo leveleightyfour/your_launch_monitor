@@ -75,8 +75,7 @@ class Shots extends Table {
 
   // ── Tags ──────────────────────────────────────────────────────────────────
   /// Comma-separated tag IDs, e.g. "1,3,7". Empty string = no tags.
-  TextColumn get tagIds =>
-      text().withDefault(const Constant(''))();
+  TextColumn get tagIds => text().withDefault(const Constant(''))();
 }
 
 /// @DataClassName avoids clashing with the domain [Tag] entity.
@@ -84,6 +83,7 @@ class Shots extends Table {
 class Tags extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get name => text()();
+
   /// Stored as ARGB integer — reconstruct with Color(colorValue).
   IntColumn get colorValue => integer()();
 }
@@ -96,6 +96,7 @@ class SavedClubs extends Table {
   TextColumn get shortName => text()();
   TextColumn get manufacturer => text().nullable()();
   TextColumn get model => text().nullable()();
+
   /// Color stored as ARGB integer — reconstruct with Color(colorValue).
   IntColumn get colorValue => integer()();
 
@@ -114,24 +115,24 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (m) => m.createAll(),
-        onUpgrade: (m, from, to) async {
-          if (from < 2) {
-            await m.addColumn(shots, shots.tagIds);
-            await m.createTable(tags);
-          }
-          if (from < 3) {
-            await m.createTable(savedClubs);
-          }
-          if (from < 4) {
-            await m.addColumn(activities, activities.holeSetup);
-          }
-          if (from < 5) {
-            // Targets became a property of the shot, not the session.
-            await m.addColumn(shots, shots.holeSetup);
-          }
-        },
-      );
+    onCreate: (m) => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.addColumn(shots, shots.tagIds);
+        await m.createTable(tags);
+      }
+      if (from < 3) {
+        await m.createTable(savedClubs);
+      }
+      if (from < 4) {
+        await m.addColumn(activities, activities.holeSetup);
+      }
+      if (from < 5) {
+        // Targets became a property of the shot, not the session.
+        await m.addColumn(shots, shots.holeSetup);
+      }
+    },
+  );
 
   // ── Club bag persistence ──────────────────────────────────────────────────
 
@@ -145,8 +146,10 @@ class AppDatabase extends _$AppDatabase {
   Future<List<Club>> getSavedClubs() async {
     final rows = await select(savedClubs).get();
     return rows.map((r) {
-      final fromCatalog =
-          Club.catalog.where((c) => c.id == r.id).cast<Club?>().firstOrNull;
+      final fromCatalog = Club.catalog
+          .where((c) => c.id == r.id)
+          .cast<Club?>()
+          .firstOrNull;
       return Club(
         id: r.id,
         shortName: r.shortName,
@@ -162,13 +165,15 @@ class AppDatabase extends _$AppDatabase {
     await transaction(() async {
       await delete(savedClubs).go();
       for (final c in clubs) {
-        await into(savedClubs).insert(SavedClubsCompanion.insert(
-          id: c.id,
-          shortName: c.shortName,
-          manufacturer: Value(c.manufacturer),
-          model: Value(c.model),
-          colorValue: c.color.toARGB32(),
-        ));
+        await into(savedClubs).insert(
+          SavedClubsCompanion.insert(
+            id: c.id,
+            shortName: c.shortName,
+            manufacturer: Value(c.manufacturer),
+            model: Value(c.model),
+            colorValue: c.color.toARGB32(),
+          ),
+        );
       }
     });
   }
@@ -181,9 +186,9 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<Tag> insertTag(String name, Color color) async {
-    final id = await into(tags).insert(
-      TagsCompanion.insert(name: name, colorValue: color.toARGB32()),
-    );
+    final id = await into(
+      tags,
+    ).insert(TagsCompanion.insert(name: name, colorValue: color.toARGB32()));
     return Tag(id: id, name: name, color: color);
   }
 
@@ -247,8 +252,9 @@ class AppDatabase extends _$AppDatabase {
   /// Updates the hole on an in-progress session — the player changed it
   /// mid-round.
   Future<void> updateSessionHole(int id, HoleSetup? hole) =>
-      (update(activities)..where((a) => a.id.equals(id)))
-          .write(ActivitiesCompanion(holeSetup: Value(_encodeHole(hole))));
+      (update(activities)..where((a) => a.id.equals(id))).write(
+        ActivitiesCompanion(holeSetup: Value(_encodeHole(hole))),
+      );
 
   /// Inserts a single shot, returning the shot with its [ShotData.dbId] set.
   Future<ShotData> insertShot(int activityId, ShotData shot) async {
@@ -258,8 +264,9 @@ class AppDatabase extends _$AppDatabase {
 
   /// Sets the final name for a session created via [saveDraftSession].
   Future<void> finalizeSession(int id, String name) =>
-      (update(activities)..where((a) => a.id.equals(id)))
-          .write(ActivitiesCompanion(name: Value(name)));
+      (update(activities)..where((a) => a.id.equals(id))).write(
+        ActivitiesCompanion(name: Value(name)),
+      );
 
   // ── Session queries ───────────────────────────────────────────────────────
 
@@ -268,9 +275,9 @@ class AppDatabase extends _$AppDatabase {
     final rows = await select(activities).get();
     final result = <domain.Session>[];
     for (final row in rows) {
-      final shotRows = await (select(shots)
-            ..where((s) => s.activityId.equals(row.id)))
-          .get();
+      final shotRows = await (select(
+        shots,
+      )..where((s) => s.activityId.equals(row.id))).get();
       result.add(_toDomainSession(row, shotRows));
     }
     result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -285,9 +292,11 @@ class AppDatabase extends _$AppDatabase {
           name: session.name,
           createdAt: session.createdAt,
           // Every shot in a session shares its hole.
-          holeSetup: Value(_encodeHole(
-            session.shots.isEmpty ? null : session.shots.first.hole,
-          )),
+          holeSetup: Value(
+            _encodeHole(
+              session.shots.isEmpty ? null : session.shots.first.hole,
+            ),
+          ),
         ),
       );
       for (final shot in session.shots) {
@@ -297,8 +306,13 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  Future<void> deleteSession(int id) =>
-      (delete(activities)..where((a) => a.id.equals(id))).go();
+  Future<void> deleteSession(int id) => transaction(() async {
+    // The Shots→Activities cascade never fires because SQLite ships with
+    // foreign keys off and nothing enables the pragma — delete the shots
+    // explicitly so no orphan rows survive.
+    await (delete(shots)..where((s) => s.activityId.equals(id))).go();
+    await (delete(activities)..where((a) => a.id.equals(id))).go();
+  });
 
   // ── Row → domain mappers ──────────────────────────────────────────────────
 

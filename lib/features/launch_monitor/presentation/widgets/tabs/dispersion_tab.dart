@@ -61,15 +61,16 @@ class _DispersionTabState extends ConsumerState<DispersionTab>
       vsync: this,
       duration: const Duration(milliseconds: 200),
     )..addListener(() => setState(() {}));
-    _zoomScaleCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-    )..addListener(() {
-        final t = Curves.easeOut.transform(_zoomScaleCtrl.value);
-        setState(() {
-          _zoomScale = ui.lerpDouble(_oldZoomScale, _newZoomScale, t)!;
+    _zoomScaleCtrl =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 200),
+        )..addListener(() {
+          final t = Curves.easeOut.transform(_zoomScaleCtrl.value);
+          setState(() {
+            _zoomScale = ui.lerpDouble(_oldZoomScale, _newZoomScale, t)!;
+          });
         });
-      });
   }
 
   @override
@@ -159,7 +160,9 @@ class _DispersionTabState extends ConsumerState<DispersionTab>
         : widget.allShots.where((s) => s.clubId == _filterClub!.id).toList();
 
     // Update animated range whenever shots or filter change.
-    final effectiveRange = selectedShots.isEmpty ? widget.allShots : selectedShots;
+    final effectiveRange = selectedShots.isEmpty
+        ? widget.allShots
+        : selectedShots;
     _updateRange(effectiveRange);
 
     final shotCount = selectedShots.length;
@@ -369,10 +372,7 @@ class _DispStat extends StatelessWidget {
             const SizedBox(width: 4),
             Text(
               unit,
-              style: AppTextStyles.sans(
-                size: 14,
-                color: AppColors.textDimmed,
-              ),
+              style: AppTextStyles.sans(size: 14, color: AppColors.textDimmed),
             ),
           ],
         ),
@@ -473,10 +473,7 @@ class _ZoomControls extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _ZoomButton(
-            icon: Icons.add,
-            onTap: canZoomIn ? onZoomIn : null,
-          ),
+          _ZoomButton(icon: Icons.add, onTap: canZoomIn ? onZoomIn : null),
           Container(height: 1, width: 28, color: AppColors.border2),
           GestureDetector(
             onTap: isDefault ? null : onReset,
@@ -487,17 +484,12 @@ class _ZoomControls extends StatelessWidget {
               child: Icon(
                 Icons.my_location,
                 size: 14,
-                color: isDefault
-                    ? AppColors.textDimmed
-                    : context.accent,
+                color: isDefault ? AppColors.textDimmed : context.accent,
               ),
             ),
           ),
           Container(height: 1, width: 28, color: AppColors.border2),
-          _ZoomButton(
-            icon: Icons.remove,
-            onTap: canZoomOut ? onZoomOut : null,
-          ),
+          _ZoomButton(icon: Icons.remove, onTap: canZoomOut ? onZoomOut : null),
         ],
       ),
     );
@@ -759,7 +751,8 @@ class _DispersionPainter extends CustomPainter {
     // Scale by the configured statistical convention (e.g. 2σ for Trackman,
     // 2.146σ for PGA 90% confidence). Without this we'd draw a 1σ ellipse,
     // which only contains ~39% of points in 2D.
-    final rx = (toX(avgLateral + sigmaLateral * sigmaMultiplier) - cx).abs() + 6;
+    final rx =
+        (toX(avgLateral + sigmaLateral * sigmaMultiplier) - cx).abs() + 6;
     final ry = (toY(avgCarry + sigmaCarry * sigmaMultiplier) - cy).abs() + 6;
     final rect = Rect.fromCenter(
       center: Offset(cx, cy),

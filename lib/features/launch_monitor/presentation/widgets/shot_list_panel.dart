@@ -72,15 +72,12 @@ class ShotListPanel extends ConsumerStatefulWidget {
   final List<ShotData> allShots;
   final List<Club> clubs;
   final int selectedShotIndex;
-  final Future<void> Function(int shotIndex, List<int> tagIds)? onUpdateShotTags;
+  final Future<void> Function(int shotIndex, List<int> tagIds)?
+  onUpdateShotTags;
   final Future<void> Function(List<int> indices)? onDeleteShots;
   final ShotListMetric metric;
   final ValueChanged<ShotListMetric> onMetricChanged;
   final ValueChanged<int> onShotSelected;
-
-  /// When provided, shows an "Edit Shots" button at the bottom (active session).
-  /// Pass null for past sessions where shots cannot be cleared.
-  final VoidCallback? onClearShots;
 
   const ShotListPanel({
     super.key,
@@ -90,7 +87,6 @@ class ShotListPanel extends ConsumerStatefulWidget {
     required this.metric,
     required this.onMetricChanged,
     required this.onShotSelected,
-    this.onClearShots,
     this.onUpdateShotTags,
     this.onDeleteShots,
   });
@@ -105,9 +101,9 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
   final Set<int> _selectedIndices = {};
 
   void _exitEditMode() => setState(() {
-        _editMode = false;
-        _selectedIndices.clear();
-      });
+    _editMode = false;
+    _selectedIndices.clear();
+  });
 
   Future<void> _applyBulkDelete(BuildContext context) async {
     if (_selectedIndices.isEmpty || widget.onDeleteShots == null) return;
@@ -184,15 +180,31 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                       Text(
                         '${_selectedIndices.length} selected',
                         style: AppTextStyles.sans(
-                            size: 15, weight: FontWeight.w600),
+                          size: 15,
+                          weight: FontWeight.w600,
+                        ),
                       ),
                       const Spacer(),
-                      GestureDetector(
-                        onTap: _exitEditMode,
-                        child: Text(
-                          'Cancel',
-                          style: AppTextStyles.sans(
-                              size: 13, color: context.accent),
+                      Semantics(
+                        button: true,
+                        label: 'Cancel editing',
+                        child: GestureDetector(
+                          onTap: _exitEditMode,
+                          behavior: HitTestBehavior.opaque,
+                          // Padded so the text sits inside a 44px-tall target.
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 14,
+                            ),
+                            child: Text(
+                              'Cancel',
+                              style: AppTextStyles.sans(
+                                size: 13,
+                                color: context.accent,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -202,41 +214,70 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                       Text(
                         'Shot List',
                         style: AppTextStyles.sans(
-                            size: 15, weight: FontWeight.w600),
+                          size: 15,
+                          weight: FontWeight.w600,
+                        ),
                       ),
                       const Spacer(),
-                      GestureDetector(
-                        onTap: () => _showMetricPicker(context),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: AppColors.card,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppColors.border2),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                widget.metric.label,
-                                style: AppTextStyles.sans(
-                                    size: 11, color: Colors.white),
-                              ),
-                              const SizedBox(width: 4),
-                              const Icon(Icons.keyboard_arrow_down,
-                                  size: 14, color: AppColors.textMuted),
-                            ],
+                      Semantics(
+                        button: true,
+                        label: 'Display metric: ${widget.metric.label}',
+                        child: GestureDetector(
+                          onTap: () => _showMetricPicker(context),
+                          behavior: HitTestBehavior.opaque,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.card,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: AppColors.border2),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  widget.metric.label,
+                                  style: AppTextStyles.sans(
+                                    size: 11,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(
+                                  Icons.keyboard_arrow_down,
+                                  size: 14,
+                                  color: AppColors.textMuted,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                       if (widget.onUpdateShotTags != null) ...[
                         const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: () =>
-                              setState(() => _editMode = true),
-                          child: const Icon(Icons.checklist,
-                              size: 18, color: AppColors.textMuted),
+                        Tooltip(
+                          message: 'Edit shots',
+                          child: Semantics(
+                            button: true,
+                            label: 'Edit shots',
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => setState(() => _editMode = true),
+                              // 44px hit target around the 18px glyph.
+                              child: const SizedBox(
+                                width: 44,
+                                height: 44,
+                                child: Icon(
+                                  Icons.checklist,
+                                  size: 18,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ],
@@ -360,8 +401,7 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                       ),
                     ),
                   ),
-                  if (widget.onDeleteShots != null)
-                    const SizedBox(width: 8),
+                  if (widget.onDeleteShots != null) const SizedBox(width: 8),
                   if (widget.onDeleteShots != null)
                     Expanded(
                       child: GestureDetector(
@@ -398,14 +438,15 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                 ],
               ),
             )
-          else if (widget.onClearShots != null)
+          else if (widget.onUpdateShotTags != null ||
+              widget.onDeleteShots != null)
             Container(
               decoration: const BoxDecoration(
                 border: Border(top: BorderSide(color: AppColors.border)),
               ),
               padding: const EdgeInsets.all(12),
               child: GestureDetector(
-                onTap: widget.onClearShots,
+                onTap: () => setState(() => _editMode = true),
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
@@ -417,7 +458,9 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                     child: Text(
                       'Edit Shots',
                       style: AppTextStyles.sans(
-                          size: 13, color: AppColors.textMuted),
+                        size: 13,
+                        color: AppColors.textMuted,
+                      ),
                     ),
                   ),
                 ),
@@ -453,8 +496,7 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                 style: AppTextStyles.sans(size: 14),
               ),
               trailing: m == widget.metric
-                  ? Icon(Icons.check,
-                      color: context.accent, size: 18)
+                  ? Icon(Icons.check, color: context.accent, size: 18)
                   : null,
               onTap: () {
                 widget.onMetricChanged(m);
@@ -478,7 +520,8 @@ class ShotListClubSection extends ConsumerWidget {
   final bool collapsed;
   final VoidCallback onToggleCollapse;
   final ValueChanged<int> onShotSelected;
-  final Future<void> Function(int shotIndex, List<int> tagIds)? onUpdateShotTags;
+  final Future<void> Function(int shotIndex, List<int> tagIds)?
+  onUpdateShotTags;
   final bool editMode;
   final Set<int> selectedIndices;
   final ValueChanged<int> onToggleIndex;
@@ -506,15 +549,21 @@ class ShotListClubSection extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(ShotListMetric.carry.format(shot, prefs),
-              style: AppTextStyles.mono(size: 11, color: Colors.white)),
-          Text(ShotListMetric.offline.format(shot, prefs),
-              style: AppTextStyles.mono(size: 10, color: AppColors.textMuted)),
+          Text(
+            ShotListMetric.carry.format(shot, prefs),
+            style: AppTextStyles.mono(size: 11, color: Colors.white),
+          ),
+          Text(
+            ShotListMetric.offline.format(shot, prefs),
+            style: AppTextStyles.mono(size: 10, color: AppColors.textMuted),
+          ),
         ],
       );
     }
-    return Text(metric.format(shot, prefs),
-        style: AppTextStyles.mono(size: 12, color: Colors.white));
+    return Text(
+      metric.format(shot, prefs),
+      style: AppTextStyles.mono(size: 12, color: Colors.white),
+    );
   }
 
   @override
@@ -524,8 +573,7 @@ class ShotListClubSection extends ConsumerWidget {
     final avgStr = metric.avg(shots, prefs);
     final tags = ref.watch(tagsProvider).valueOrNull ?? [];
 
-    final groupTagIds =
-        shots.expand((s) => s.tagIds).toSet().toList();
+    final groupTagIds = shots.expand((s) => s.tagIds).toSet().toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -564,17 +612,23 @@ class ShotListClubSection extends ConsumerWidget {
                   onTap: onSelectGroup,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       border: Border.all(color: AppColors.border2),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      entries.map((e) => e.index).every(selectedIndices.contains)
+                      entries
+                              .map((e) => e.index)
+                              .every(selectedIndices.contains)
                           ? 'Deselect all'
                           : 'Select all',
                       style: AppTextStyles.sans(
-                          size: 10, color: AppColors.textMuted),
+                        size: 10,
+                        color: AppColors.textMuted,
+                      ),
                     ),
                   ),
                 )
@@ -591,7 +645,9 @@ class ShotListClubSection extends ConsumerWidget {
                   ),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       border: Border.all(color: AppColors.border2),
                       borderRadius: BorderRadius.circular(10),
@@ -599,7 +655,9 @@ class ShotListClubSection extends ConsumerWidget {
                     child: Text(
                       groupTagIds.isEmpty ? '+ Add tag' : 'Edit tags',
                       style: AppTextStyles.sans(
-                          size: 10, color: AppColors.textMuted),
+                        size: 10,
+                        color: AppColors.textMuted,
+                      ),
                     ),
                   ),
                 ),
@@ -626,24 +684,40 @@ class ShotListClubSection extends ConsumerWidget {
             ),
             child: Row(
               children: [
-                Text('AVG',
-                    style: AppTextStyles.mono(
-                        size: 11, color: AppColors.textMuted)),
+                Text(
+                  'AVG',
+                  style: AppTextStyles.mono(
+                    size: 11,
+                    color: AppColors.textMuted,
+                  ),
+                ),
                 const Spacer(),
                 if (metric.isCombined)
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(ShotListMetric.carry.avg(shots, prefs),
-                          style: AppTextStyles.mono(size: 11, color: Colors.white)),
-                      Text(ShotListMetric.offline.avg(shots, prefs),
-                          style: AppTextStyles.mono(size: 10, color: AppColors.textMuted)),
+                      Text(
+                        ShotListMetric.carry.avg(shots, prefs),
+                        style: AppTextStyles.mono(
+                          size: 11,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        ShotListMetric.offline.avg(shots, prefs),
+                        style: AppTextStyles.mono(
+                          size: 10,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
                     ],
                   )
                 else
-                  Text(avgStr,
-                      style: AppTextStyles.mono(size: 12, color: Colors.white)),
+                  Text(
+                    avgStr,
+                    style: AppTextStyles.mono(size: 12, color: Colors.white),
+                  ),
               ],
             ),
           ),
@@ -674,8 +748,7 @@ class ShotListClubSection extends ConsumerWidget {
                       bottom: const BorderSide(color: AppColors.border),
                     ),
                   ),
-                  padding:
-                      EdgeInsets.fromLTRB(isChecked ? 14 : 16, 9, 12, 9),
+                  padding: EdgeInsets.fromLTRB(isChecked ? 14 : 16, 9, 12, 9),
                   child: Row(
                     children: [
                       Container(
@@ -690,8 +763,11 @@ class ShotListClubSection extends ConsumerWidget {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: isChecked
-                            ? const Icon(Icons.check,
-                                size: 11, color: Colors.black)
+                            ? const Icon(
+                                Icons.check,
+                                size: 11,
+                                color: Colors.black,
+                              )
                             : null,
                       ),
                       const SizedBox(width: 8),
@@ -704,15 +780,17 @@ class ShotListClubSection extends ConsumerWidget {
                               : AppColors.textDimmed,
                         ),
                       ),
-                      ...shotTags.map((tag) => Container(
-                            width: 7,
-                            height: 7,
-                            margin: const EdgeInsets.only(left: 4),
-                            decoration: BoxDecoration(
-                              color: tag.color,
-                              shape: BoxShape.circle,
-                            ),
-                          )),
+                      ...shotTags.map(
+                        (tag) => Container(
+                          width: 7,
+                          height: 7,
+                          margin: const EdgeInsets.only(left: 4),
+                          decoration: BoxDecoration(
+                            color: tag.color,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
                       const Spacer(),
                       _valueWidget(e.shot, prefs),
                     ],
@@ -725,11 +803,11 @@ class ShotListClubSection extends ConsumerWidget {
               onTap: () => onShotSelected(e.index),
               onLongPress: onUpdateShotTags != null
                   ? () => showTagPickerSheet(
-                        context,
-                        currentTagIds: e.shot.tagIds,
-                        onDone: (selected) =>
-                            onUpdateShotTags!(e.index, selected),
-                      )
+                      context,
+                      currentTagIds: e.shot.tagIds,
+                      onDone: (selected) =>
+                          onUpdateShotTags!(e.index, selected),
+                    )
                   : null,
               child: Container(
                 decoration: BoxDecoration(
@@ -740,21 +818,17 @@ class ShotListClubSection extends ConsumerWidget {
                     left: isSelected
                         ? BorderSide(color: selColor, width: 2)
                         : BorderSide.none,
-                    bottom:
-                        const BorderSide(color: AppColors.border),
+                    bottom: const BorderSide(color: AppColors.border),
                   ),
                 ),
-                padding:
-                    EdgeInsets.fromLTRB(isSelected ? 14 : 16, 9, 12, 9),
+                padding: EdgeInsets.fromLTRB(isSelected ? 14 : 16, 9, 12, 9),
                 child: Row(
                   children: [
                     Text(
                       shotNum.toString().padLeft(2, '0'),
                       style: AppTextStyles.mono(
                         size: 12,
-                        color: isSelected
-                            ? Colors.white
-                            : AppColors.textDimmed,
+                        color: isSelected ? Colors.white : AppColors.textDimmed,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -767,15 +841,17 @@ class ShotListClubSection extends ConsumerWidget {
                           shape: BoxShape.circle,
                         ),
                       ),
-                    ...shotTags.map((tag) => Container(
-                          width: 7,
-                          height: 7,
-                          margin: const EdgeInsets.only(left: 4),
-                          decoration: BoxDecoration(
-                            color: tag.color,
-                            shape: BoxShape.circle,
-                          ),
-                        )),
+                    ...shotTags.map(
+                      (tag) => Container(
+                        width: 7,
+                        height: 7,
+                        margin: const EdgeInsets.only(left: 4),
+                        decoration: BoxDecoration(
+                          color: tag.color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
                     const Spacer(),
                     _valueWidget(e.shot, prefs),
                   ],

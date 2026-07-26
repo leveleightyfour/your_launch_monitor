@@ -38,7 +38,10 @@ class _MyBagScreenState extends ConsumerState<MyBagScreen> {
                 children: [
                   Text(
                     'My Bag',
-                    style: AppTextStyles.sans(size: 20, weight: FontWeight.w600),
+                    style: AppTextStyles.sans(
+                      size: 20,
+                      weight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
@@ -184,9 +187,10 @@ class _ClubsTab extends ConsumerWidget {
               Text(
                 '${clubs.length} clubs',
                 style: AppTextStyles.sans(
-                    size: 13,
-                    weight: FontWeight.w400,
-                    color: AppColors.textMuted),
+                  size: 13,
+                  weight: FontWeight.w400,
+                  color: AppColors.textMuted,
+                ),
               ),
               const Spacer(),
               _OutlineButton(
@@ -374,16 +378,11 @@ class _ClubTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (isSelected)
-            Icon(Icons.check, color: context.accent, size: 16),
+          if (isSelected) Icon(Icons.check, color: context.accent, size: 16),
           const SizedBox(width: 8),
           GestureDetector(
             onTap: onEdit,
-            child: const Icon(
-              Icons.edit,
-              size: 16,
-              color: AppColors.textMuted,
-            ),
+            child: const Icon(Icons.edit, size: 16, color: AppColors.textMuted),
           ),
         ],
       ),
@@ -771,21 +770,28 @@ class _AddClubsScreenState extends ConsumerState<AddClubsScreen> {
                 children: [
                   GestureDetector(
                     onTap: () => context.pop(),
-                    child: const Icon(Icons.arrow_back_ios,
-                        size: 18, color: Colors.white),
+                    child: const Icon(
+                      Icons.arrow_back_ios,
+                      size: 18,
+                      color: Colors.white,
+                    ),
                   ),
                   const Spacer(),
                   Text(
                     'Add clubs',
                     style: AppTextStyles.sans(
-                        size: 17, weight: FontWeight.w600),
+                      size: 17,
+                      weight: FontWeight.w600,
+                    ),
                   ),
                   const Spacer(),
                   GestureDetector(
                     onTap: _apply,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: context.accent,
                         borderRadius: BorderRadius.circular(20),
@@ -796,13 +802,17 @@ class _AddClubsScreenState extends ConsumerState<AddClubsScreen> {
                           Text(
                             '${_selected.length}/${Club.catalog.length}',
                             style: AppTextStyles.sans(
-                                size: 13,
-                                weight: FontWeight.w600,
-                                color: Colors.black),
+                              size: 13,
+                              weight: FontWeight.w600,
+                              color: Colors.black,
+                            ),
                           ),
                           const SizedBox(width: 4),
-                          const Icon(Icons.arrow_forward,
-                              size: 16, color: Colors.black),
+                          const Icon(
+                            Icons.arrow_forward,
+                            size: 16,
+                            color: Colors.black,
+                          ),
                         ],
                       ),
                     ),
@@ -885,9 +895,7 @@ class _ClubCircle extends StatelessWidget {
         height: 64,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: selected
-              ? context.accentGhost
-              : AppColors.card,
+          color: selected ? context.accentGhost : AppColors.card,
           border: Border.all(
             color: selected ? context.accent : AppColors.border2,
             width: selected ? 2.0 : 1.0,

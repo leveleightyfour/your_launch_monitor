@@ -13,12 +13,18 @@ class TilesTab extends ConsumerWidget {
   final bool showFullscreenToggle;
   final VoidCallback? onExitFullscreen;
 
+  /// Hero tag pairing this instance with its fullscreen page. Must be unique
+  /// per mounted instance — the split view can show two TilesTabs at once,
+  /// and duplicate live Hero tags throw on any route push.
+  final Object heroTag;
+
   const TilesTab({
     super.key,
     required this.shots,
     this.selectedShot,
     this.showFullscreenToggle = true,
     this.onExitFullscreen,
+    this.heroTag = 'tiles_fullscreen',
   });
 
   // Column count: phone uses fewer cols to keep tiles readable
@@ -48,7 +54,7 @@ class TilesTab extends ConsumerWidget {
     const btnAreaH = 52.0;
 
     return Hero(
-      tag: 'tiles_fullscreen',
+      tag: heroTag,
       flightShuttleBuilder: (_, animation, __, fromCtx, toCtx) {
         return Material(
           color: AppColors.background,
@@ -59,121 +65,138 @@ class TilesTab extends ConsumerWidget {
         );
       },
       child: Material(
-      color: Colors.transparent,
-      child: Stack(
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            if (metrics.isEmpty) {
-              return Center(
-                child: Text(
-                  'No tiles selected',
-                  style: AppTextStyles.sans(color: AppColors.textMuted),
-                ),
-              );
-            }
+        color: Colors.transparent,
+        child: Stack(
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (metrics.isEmpty) {
+                  return Center(
+                    child: Text(
+                      'No tiles selected',
+                      style: AppTextStyles.sans(color: AppColors.textMuted),
+                    ),
+                  );
+                }
 
-            final cols = _cols(metrics.length, tablet: tablet);
-            final rows = (metrics.length / cols).ceil();
+                final cols = _cols(metrics.length, tablet: tablet);
+                final rows = (metrics.length / cols).ceil();
 
-            final availW = constraints.maxWidth - pad * 2 - gap * (cols - 1);
-            final availH =
-                constraints.maxHeight - pad * 2 - gap * (rows - 1) - btnAreaH;
+                final availW =
+                    constraints.maxWidth - pad * 2 - gap * (cols - 1);
+                final availH =
+                    constraints.maxHeight -
+                    pad * 2 -
+                    gap * (rows - 1) -
+                    btnAreaH;
 
-            final tileW = availW / cols;
-            final tileH = (availH / rows).clamp(60.0, double.infinity);
-            final aspect = (tileW / tileH).clamp(0.4, 5.0);
+                final tileW = availW / cols;
+                final tileH = (availH / rows).clamp(60.0, double.infinity);
+                final aspect = (tileW / tileH).clamp(0.4, 5.0);
 
-            return GridView.builder(
-              padding: EdgeInsets.fromLTRB(pad, pad, pad, pad + btnAreaH),
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: cols,
-                crossAxisSpacing: gap,
-                mainAxisSpacing: gap,
-                childAspectRatio: aspect,
-              ),
-              itemCount: metrics.length,
-              itemBuilder: (context, i) => _MetricTile(
-                key: ValueKey(metrics[i]),
-                metric: metrics[i],
-                currentShot: last,
-                avgShot: avg,
-                prefs: prefs,
-              ),
-            );
-          },
-        ),
-        Positioned(
-          left: 16,
-          right: 16,
-          bottom: 16,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              GestureDetector(
-                onTap: onExitFullscreen ??
-                    () => Navigator.of(context).push(
+                return GridView.builder(
+                  padding: EdgeInsets.fromLTRB(pad, pad, pad, pad + btnAreaH),
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: cols,
+                    crossAxisSpacing: gap,
+                    mainAxisSpacing: gap,
+                    childAspectRatio: aspect,
+                  ),
+                  itemCount: metrics.length,
+                  itemBuilder: (context, i) => _MetricTile(
+                    key: ValueKey(metrics[i]),
+                    metric: metrics[i],
+                    currentShot: last,
+                    avgShot: avg,
+                    prefs: prefs,
+                  ),
+                );
+              },
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  GestureDetector(
+                    onTap:
+                        onExitFullscreen ??
+                        () => Navigator.of(context).push(
                           PageRouteBuilder<void>(
-                            transitionDuration:
-                                const Duration(milliseconds: 400),
-                            reverseTransitionDuration:
-                                const Duration(milliseconds: 300),
-                            pageBuilder: (_, __, ___) =>
-                                _FullscreenTilesPage(shots: shots, selectedShot: last),
+                            transitionDuration: const Duration(
+                              milliseconds: 400,
+                            ),
+                            reverseTransitionDuration: const Duration(
+                              milliseconds: 300,
+                            ),
+                            pageBuilder: (_, __, ___) => _FullscreenTilesPage(
+                              shots: shots,
+                              selectedShot: last,
+                              heroTag: heroTag,
+                            ),
                             transitionsBuilder: (_, anim, __, child) => child,
                           ),
                         ),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.border2),
-                  ),
-                  child: Icon(
-                    onExitFullscreen != null
-                        ? Icons.fullscreen_exit
-                        : Icons.fullscreen,
-                    size: 16,
-                    color: AppColors.textMuted,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => _showCustomizeSheet(context, ref, metrics),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.border2),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.tune,
-                          size: 14, color: AppColors.textMuted),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Customize',
-                        style: AppTextStyles.sans(
-                          size: 12,
-                          color: AppColors.textMuted,
-                        ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
                       ),
-                    ],
+                      decoration: BoxDecoration(
+                        color: AppColors.card,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.border2),
+                      ),
+                      child: Icon(
+                        onExitFullscreen != null
+                            ? Icons.fullscreen_exit
+                            : Icons.fullscreen,
+                        size: 16,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => _showCustomizeSheet(context, ref, metrics),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.card,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.border2),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.tune,
+                            size: 14,
+                            color: AppColors.textMuted,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Customize',
+                            style: AppTextStyles.sans(
+                              size: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-      ],
-      ),
       ),
     );
   }
@@ -204,8 +227,13 @@ class TilesTab extends ConsumerWidget {
 class _FullscreenTilesPage extends StatelessWidget {
   final List<ShotData> shots;
   final ShotData? selectedShot;
+  final Object heroTag;
 
-  const _FullscreenTilesPage({required this.shots, this.selectedShot});
+  const _FullscreenTilesPage({
+    required this.shots,
+    this.selectedShot,
+    required this.heroTag,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -217,6 +245,7 @@ class _FullscreenTilesPage extends StatelessWidget {
           selectedShot: selectedShot,
           showFullscreenToggle: false,
           onExitFullscreen: () => Navigator.of(context).pop(),
+          heroTag: heroTag,
         ),
       ),
     );
@@ -277,9 +306,13 @@ String metricValue(TileMetric m, ShotData? s, UnitPrefs prefs) {
     TileMetric.horizontalImpact => _fmtImpactH(s.horizontalImpact),
     TileMetric.verticalImpact => _fmtImpactV(s.verticalImpact),
     TileMetric.offline => () {
-        final v = prefs.dist(s.lateralOffset);
-        return '${v.abs().toStringAsFixed(1)} ${s.lateralOffset > 0 ? 'R' : s.lateralOffset < 0 ? 'L' : ''}';
-      }(),
+      final v = prefs.dist(s.lateralOffset);
+      return '${v.abs().toStringAsFixed(1)} ${s.lateralOffset > 0
+          ? 'R'
+          : s.lateralOffset < 0
+          ? 'L'
+          : ''}';
+    }(),
   };
 }
 
@@ -346,11 +379,13 @@ class _MetricTile extends StatelessWidget {
       final hAvg = _fmtImpactH(avgShot?.horizontalImpact);
       final vAvg = _fmtImpactV(avgShot?.verticalImpact);
       if (avgShot != null && currentShot != null) {
-        final hDiff = currentShot!.horizontalImpact != null &&
+        final hDiff =
+            currentShot!.horizontalImpact != null &&
                 avgShot!.horizontalImpact != null
             ? '±${(currentShot!.horizontalImpact! - avgShot!.horizontalImpact!).abs().toStringAsFixed(1)}'
             : '';
-        final vDiff = currentShot!.verticalImpact != null &&
+        final vDiff =
+            currentShot!.verticalImpact != null &&
                 avgShot!.verticalImpact != null
             ? '±${(currentShot!.verticalImpact! - avgShot!.verticalImpact!).abs().toStringAsFixed(1)}'
             : '';
@@ -381,7 +416,12 @@ class _MetricTile extends StatelessWidget {
           // Value fills the entire tile
           Positioned.fill(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(10, 22, 10, footer.isNotEmpty ? 22 : 4),
+              padding: EdgeInsets.fromLTRB(
+                10,
+                22,
+                10,
+                footer.isNotEmpty ? 22 : 4,
+              ),
               child: isImpact
                   ? _ImpactDisplay(shot: currentShot)
                   : FittedBox(
@@ -390,7 +430,9 @@ class _MetricTile extends StatelessWidget {
                       child: SplitFlapText(
                         text: currentStr,
                         style: AppTextStyles.mono(
-                            size: 108, weight: FontWeight.w600),
+                          size: 108,
+                          weight: FontWeight.w600,
+                        ),
                       ),
                     ),
             ),
@@ -438,7 +480,10 @@ class _MetricTile extends StatelessWidget {
                 ),
                 child: Text(
                   footer,
-                  style: AppTextStyles.mono(size: 10, color: AppColors.textMuted),
+                  style: AppTextStyles.mono(
+                    size: 10,
+                    color: AppColors.textMuted,
+                  ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                   textAlign: TextAlign.center,
@@ -485,19 +530,27 @@ class _ImpactValue extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(label,
-              style: AppTextStyles.sans(size: 11, color: AppColors.textDimmed)),
+          Text(
+            label,
+            style: AppTextStyles.sans(size: 11, color: AppColors.textDimmed),
+          ),
           const SizedBox(height: 2),
           Expanded(
             child: FittedBox(
               fit: BoxFit.contain,
-              child: Text(value,
-                  style: AppTextStyles.mono(size: 108, weight: FontWeight.w600)),
+              child: Text(
+                value,
+                style: AppTextStyles.mono(size: 108, weight: FontWeight.w600),
+              ),
             ),
           ),
-          Text('mm',
-              style: AppTextStyles.sans(size: 11, color: AppColors.textDimmed)
-                  .copyWith(fontStyle: FontStyle.italic)),
+          Text(
+            'mm',
+            style: AppTextStyles.sans(
+              size: 11,
+              color: AppColors.textDimmed,
+            ).copyWith(fontStyle: FontStyle.italic),
+          ),
         ],
       ),
     );
@@ -563,10 +616,12 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
   @override
   Widget build(BuildContext context) {
     final prefs = ref.watch(unitPrefsProvider);
-    final ballAvail =
-        _ballMetrics.where((m) => !_selected.contains(m)).toList();
-    final clubAvail =
-        _clubMetrics.where((m) => !_selected.contains(m)).toList();
+    final ballAvail = _ballMetrics
+        .where((m) => !_selected.contains(m))
+        .toList();
+    final clubAvail = _clubMetrics
+        .where((m) => !_selected.contains(m))
+        .toList();
 
     return ConstrainedBox(
       constraints: BoxConstraints(
@@ -589,15 +644,20 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                Text('Customize tiles',
-                    style:
-                        AppTextStyles.sans(size: 16, weight: FontWeight.w600)),
+                Text(
+                  'Customize tiles',
+                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+                ),
                 const Spacer(),
                 GestureDetector(
                   onTap: () => setState(() => _selected.clear()),
-                  child: Text('Clear all',
-                      style: AppTextStyles.sans(
-                          size: 12, color: AppColors.textMuted)),
+                  child: Text(
+                    'Clear all',
+                    style: AppTextStyles.sans(
+                      size: 12,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -613,11 +673,14 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
                   if (_selected.isNotEmpty) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-                      child: Text('Active',
-                          style: AppTextStyles.sans(
-                              size: 10,
-                              weight: FontWeight.w600,
-                              color: AppColors.textDimmed)),
+                      child: Text(
+                        'Active',
+                        style: AppTextStyles.sans(
+                          size: 10,
+                          weight: FontWeight.w600,
+                          color: AppColors.textDimmed,
+                        ),
+                      ),
                     ),
                     ReorderableListView(
                       shrinkWrap: true,
@@ -640,32 +703,36 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
                   if (ballAvail.isNotEmpty) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      child: Text('Ball data',
-                          style: AppTextStyles.sans(
-                              size: 10,
-                              weight: FontWeight.w600,
-                              color: AppColors.textDimmed)),
+                      child: Text(
+                        'Ball data',
+                        style: AppTextStyles.sans(
+                          size: 10,
+                          weight: FontWeight.w600,
+                          color: AppColors.textDimmed,
+                        ),
+                      ),
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: _AvailableChips(
-                          metrics: ballAvail, onAdd: _add),
+                      child: _AvailableChips(metrics: ballAvail, onAdd: _add),
                     ),
                   ],
                   // ── Available — club ────────────────────────────────────
                   if (clubAvail.isNotEmpty) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      child: Text('Club data',
-                          style: AppTextStyles.sans(
-                              size: 10,
-                              weight: FontWeight.w600,
-                              color: AppColors.textDimmed)),
+                      child: Text(
+                        'Club data',
+                        style: AppTextStyles.sans(
+                          size: 10,
+                          weight: FontWeight.w600,
+                          color: AppColors.textDimmed,
+                        ),
+                      ),
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: _AvailableChips(
-                          metrics: clubAvail, onAdd: _add),
+                      child: _AvailableChips(metrics: clubAvail, onAdd: _add),
                     ),
                   ],
                   const SizedBox(height: 24),
@@ -714,22 +781,30 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
             index: index,
             child: const Padding(
               padding: EdgeInsets.symmetric(horizontal: 4),
-              child: Icon(Icons.drag_handle,
-                  size: 18, color: AppColors.textDimmed),
+              child: Icon(
+                Icons.drag_handle,
+                size: 18,
+                color: AppColors.textDimmed,
+              ),
             ),
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(m.label,
-                style: AppTextStyles.sans(size: 13, color: Colors.white)),
+            child: Text(
+              m.label,
+              style: AppTextStyles.sans(size: 13, color: Colors.white),
+            ),
           ),
           if (tileUnit(m, prefs).isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(right: 10),
-              child: Text(tileUnit(m, prefs),
-                  style: AppTextStyles.sans(
-                          size: 11, color: AppColors.textDimmed)
-                      .copyWith(fontStyle: FontStyle.italic)),
+              child: Text(
+                tileUnit(m, prefs),
+                style: AppTextStyles.sans(
+                  size: 11,
+                  color: AppColors.textDimmed,
+                ).copyWith(fontStyle: FontStyle.italic),
+              ),
             ),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -758,29 +833,36 @@ class _AvailableChips extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: metrics
-          .map((m) => GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onAdd(m),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.border2),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.add,
-                          size: 12, color: AppColors.textMuted),
-                      const SizedBox(width: 4),
-                      Text(m.label,
-                          style: AppTextStyles.sans(
-                              size: 12, color: AppColors.textMuted)),
-                    ],
-                  ),
+          .map(
+            (m) => GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onAdd(m),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
                 ),
-              ))
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.border2),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.add, size: 12, color: AppColors.textMuted),
+                    const SizedBox(width: 4),
+                    Text(
+                      m.label,
+                      style: AppTextStyles.sans(
+                        size: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
           .toList(),
     );
   }
