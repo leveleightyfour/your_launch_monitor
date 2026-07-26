@@ -172,11 +172,16 @@ class _DispersionTabState extends ConsumerState<DispersionTab>
         : selectedShots.map((s) => s.carry).reduce((a, b) => a + b) /
               selectedShots.length;
 
+    // Where the ball actually finished up sideways, not where the start line
+    // pointed. The old reckoning was carry x sin(launch direction), which
+    // treats the flight as a straight line and so cannot see the ball curve:
+    // a shot started 1.4 degrees left and faded back read as its full start
+    // line, while the plot underneath — and the 3D view — showed the real
+    // landing point. Everything else in this file already uses lateralOffset;
+    // only the headline did not.
     final avgOfflineYds = selectedShots.isEmpty
         ? 0.0
-        : selectedShots
-                  .map((s) => s.carry * (s.launchDirection * math.pi / 180.0))
-                  .reduce((a, b) => a + b) /
+        : selectedShots.map((s) => s.lateralOffset).reduce((a, b) => a + b) /
               selectedShots.length;
 
     String offlineStr() {
