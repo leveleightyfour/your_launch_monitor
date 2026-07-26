@@ -56,6 +56,11 @@ class AppColors {
   /// the short grass is legible at a glance rather than only by position.
   static const turfRough = Color(0xFF2B2F23);
 
+  /// Clumps scattered over the rough. Two tones either side of the base so the
+  /// surface breaks up without turning into noise.
+  static const turfRoughClump = Color(0xFF343A29);
+  static const turfRoughClumpDark = Color(0xFF23271D);
+
   /// Putting surface — lighter and yellower than fairway, the way a tighter
   /// cut actually looks.
   static const turfGreen = Color(0xFF3E6B45);

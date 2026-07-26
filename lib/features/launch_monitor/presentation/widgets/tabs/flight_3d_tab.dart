@@ -901,6 +901,9 @@ class _FlightPainter extends CustomPainter {
 
     _paintBackdrop(canvas, size);
     _paintGround(canvas, camera, halfWidth, maxDepth, gridStep);
+    if (course != null && density.atLeastMedium) {
+      _paintRoughTexture(canvas, camera, course, halfWidth, maxDepth);
+    }
     if (course != null) _paintGreen(canvas, camera, course);
     _paintDistanceHaze(canvas, camera, size);
     if (density.atLeastMedium) {
@@ -1198,6 +1201,56 @@ class _FlightPainter extends CustomPainter {
           const [AppColors.background, AppColors.skyLow],
         ),
     );
+  }
+
+  /// Scattered clumps over the rough, so it reads as longer grass rather than
+  /// as a flat fill the fairway happens to sit on.
+  ///
+  /// The scatter is hashed from each lattice point's own coordinates rather
+  /// than drawn from a random source, so a clump keeps its place from frame to
+  /// frame. A per-frame RNG would make the whole surface crawl as the camera
+  /// orbits.
+  void _paintRoughTexture(
+    Canvas canvas,
+    _Camera camera,
+    HoleSetup course,
+    double halfWidth,
+    double maxDepth,
+  ) {
+    const step = 7.0;
+    final near = -20.0;
+    for (var z = near; z < maxDepth; z += step) {
+      // Thin the scatter out with distance: at the horizon the clumps would
+      // otherwise converge into a solid band.
+      final depthFade =
+          (1 - (z - near) / (maxDepth - near)).clamp(0.0, 1.0);
+      if (depthFade < 0.06) continue;
+      for (var x = -halfWidth; x < halfWidth; x += step) {
+        // Cheap positional hash — stable, and cheaper than a real noise field.
+        final h = ((x * 73856093).toInt() ^ (z * 19349663).toInt()) & 0x7fffffff;
+        if (h % 100 > 62) continue;
+        final jx = x + (h % 37) / 37.0 * step;
+        final jz = z + ((h >> 7) % 41) / 41.0 * step;
+        // Only the rough gets clumps; mown surfaces stay smooth.
+        if (course.surfaceAt(jx, jz) != Surface.rough) continue;
+        final size = 0.9 + (h >> 13) % 11 / 11.0 * 1.5;
+        _polygon3(
+          canvas,
+          camera,
+          [
+            Vec3(jx - size, 0, jz - size * 0.6),
+            Vec3(jx + size, 0, jz - size * 0.6),
+            Vec3(jx + size * 0.7, 0, jz + size * 0.6),
+            Vec3(jx - size * 0.7, 0, jz + size * 0.6),
+          ],
+          Paint()
+            ..color = (h & 1 == 0
+                    ? AppColors.turfRoughClump
+                    : AppColors.turfRoughClumpDark)
+                .withAlpha((150 * depthFade).round()),
+        );
+      }
+    }
   }
 
   /// Atmospheric perspective: turf fades toward the horizon tone with
