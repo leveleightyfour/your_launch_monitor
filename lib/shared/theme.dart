@@ -29,18 +29,70 @@ class AppColors {
   // landing marks, roll path, read-outs — so the world those land in must not
   // recolour with it, or a Lime accent hides the pin against the green and an
   // Orange one loses the target line in the rough.
-  static const turfGround = Color(0xFF101619);
-  static const turfFairway = Color(0xFF13201A);
+  // Turf sat at roughly a twentieth of the luminance of the photoreal views
+  // these are measured against, which is why the mowing never read: the light
+  // and dark bands were in the right *ratio* (1.39x against a reference 1.45x)
+  // but 1.39x of near-black is a difference of half a percent of white, and
+  // the eye cannot find it. Lifting the whole surface is what makes the bands
+  // appear; the ratio never needed touching.
+  //
+  // Brightening turf does not cost the shot its prominence. The reference's
+  // trace is *darker* than the fairway it crosses — it dominates on chroma and
+  // hue distance, not luminance. Every accent stays 44+ dE from every surface
+  // here, so the shot still reads as the only vivid thing in the scene.
+  //
+  // Hue moves with it: turf was 140-145 degrees, a blue-green that belongs to
+  // the app's cool greys rather than to grass. Real mown fairway sits nearer
+  // 100-130. The far field is pulled back toward the horizon by the haze pass
+  // rather than by being painted dark, so depth survives the lift.
+  static const turfGround = Color(0xFF161C18);
+  static const turfFairway = Color(0xFF2C4732);
 
-  /// Every other mown band — barely lighter, so it reads as texture.
-  static const turfFairwayStripe = Color(0xFF17271F);
+  /// Every other mown band. Still a whisper in ratio terms, but now a visible
+  /// one — 0.021 of separation where it used to be 0.005.
+  static const turfFairwayStripe = Color(0xFF35543A);
 
-  /// Off the fairway. Dry rather than warm: the app's greys are all cool, and
-  /// a saturated brown here was the one warm colour in the whole palette.
-  static const turfRough = Color(0xFF1C1C18);
-  static const turfGreen = Color(0xFF1B3524);
-  static const turfGreenEdge = Color(0xFF3C6B4A);
-  static const turfGrid = Color(0xFF2A3A38);
+  /// Off the fairway: drier and more olive than the mown surface, so missing
+  /// the short grass is legible at a glance rather than only by position.
+  static const turfRough = Color(0xFF2B2F23);
+
+  /// Clumps scattered over the rough. Two tones either side of the base so the
+  /// surface breaks up without turning into noise.
+  static const turfRoughClump = Color(0xFF343A29);
+  static const turfRoughClumpDark = Color(0xFF23271D);
+
+  /// Putting surface — lighter and yellower than fairway, the way a tighter
+  /// cut actually looks.
+  static const turfGreen = Color(0xFF3E6B45);
+
+  /// The collar: the fringe ring between green and its surround. The single
+  /// clearest "this is a green" cue at a glance.
+  static const turfGreenCollar = Color(0xFF50805A);
+  static const turfGreenEdge = Color(0xFF6DA878);
+  static const turfGrid = Color(0xFF3A5148);
+
+  // ── Built terrain ────────────────────────────────────────────────────────
+  // Hazards have to be identifiable at a glance from a moving camera, so each
+  // sits in its own hue family rather than being a shade of the turf.
+  static const turfBunker = Color(0xFFB9A77A);
+  static const turfBunkerEdge = Color(0xFF8C7C55);
+  static const turfWater = Color(0xFF2B5A7A);
+  static const turfWaterEdge = Color(0xFF4E8CB0);
+
+  /// Ground beneath the trees — rough, shaded by what is standing on it.
+  static const turfTrees = Color(0xFF232B22);
+  static const treeCanopy = Color(0xFF3D6B3A);
+  static const treeCanopyLit = Color(0xFF4F8449);
+  static const treeTrunk = Color(0xFF3A2E22);
+
+  /// Out of bounds. Deliberately drab — it is the one surface that means the
+  /// shot is over, and it should look like nothing worth aiming at.
+  static const turfOob = Color(0xFF2A2622);
+  static const turfOobStake = Color(0xFFD8D2C4);
+
+  /// Distance haze. The far field fades to this instead of being painted dark,
+  /// which is what keeps depth once the near turf is bright.
+  static const turfHaze = Color(0xFF16221F);
 
   /// Horizon tone the backdrop fades to.
   static const skyLow = Color(0xFF0E1418);

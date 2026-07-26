@@ -1,4 +1,5 @@
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/terrain.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_trajectory.dart';
 
 /// Simulated flights are cached per shot — the integration is cheap but it runs
@@ -109,9 +110,24 @@ class ShotData {
       groundAt: playedHole != null && playedHole.enabled
           ? playedHole.groundAt
           : null,
+      stopsAt: playedHole != null && playedHole.enabled
+          ? playedHole.stopsAt
+          : null,
     );
     _trajectoryCache[this] = computed;
     return computed;
+  }
+
+  /// Where the ball finished up in the rules sense — in play, wet, or gone.
+  ///
+  /// Derived from the resting position rather than tracked through the
+  /// simulation, which keeps the flight model free of golf: it reports where
+  /// the ball stopped, and the hole says what that means.
+  ShotOutcome get outcome {
+    final playedHole = hole;
+    if (playedHole == null || !playedHole.enabled) return ShotOutcome.inPlay;
+    final rest = trajectory.restPosition;
+    return playedHole.outcomeAt(rest.x, rest.z);
   }
 
   /// Carry distance in yards, from the simulated flight.

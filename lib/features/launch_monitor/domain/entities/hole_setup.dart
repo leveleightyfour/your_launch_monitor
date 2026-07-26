@@ -12,7 +12,9 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_grid.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_trajectory.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/terrain.dart';
 
 /// What the ball is sitting on.
 enum Surface { fairway, green, rough }
@@ -37,6 +39,15 @@ class HoleSetup {
   /// Total fairway width, in yards.
   final double fairwayWidth;
 
+  /// A hand-built hole, when there is one.
+  ///
+  /// Present, it is the authority: [terrainAt] reads it and the analytic
+  /// fairway-and-green is ignored. Absent, everything behaves exactly as it
+  /// did before holes could be painted, which is what keeps every shot already
+  /// stamped with an analytic hole rendering and scoring the way it always
+  /// has.
+  final HoleGrid? grid;
+
   const HoleSetup({
     this.enabled = false,
     this.greenDistance = 165,
@@ -44,6 +55,7 @@ class HoleSetup {
     this.greenDepth = 25,
     this.greenOffset = 0,
     this.fairwayWidth = 40,
+    this.grid,
   });
 
   /// No hole — fairway everywhere.
@@ -71,6 +83,8 @@ class HoleSetup {
     double? greenDepth,
     double? greenOffset,
     double? fairwayWidth,
+    HoleGrid? grid,
+    bool clearGrid = false,
   }) =>
       HoleSetup(
         enabled: enabled ?? this.enabled,
@@ -79,6 +93,7 @@ class HoleSetup {
         greenDepth: greenDepth ?? this.greenDepth,
         greenOffset: greenOffset ?? this.greenOffset,
         fairwayWidth: fairwayWidth ?? this.fairwayWidth,
+        grid: clearGrid ? null : (grid ?? this.grid),
       ).clamped;
 
   /// Every dimension forced into a sane range.
@@ -92,6 +107,7 @@ class HoleSetup {
             greenOffset.clamp(-maxGreenOffset, maxGreenOffset).toDouble(),
         fairwayWidth:
             fairwayWidth.clamp(minFairwayWidth, maxFairwayWidth).toDouble(),
+        grid: grid,
       );
 
   /// Downrange distance to the front edge of the green.
@@ -108,8 +124,32 @@ class HoleSetup {
   /// The green is an ellipse; the fairway is a strip from the tee to the front
   /// of the green; everything else — beside the fairway, around the green,
   /// past the back — is rough.
+  /// The full terrain at a point — the grid's answer when there is one, and
+  /// the analytic hole's three-way answer widened to fit when there is not.
+  Terrain terrainAt(double x, double z) {
+    final built = grid;
+    if (built != null) return enabled ? built.terrainAt(x, z) : Terrain.fairway;
+    return switch (surfaceAt(x, z)) {
+      Surface.green => Terrain.green,
+      Surface.fairway => Terrain.fairway,
+      Surface.rough => Terrain.rough,
+    };
+  }
+
   Surface surfaceAt(double x, double z) {
     if (!enabled) return Surface.fairway;
+
+    // A built hole overrides the fairway-and-green description entirely.
+    // Anything the old three-way vocabulary has no word for is reported as
+    // rough, which is what a caller that only knows Surface should assume.
+    final built = grid;
+    if (built != null) {
+      return switch (built.terrainAt(x, z)) {
+        Terrain.green => Surface.green,
+        Terrain.fairway => Surface.fairway,
+        _ => Surface.rough,
+      };
+    }
 
     final halfWidth = greenWidth / 2;
     final halfDepth = greenDepth / 2;
@@ -128,11 +168,16 @@ class HoleSetup {
 
   /// Turf model for a point on the ground — what the flight model's ground
   /// phase asks at every contact.
-  GroundModel groundAt(double x, double z) => switch (surfaceAt(x, z)) {
-        Surface.green => GroundModel.green,
-        Surface.fairway => GroundModel.fairway,
-        Surface.rough => GroundModel.rough,
-      };
+  GroundModel groundAt(double x, double z) => terrainAt(x, z).ground;
+
+  /// What finishing at a point means for the shot — in play, wet, or gone.
+  ShotOutcome outcomeAt(double x, double z) =>
+      enabled ? terrainAt(x, z).outcome : ShotOutcome.inPlay;
+
+  /// Whether touching down here ends the shot on the spot. Handed to the
+  /// flight model, which knows nothing about hazards beyond this answer.
+  bool stopsAt(double x, double z) =>
+      enabled && terrainAt(x, z).stopsShot;
 
   /// Distance from the pin to a resting ball, in yards.
   double distanceFromPin(Vec3 rest) {
@@ -148,6 +193,7 @@ class HoleSetup {
         'greenDepth': greenDepth,
         'greenOffset': greenOffset,
         'fairwayWidth': fairwayWidth,
+        if (grid != null) 'grid': grid!.toJson(),
       };
 
   factory HoleSetup.fromJson(Map<String, dynamic> json) => HoleSetup(
@@ -157,6 +203,10 @@ class HoleSetup {
         greenDepth: (json['greenDepth'] as num?)?.toDouble() ?? 25,
         greenOffset: (json['greenOffset'] as num?)?.toDouble() ?? 0,
         fairwayWidth: (json['fairwayWidth'] as num?)?.toDouble() ?? 40,
+        grid: json['grid'] == null
+            ? null
+            : HoleGrid.fromJson(
+                (json['grid'] as Map).cast<String, dynamic>()),
       ).clamped;
 
   @override
@@ -168,11 +218,12 @@ class HoleSetup {
           greenWidth == other.greenWidth &&
           greenDepth == other.greenDepth &&
           greenOffset == other.greenOffset &&
-          fairwayWidth == other.fairwayWidth;
+          fairwayWidth == other.fairwayWidth &&
+          grid == other.grid;
 
   @override
   int get hashCode => Object.hash(enabled, greenDistance, greenWidth,
-      greenDepth, greenOffset, fairwayWidth);
+      greenDepth, greenOffset, fairwayWidth, grid);
 
   @override
   String toString() => enabled

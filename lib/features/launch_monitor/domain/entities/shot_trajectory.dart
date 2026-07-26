@@ -269,6 +269,20 @@ class GroundModel {
     rollingResistance: 1.10,
     restitutionScale: 0.45,
   );
+
+  /// Sand. The most extreme surface here, and deliberately so: a ball landing
+  /// in a bunker plugs rather than bounces.
+  ///
+  /// Ploughing dominates — the crater wall in dry sand is most of what stops
+  /// the ball, far more than friction — and restitution is near zero, so
+  /// there is essentially no hop to carry speed into a roll. What little
+  /// forward motion survives dies almost immediately.
+  static const bunker = GroundModel(
+    ploughing: 0.80,
+    slidingFriction: 0.72,
+    rollingResistance: 2.20,
+    restitutionScale: 0.12,
+  );
 }
 
 // ── Model ────────────────────────────────────────────────────────────────────
@@ -395,6 +409,7 @@ class BallFlightModel {
     required double spinAxisDeg,
     double? measuredRollYds,
     GroundModel Function(double xYards, double zYards)? groundAt,
+    bool Function(double xYards, double zYards)? stopsAt,
   }) {
     if (ballSpeedMph <= 0 || launchAngleDeg <= 0) return ShotTrajectory.empty;
 
@@ -490,6 +505,7 @@ class BallFlightModel {
       spin: landSpin,
       startTime: landTime,
       groundAt: groundAt,
+      stopsAt: stopsAt,
     );
 
     var groundPoints = ground.points;
@@ -625,12 +641,22 @@ class BallFlightModel {
     required Vec3 spin,
     required double startTime,
     GroundModel Function(double xYards, double zYards)? groundAt,
+    bool Function(double xYards, double zYards)? stopsAt,
   }) {
     /// Turf under the ball right now. Resolved per contact, not once at
     /// landing, so crossing from fairway onto a green changes the behaviour
     /// mid-roll.
     GroundModel turfAt(Vec3 p) =>
         groundAt?.call(p.x * _mToYd, p.z * _mToYd) ?? ground;
+
+    /// Whether the ball is finished the moment it touches here.
+    ///
+    /// Water and out of bounds are not surfaces to roll on — the shot is over
+    /// where it arrives. Asking a predicate rather than reading a terrain type
+    /// keeps golf's rules out of the integrator: this file knows only that
+    /// some ground ends the shot.
+    bool finishedAt(Vec3 p) =>
+        stopsAt?.call(p.x * _mToYd, p.z * _mToYd) ?? false;
 
     var p = position;
     var v = velocity;
@@ -653,6 +679,17 @@ class BallFlightModel {
       v = Vec3(v.x, 0, v.z);
     }
     sample();
+
+    // Pitching straight into water, or over the line, ends it here — before
+    // any of the bounce it just picked up is allowed to carry it anywhere.
+    if (finishedAt(p)) {
+      return _GroundResult(
+        points: samples,
+        rest: p,
+        duration: t - startTime,
+        bounces: bounces,
+      );
+    }
 
     final h = stepSeconds;
     final spinDecayPerStep = math.exp(-h / spinDecaySeconds);
@@ -684,6 +721,8 @@ class BallFlightModel {
             v = Vec3(v.x, 0, v.z);
           }
           sample();
+          // Bounced into it — same rule as landing in it.
+          if (finishedAt(p)) break;
           continue;
         }
       } else {
@@ -692,6 +731,13 @@ class BallFlightModel {
         w = rolling.$2;
         p = Vec3(p.x + v.x * h, 0, p.z + v.z * h);
         t += h;
+
+        // Trickling in counts too — a ball that rolls into a hazard is as
+        // lost as one that flew there.
+        if (finishedAt(p)) {
+          sample();
+          break;
+        }
 
         final contact = _contactVelocity(v, w);
         if (v.length < _restSpeedMps && contact.length < 3 * _restSpeedMps) {
