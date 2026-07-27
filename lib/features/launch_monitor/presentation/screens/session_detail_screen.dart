@@ -13,6 +13,7 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/d
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/flight_3d_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/table_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/tiles_tab.dart';
+import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 // ── Top-level view options ────────────────────────────────────────────────────
@@ -40,6 +41,21 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
   // Split pane configuration — persists across view switches
   _PaneView _splitLeft = _PaneView.table;
   _PaneView _splitRight = _PaneView.dispersion;
+
+  @override
+  void initState() {
+    super.initState();
+    // The split opens on whatever pair it was last configured to — the
+    // same stored pair the live session uses. Names this screen's pane
+    // enum has no member for (the live screen has more) keep the default.
+    final prefs = ref.read(unitPrefsProvider);
+    _splitLeft = _paneFromName(prefs.splitLeftPane, _PaneView.table);
+    _splitRight = _paneFromName(prefs.splitRightPane, _PaneView.dispersion);
+  }
+
+  static _PaneView _paneFromName(String name, _PaneView fallback) => _PaneView
+      .values
+      .firstWhere((v) => v.name == name, orElse: () => fallback);
 
   // Index into allShots.
   int _selectedShotIndex = 0;
@@ -103,8 +119,14 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
         leftPane: _splitLeft,
         rightPane: _splitRight,
         selectedShotIndex: selectedInClub >= 0 ? selectedInClub : 0,
-        onLeftChanged: (v) => setState(() => _splitLeft = v),
-        onRightChanged: (v) => setState(() => _splitRight = v),
+        onLeftChanged: (v) {
+          setState(() => _splitLeft = v);
+          ref.read(unitPrefsProvider.notifier).setSplitPanes(left: v.name);
+        },
+        onRightChanged: (v) {
+          setState(() => _splitRight = v);
+          ref.read(unitPrefsProvider.notifier).setSplitPanes(right: v.name);
+        },
         onShotSelected: (i) => setState(() {
           if (i != null && i < shots.length) {
             final allIdx = allShots.indexOf(shots[i]);
@@ -441,6 +463,9 @@ class _SplitViewConfigurable extends StatelessWidget {
           shots: shots,
           selectedShot: highlightedShot,
           clubs: clubs,
+          // Half a screen is too small to spend a row on numbers the
+          // neighbouring pane already shows.
+          showStatBar: false,
         );
       case _PaneView.club:
         return ClubTab(

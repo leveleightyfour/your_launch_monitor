@@ -66,6 +66,12 @@ class UnitPrefs {
   /// coordinated scene (sky plus turf), not just a backdrop colour.
   final SkyScene skyScene;
 
+  /// The split view's two pane choices, stored by pane-enum name so the
+  /// screens' private enums stay private. Unknown names fall back to the
+  /// screen's own default.
+  final String splitLeftPane;
+  final String splitRightPane;
+
   const UnitPrefs({
     this.distance = DistanceUnit.meters,
     this.speed = SpeedUnit.mph,
@@ -73,6 +79,8 @@ class UnitPrefs {
     this.autoReconnect = true,
     this.showTestShotButton = false,
     this.skyScene = SkyScene.day,
+    this.splitLeftPane = 'table',
+    this.splitRightPane = 'dispersion',
   });
 
   UnitPrefs copyWith({
@@ -82,6 +90,8 @@ class UnitPrefs {
     bool? autoReconnect,
     bool? showTestShotButton,
     SkyScene? skyScene,
+    String? splitLeftPane,
+    String? splitRightPane,
   }) => UnitPrefs(
     distance: distance ?? this.distance,
     speed: speed ?? this.speed,
@@ -89,6 +99,8 @@ class UnitPrefs {
     autoReconnect: autoReconnect ?? this.autoReconnect,
     showTestShotButton: showTestShotButton ?? this.showTestShotButton,
     skyScene: skyScene ?? this.skyScene,
+    splitLeftPane: splitLeftPane ?? this.splitLeftPane,
+    splitRightPane: splitRightPane ?? this.splitRightPane,
   );
 
   /// Display label for distance values.
@@ -115,6 +127,8 @@ class UnitPrefs {
     'autoReconnect': autoReconnect,
     'showTestShotButton': showTestShotButton,
     'skyScene': skyScene.name,
+    'splitLeftPane': splitLeftPane,
+    'splitRightPane': splitRightPane,
   };
 
   factory UnitPrefs.fromJson(Map<String, dynamic> j) => UnitPrefs(
@@ -136,6 +150,8 @@ class UnitPrefs {
       (e) => e.name == j['skyScene'],
       orElse: () => SkyScene.day,
     ),
+    splitLeftPane: j['splitLeftPane'] as String? ?? 'table',
+    splitRightPane: j['splitRightPane'] as String? ?? 'dispersion',
   );
 }
 
@@ -181,6 +197,11 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
 
   void setSkyScene(SkyScene scene) {
     state = state.copyWith(skyScene: scene);
+    _save();
+  }
+
+  void setSplitPanes({String? left, String? right}) {
+    state = state.copyWith(splitLeftPane: left, splitRightPane: right);
     _save();
   }
 

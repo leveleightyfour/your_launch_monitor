@@ -145,11 +145,17 @@ class Flight3DTab extends ConsumerStatefulWidget {
 
   final List<Club> clubs;
 
+  /// Whether the stat bar renders above the scene. The full-tab view wants
+  /// it; a split pane is too small to spend a row on numbers that already
+  /// live in the neighbouring pane's table.
+  final bool showStatBar;
+
   const Flight3DTab({
     super.key,
     required this.shots,
     this.selectedShot,
     this.clubs = const [],
+    this.showStatBar = true,
   });
 
   @override
@@ -330,12 +336,13 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
         final density = _Density.forSize(constraints.biggest);
         return Column(
           children: [
-            _FlightStatBar(
-              shot: shot,
-              trajectory: trajectory,
-              prefs: prefs,
-              density: density,
-            ),
+            if (widget.showStatBar)
+              _FlightStatBar(
+                shot: shot,
+                trajectory: trajectory,
+                prefs: prefs,
+                density: density,
+              ),
             Expanded(
               child: Stack(
                 children: [
