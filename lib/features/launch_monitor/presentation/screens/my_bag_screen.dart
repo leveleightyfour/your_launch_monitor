@@ -257,6 +257,9 @@ class _ClubsTab extends ConsumerWidget {
   }
 
   void _openAddClubs(BuildContext context, WidgetRef ref) {
+    // A lingering remove-undo snackbar would follow onto the next screen —
+    // the messenger is root-level, not per-route.
+    ScaffoldMessenger.of(context).clearSnackBars();
     context.push('/bag/add-clubs');
   }
 
@@ -286,9 +289,14 @@ class _ClubsTab extends ConsumerWidget {
     if (wasFilter) filterNotifier.state = null;
 
     final accent = context.accent;
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    // Replace any showing snackbar instead of queueing behind it — removing
+    // several clubs in a row otherwise leaves a backlog of stale undo bars.
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
       SnackBar(
         backgroundColor: AppColors.card,
+        duration: const Duration(seconds: 3),
         content: Text(
           '${club.shortName} removed from bag',
           style: AppTextStyles.sans(size: 13),
@@ -812,40 +820,31 @@ class AddClubsScreen extends ConsumerStatefulWidget {
 }
 
 class _AddClubsScreenState extends ConsumerState<AddClubsScreen> {
-  // Local selection mirror — initialised from the current bag.
-  late Set<String> _selected;
+  /// Clubs already in the bag — shown locked. This screen only adds;
+  /// removal lives in the bag list, which has undo and keeps club tags.
+  late final Set<String> _inBag;
+
+  /// Newly picked clubs, added on apply.
+  final Set<String> _selected = {};
 
   @override
   void initState() {
     super.initState();
-    _selected = ref.read(clubsProvider).map((c) => c.id).toSet();
+    _inBag = ref.read(clubsProvider).map((c) => c.id).toSet();
   }
 
   void _toggle(String id) {
+    if (_inBag.contains(id)) return;
     setState(() {
-      if (_selected.contains(id)) {
-        _selected.remove(id);
-      } else {
-        _selected.add(id);
-      }
+      if (!_selected.add(id)) _selected.remove(id);
     });
   }
 
   void _apply() {
     final notifier = ref.read(clubsProvider.notifier);
-    final current = ref.read(clubsProvider).map((c) => c.id).toSet();
-
-    // Add newly selected clubs (in catalog order).
+    // Catalog order, so new clubs land in their natural section order.
     for (final club in Club.catalog) {
-      if (_selected.contains(club.id) && !current.contains(club.id)) {
-        notifier.addClub(club);
-      }
-    }
-    // Remove de-selected clubs.
-    for (final id in current) {
-      if (!_selected.contains(id)) {
-        notifier.removeClub(id);
-      }
+      if (_selected.contains(club.id)) notifier.addClub(club);
     }
     context.pop();
   }
@@ -909,7 +908,9 @@ class _AddClubsScreenState extends ConsumerState<AddClubsScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            '${_selected.length}/${Club.catalog.length}',
+                            _selected.isEmpty
+                                ? 'Done'
+                                : 'Add ${_selected.length}',
                             style: AppTextStyles.sans(
                               size: 13,
                               weight: FontWeight.w600,
@@ -966,6 +967,7 @@ class _AddClubsScreenState extends ConsumerState<AddClubsScreen> {
                                 _ClubCircle(
                                   club: club,
                                   selected: _selected.contains(club.id),
+                                  inBag: _inBag.contains(club.id),
                                   onTap: () => _toggle(club.id),
                                 ),
                             ],
@@ -987,36 +989,67 @@ class _AddClubsScreenState extends ConsumerState<AddClubsScreen> {
 class _ClubCircle extends StatelessWidget {
   final Club club;
   final bool selected;
+
+  /// Already in the bag: rendered locked. Removal is the bag list's job.
+  final bool inBag;
+
   final VoidCallback onTap;
 
   const _ClubCircle({
     required this.club,
     required this.selected,
+    required this.inBag,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 64,
-        height: 64,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: selected ? context.accentGhost : AppColors.card,
-          border: Border.all(
-            color: selected ? context.accent : AppColors.border2,
-            width: selected ? 2.0 : 1.0,
-          ),
-        ),
-        child: Center(
-          child: Text(
-            club.shortName,
-            style: AppTextStyles.sans(
-              size: 13,
-              weight: selected ? FontWeight.w600 : FontWeight.w400,
-              color: selected ? context.accent : Colors.white,
+    return Tooltip(
+      message: inBag ? '${club.shortName} is already in the bag' : '',
+      child: Semantics(
+        button: !inBag,
+        selected: selected,
+        label: inBag ? '${club.shortName}, already in bag' : club.shortName,
+        child: GestureDetector(
+          onTap: inBag ? null : onTap,
+          child: Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected ? context.accentGhost : AppColors.card,
+              border: Border.all(
+                color: selected ? context.accent : AppColors.border2,
+                width: selected ? 2.0 : 1.0,
+              ),
+            ),
+            child: Center(
+              child: inBag
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          club.shortName,
+                          style: AppTextStyles.sans(
+                            size: 13,
+                            color: AppColors.textDimmed,
+                          ),
+                        ),
+                        const Icon(
+                          Icons.check,
+                          size: 10,
+                          color: AppColors.textDimmed,
+                        ),
+                      ],
+                    )
+                  : Text(
+                      club.shortName,
+                      style: AppTextStyles.sans(
+                        size: 13,
+                        weight: selected ? FontWeight.w600 : FontWeight.w400,
+                        color: selected ? context.accent : Colors.white,
+                      ),
+                    ),
             ),
           ),
         ),
