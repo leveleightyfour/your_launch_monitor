@@ -86,6 +86,47 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
     metric: widget.prefs.distance == DistanceUnit.meters,
   );
 
+  /// Switch the plan between coarse and fine squares. Resampling keeps the
+  /// painted ground (and the pin), and it is undoable like any stroke.
+  Widget _cellSizeChip(double sizeYards) {
+    final selected = (_grid.cellSize - sizeYards).abs() < 0.01;
+    final display = widget.prefs.dist(sizeYards);
+    final text = display == display.roundToDouble()
+        ? display.round().toString()
+        : display.toStringAsFixed(1);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: 'Cell size $text ${widget.prefs.distLabel}',
+      child: GestureDetector(
+        onTap: selected
+            ? null
+            : () => setState(() {
+                _push();
+                _grid = _grid.resized(sizeYards);
+              }),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+          decoration: BoxDecoration(
+            color: selected ? context.accentSubtle : AppColors.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? context.accent : AppColors.border,
+            ),
+          ),
+          child: Text(
+            text,
+            style: AppTextStyles.mono(
+              size: 11,
+              color: selected ? context.accent : AppColors.textMuted,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// The grid being edited. Exposed so the painting rules can be tested
   /// without reaching through the widget tree.
   @visibleForTesting
@@ -315,6 +356,10 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
             style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
           ),
         ),
+        _cellSizeChip(_cellSize),
+        const SizedBox(width: 6),
+        _cellSizeChip(_cellSize / 2),
+        const SizedBox(width: 10),
         Text(
           '${_grid.cols}×${_grid.rows}',
           style: AppTextStyles.mono(size: 11, color: AppColors.textDimmed),
@@ -560,15 +605,34 @@ class _PlanPainter extends CustomPainter {
     final cw = size.width / grid.cols;
     final ch = size.height / grid.rows;
 
+    // Cells merge into horizontal runs before drawing — the same trick the
+    // 3D painter uses. A fine-celled hole is tens of thousands of cells,
+    // and per-cell rects at that count drop frames while painting.
     for (var row = 0; row < grid.rows; row++) {
       // Row 0 is the tee and belongs at the bottom of the plan.
       final top = size.height - (row + 1) * ch;
-      for (var col = 0; col < grid.cols; col++) {
+      var runStart = 0;
+      var runTerrain = grid.at(0, row);
+      void flush(int endCol) {
         canvas.drawRect(
-          Rect.fromLTWH(col * cw, top, cw + 0.5, ch + 0.5),
-          Paint()..color = grid.at(col, row).planColor,
+          Rect.fromLTWH(
+            runStart * cw,
+            top,
+            (endCol - runStart) * cw + 0.5,
+            ch + 0.5,
+          ),
+          Paint()..color = runTerrain.planColor,
         );
       }
+
+      for (var col = 1; col < grid.cols; col++) {
+        final terrain = grid.at(col, row);
+        if (terrain == runTerrain) continue;
+        flush(col);
+        runStart = col;
+        runTerrain = terrain;
+      }
+      flush(grid.cols);
     }
 
     // Cell lines, but only while they are far enough apart to be a guide
