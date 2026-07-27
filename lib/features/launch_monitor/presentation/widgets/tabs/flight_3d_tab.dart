@@ -1811,32 +1811,39 @@ class _FlightPainter extends CustomPainter {
     // It is drawn as mown bands rather than one strip: the way the bands
     // converge is most of what makes the surface read as receding, and it
     // costs a dozen extra polygons.
-    final fairwayHalf = course != null
-        ? course.fairwayWidth / 2
-        : math.min(halfWidth * 0.5, 30.0);
-    final fairwayEnd = course != null ? course.greenFront : maxDepth;
-    // Lanes are laid out from the target line outwards, not from the fairway
-    // edge inwards. Anchoring at the edge moved every band whenever the width
-    // changed, and left the two sides of the fairway out of step with each
-    // other.
-    final firstLane = (-fairwayHalf / _stripeWidth).floor();
-    final lastLane = (fairwayHalf / _stripeWidth).ceil();
-    for (var lane = firstLane; lane < lastLane; lane++) {
-      final left = math.max(lane * _stripeWidth, -fairwayHalf);
-      // Overlap the neighbour a hair; abutting fills leave an antialiased seam.
-      final right = math.min((lane + 1) * _stripeWidth + 0.05, fairwayHalf);
-      if (right - left < 0.01) continue;
-      _polygon3(
-        canvas,
-        camera,
-        [
-          Vec3(left, 0, behind),
-          Vec3(right, 0, behind),
-          Vec3(right, 0, fairwayEnd),
-          Vec3(left, 0, fairwayEnd),
-        ],
-        Paint()..color = lane.isEven ? scene.fairway : scene.fairwayStripe,
-      );
+    //
+    // A built hole paints none of this: its cells say where the mown ground
+    // is, and these analytic bands would show through every cell the grid
+    // calls rough — a phantom default fairway under the painted hole.
+    if (course?.grid == null) {
+      final fairwayHalf = course != null
+          ? course.fairwayWidth / 2
+          : math.min(halfWidth * 0.5, 30.0);
+      final fairwayEnd = course != null ? course.greenFront : maxDepth;
+      // Lanes are laid out from the target line outwards, not from the
+      // fairway edge inwards. Anchoring at the edge moved every band
+      // whenever the width changed, and left the two sides of the fairway
+      // out of step with each other.
+      final firstLane = (-fairwayHalf / _stripeWidth).floor();
+      final lastLane = (fairwayHalf / _stripeWidth).ceil();
+      for (var lane = firstLane; lane < lastLane; lane++) {
+        final left = math.max(lane * _stripeWidth, -fairwayHalf);
+        // Overlap the neighbour a hair; abutting fills leave an antialiased
+        // seam.
+        final right = math.min((lane + 1) * _stripeWidth + 0.05, fairwayHalf);
+        if (right - left < 0.01) continue;
+        _polygon3(
+          canvas,
+          camera,
+          [
+            Vec3(left, 0, behind),
+            Vec3(right, 0, behind),
+            Vec3(right, 0, fairwayEnd),
+            Vec3(left, 0, fairwayEnd),
+          ],
+          Paint()..color = lane.isEven ? scene.fairway : scene.fairwayStripe,
+        );
+      }
     }
 
     // Cross lines — faded with distance so the horizon doesn't turn solid.
