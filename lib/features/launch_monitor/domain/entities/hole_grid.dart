@@ -31,12 +31,49 @@ class HoleGrid {
   /// Row-major, `rows * cols` entries. Row 0 is at the tee.
   final List<Terrain> cells;
 
+  /// The placed pin's cell, or null when none has been placed. Invariant:
+  /// a pin only ever sits on a green cell — every transform that could
+  /// break that (repainting the cell, resizing the hole past it) drops the
+  /// pin rather than leaving it standing in a bunker.
+  final int? pinCol;
+  final int? pinRow;
+
   const HoleGrid({
     required this.cellSize,
     required this.cols,
     required this.rows,
     required this.cells,
+    this.pinCol,
+    this.pinRow,
   });
+
+  bool get hasPin => pinCol != null && pinRow != null;
+
+  /// World position of the pin, at its cell's centre: (x, z) in yards.
+  (double, double)? get pinCentre => hasPin
+      ? (left + (pinCol! + 0.5) * cellSize, (pinRow! + 0.5) * cellSize)
+      : null;
+
+  /// A copy with the pin placed at a cell's centre. Only green takes a pin;
+  /// anywhere else the request is ignored and `this` returns unchanged.
+  HoleGrid withPin(int col, int row) {
+    if (col < 0 || col >= cols || row < 0 || row >= rows) return this;
+    if (at(col, row) != Terrain.green) return this;
+    if (col == pinCol && row == pinRow) return this;
+    return HoleGrid(
+      cellSize: cellSize,
+      cols: cols,
+      rows: rows,
+      cells: cells,
+      pinCol: col,
+      pinRow: row,
+    );
+  }
+
+  /// A copy with no pin.
+  HoleGrid withoutPin() => hasPin
+      ? HoleGrid(cellSize: cellSize, cols: cols, rows: rows, cells: cells)
+      : this;
 
   static const defaultCellSize = 5.0;
   static const minCellSize = 2.0;
@@ -74,7 +111,16 @@ class HoleGrid {
         next.add(row < rows ? at(col, row) : Terrain.rough);
       }
     }
-    return HoleGrid(cellSize: cellSize, cols: cols, rows: r, cells: next);
+    // Shortening past the pin deletes the green it stood on.
+    final keepPin = hasPin && pinRow! < r;
+    return HoleGrid(
+      cellSize: cellSize,
+      cols: cols,
+      rows: r,
+      cells: next,
+      pinCol: keepPin ? pinCol : null,
+      pinRow: keepPin ? pinRow : null,
+    );
   }
 
   HoleGrid extended() => withRows(rows + lengthStepCells);
@@ -112,7 +158,17 @@ class HoleGrid {
         );
       }
     }
-    return HoleGrid(cellSize: cellSize, cols: c, rows: rows, cells: next);
+    // The pin's cell moves with its column; narrowing past it drops it.
+    final shifted = hasPin ? pinCol! + offset : null;
+    final keepPin = shifted != null && shifted >= 0 && shifted < c;
+    return HoleGrid(
+      cellSize: cellSize,
+      cols: c,
+      rows: rows,
+      cells: next,
+      pinCol: keepPin ? shifted : null,
+      pinRow: keepPin ? pinRow : null,
+    );
   }
 
   HoleGrid widened() => withCols(cols + widthStepCells);
@@ -173,11 +229,16 @@ class HoleGrid {
     if (col < 0 || col >= cols || row < 0 || row >= rows) return this;
     final next = List<Terrain>.of(cells);
     next[row * cols + col] = terrain;
+    // Painting the pin's own green away takes the pin with it.
+    final keepPin =
+        hasPin && !(col == pinCol && row == pinRow && terrain != Terrain.green);
     return HoleGrid(
       cellSize: cellSize,
       cols: cols,
       rows: rows,
       cells: next,
+      pinCol: keepPin ? pinCol : null,
+      pinRow: keepPin ? pinRow : null,
     );
   }
 
@@ -200,11 +261,20 @@ class HoleGrid {
         next[r * cols + c] = terrain;
       }
     }
+    final pinCovered =
+        hasPin &&
+        pinCol! >= c0 &&
+        pinCol! <= c1 &&
+        pinRow! >= r0 &&
+        pinRow! <= r1;
+    final keepPin = hasPin && !(pinCovered && terrain != Terrain.green);
     return HoleGrid(
       cellSize: cellSize,
       cols: cols,
       rows: rows,
       cells: next,
+      pinCol: keepPin ? pinCol : null,
+      pinRow: keepPin ? pinRow : null,
     );
   }
 
@@ -228,7 +298,15 @@ class HoleGrid {
         next.add(at(sc, sr));
       }
     }
-    return HoleGrid(cellSize: size, cols: c, rows: r, cells: next);
+    final resampled = HoleGrid(cellSize: size, cols: c, rows: r, cells: next);
+    // Re-place the pin at whatever new cell covers its old world position;
+    // withPin drops it cleanly if that cell resampled to something else.
+    final pin = pinCentre;
+    if (pin == null) return resampled;
+    final pc = resampled.colFor(pin.$1);
+    final pr = resampled.rowFor(pin.$2);
+    if (pc == null || pr == null) return resampled;
+    return resampled.withPin(pc, pr);
   }
 
   /// Cells as runs: `12f8r3w...`, read row-major.
@@ -277,22 +355,29 @@ class HoleGrid {
   }
 
   Map<String, dynamic> toJson() => {
-        'cell': cellSize,
-        'cols': cols,
-        'rows': rows,
-        'g': encode(),
-      };
+    'cell': cellSize,
+    'cols': cols,
+    'rows': rows,
+    'g': encode(),
+    if (hasPin) 'pc': pinCol,
+    if (hasPin) 'pr': pinRow,
+  };
 
   factory HoleGrid.fromJson(Map<String, dynamic> json) {
     final cellSize = (json['cell'] as num?)?.toDouble() ?? defaultCellSize;
     final cols = math.max(1, (json['cols'] as num?)?.toInt() ?? 1);
     final rows = math.max(1, (json['rows'] as num?)?.toInt() ?? 1);
-    return HoleGrid(
+    final bare = HoleGrid(
       cellSize: cellSize.clamp(minCellSize, maxCellSize).toDouble(),
       cols: cols,
       rows: rows,
       cells: _decodeCells(json['g'] as String? ?? '', cols * rows),
     );
+    // withPin re-validates: a stored pin that no longer sits on green
+    // (corrupt or hand-edited data) is dropped rather than trusted.
+    final pc = (json['pc'] as num?)?.toInt();
+    final pr = (json['pr'] as num?)?.toInt();
+    return (pc != null && pr != null) ? bare.withPin(pc, pr) : bare;
   }
 
   @override
@@ -302,6 +387,8 @@ class HoleGrid {
           cellSize == other.cellSize &&
           cols == other.cols &&
           rows == other.rows &&
+          pinCol == other.pinCol &&
+          pinRow == other.pinRow &&
           _sameCells(cells, other.cells);
 
   static bool _sameCells(List<Terrain> a, List<Terrain> b) {
@@ -313,7 +400,8 @@ class HoleGrid {
   }
 
   @override
-  int get hashCode => Object.hash(cellSize, cols, rows, encode());
+  int get hashCode =>
+      Object.hash(cellSize, cols, rows, encode(), pinCol, pinRow);
 
   @override
   String toString() =>

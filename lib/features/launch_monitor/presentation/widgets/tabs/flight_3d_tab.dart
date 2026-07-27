@@ -1534,12 +1534,18 @@ class _FlightPainter extends CustomPainter {
     );
   }
 
-  /// The pin on a built hole: the middle of wherever the green cells are.
+  /// The pin on a built hole.
   ///
-  /// A painted green has no centre to read off a setting, so it is measured.
-  /// No green cells means no pin, which is correct — a hole can be built
-  /// without one.
+  /// A pin the player placed wins; without one, the middle of wherever the
+  /// green cells are stands in — a painted green has no centre to read off
+  /// a setting, so it is measured. No green cells means no pin, which is
+  /// correct — a hole can be built without one.
   void _paintPinAt(Canvas canvas, _Camera camera, HoleGrid grid) {
+    final placed = grid.pinCentre;
+    if (placed != null) {
+      _paintFlagstick(canvas, camera, Vec3(placed.$1, 0, placed.$2));
+      return;
+    }
     var sx = 0.0, sz = 0.0, n = 0;
     for (var row = 0; row < grid.rows; row++) {
       for (var col = 0; col < grid.cols; col++) {
