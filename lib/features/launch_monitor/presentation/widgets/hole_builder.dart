@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_grid.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/terrain.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/saved_holes_sheet.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -442,6 +443,20 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
     ),
   );
 
+  /// Opens the hole library. A loaded hole replaces the plan (undoable);
+  /// the sheet also saves, shares, and imports holes.
+  Future<void> _openSavedHoles(BuildContext context) async {
+    final loaded = await showSavedHolesSheet(
+      context,
+      current: widget.hole.copyWith(enabled: true, grid: _grid),
+    );
+    if (loaded == null || !mounted) return;
+    setState(() {
+      _push();
+      _grid = loaded.grid ?? seedHoleGrid(loaded, cellSize: _cellSize);
+    });
+  }
+
   Widget _actions(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
     child: Row(
@@ -454,6 +469,14 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
           ),
         ),
         const Spacer(),
+        TextButton(
+          onPressed: () => _openSavedHoles(context),
+          child: Text(
+            'Holes',
+            style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
+          ),
+        ),
+        const SizedBox(width: 8),
         TextButton(
           onPressed: () => setState(() {
             _push();
