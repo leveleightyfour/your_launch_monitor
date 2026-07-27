@@ -816,6 +816,30 @@ extension on ShotData {
   }
 }
 
+/// Human-readable name of the protocol club the device tracks for [club].
+///
+/// The Square Golf protocol models a fixed club set; app clubs outside it
+/// are bucketed to the nearest code by [_clubCodeFor]. Shots keep the app
+/// club's identity regardless — this only names what the device is told.
+String deviceClubLabel(Club club) {
+  final code = _clubCodeFor(club);
+  if (code == sg.ClubCodes.driver) return 'Driver';
+  if (code == sg.ClubCodes.wood3) return '3 Wood';
+  if (code == sg.ClubCodes.wood5) return '5 Wood';
+  if (code == sg.ClubCodes.wood7) return '7 Wood';
+  if (code == sg.ClubCodes.iron4) return '4 Iron';
+  if (code == sg.ClubCodes.iron5) return '5 Iron';
+  if (code == sg.ClubCodes.iron6) return '6 Iron';
+  if (code == sg.ClubCodes.iron7) return '7 Iron';
+  if (code == sg.ClubCodes.iron8) return '8 Iron';
+  if (code == sg.ClubCodes.iron9) return '9 Iron';
+  if (code == sg.ClubCodes.pitchingWedge) return 'Pitching Wedge';
+  if (code == sg.ClubCodes.approachWedge) return 'Approach Wedge';
+  if (code == sg.ClubCodes.sandWedge) return 'Sand Wedge';
+  if (code == sg.ClubCodes.putter) return 'Putter';
+  return 'Driver';
+}
+
 /// Maps an app [Club] to the closest Square Golf protocol [sg.ClubCode]. The
 /// protocol only models a fixed set of clubs (driver, 3/5/7 wood, 4–9 iron,
 /// PW/AW/SW, putter), so app clubs outside that set are mapped to the nearest

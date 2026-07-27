@@ -223,12 +223,28 @@ class _ClubsTab extends ConsumerWidget {
               final isSelected = club.id == selected?.id;
               return Column(
                 children: [
-                  _ClubTile(
-                    club: club,
-                    isSelected: isSelected,
-                    onTap: () =>
-                        ref.read(selectedClubProvider.notifier).state = club,
-                    onEdit: () => _showEditSheet(context, ref, club),
+                  Dismissible(
+                    key: ValueKey(club.id),
+                    direction: DismissDirection.endToStart,
+                    onDismissed: (_) => _removeFromBag(context, ref, club),
+                    background: Container(
+                      color: AppColors.errorBackground,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 20),
+                      child: const Icon(
+                        Icons.delete_outline,
+                        size: 18,
+                        color: AppColors.errorText,
+                      ),
+                    ),
+                    child: _ClubTile(
+                      club: club,
+                      isSelected: isSelected,
+                      onTap: () =>
+                          ref.read(selectedClubProvider.notifier).state = club,
+                      onEdit: () => _showEditSheet(context, ref, club),
+                      onRemove: () => _removeFromBag(context, ref, club),
+                    ),
                   ),
                   const Divider(height: 1, color: AppColors.border, indent: 16),
                 ],
@@ -242,6 +258,51 @@ class _ClubsTab extends ConsumerWidget {
 
   void _openAddClubs(BuildContext context, WidgetRef ref) {
     context.push('/bag/add-clubs');
+  }
+
+  /// Takes a club out of the bag, with undo. Shots already tagged with it
+  /// keep their data; the club can also come back via "Add clubs".
+  void _removeFromBag(BuildContext context, WidgetRef ref, Club club) {
+    final clubs = ref.read(clubsProvider);
+    final index = clubs.indexWhere((c) => c.id == club.id);
+    if (index < 0) return;
+    final wasActive = ref.read(activeClubProvider)?.id == club.id;
+    final wasFilter = ref.read(selectedClubProvider)?.id == club.id;
+
+    // Captured up front so the undo action outlives this widget.
+    final clubsNotifier = ref.read(clubsProvider.notifier);
+    final activeNotifier = ref.read(activeClubProvider.notifier);
+    final filterNotifier = ref.read(selectedClubProvider.notifier);
+
+    clubsNotifier.removeClub(club.id);
+
+    // Never leave the device tracking a club that left the bag: hand the
+    // active slot to the first club still in it. The active-club listener
+    // pushes the change to the device (re-arming if detection is on).
+    if (wasActive) {
+      final remaining = ref.read(clubsProvider);
+      activeNotifier.state = remaining.isEmpty ? null : remaining.first;
+    }
+    if (wasFilter) filterNotifier.state = null;
+
+    final accent = context.accent;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.card,
+        content: Text(
+          '${club.shortName} removed from bag',
+          style: AppTextStyles.sans(size: 13),
+        ),
+        action: SnackBarAction(
+          label: 'Undo',
+          textColor: accent,
+          onPressed: () {
+            clubsNotifier.insertClub(club, index);
+            if (wasActive) activeNotifier.state = club;
+          },
+        ),
+      ),
+    );
   }
 
   void _showEditSheet(BuildContext context, WidgetRef ref, Club club) {
@@ -301,6 +362,18 @@ class _ClubsTab extends ConsumerWidget {
                     controller: modelCtrl,
                     hint: 'e.g. Stealth Plus',
                   ),
+                  const SizedBox(height: 12),
+                  // The protocol models a fixed club set, so off-list clubs
+                  // are tracked as their nearest equivalent. Shots still
+                  // carry this club's own identity.
+                  Text(
+                    'The launch monitor tracks this club as '
+                    '${deviceClubLabel(club)}.',
+                    style: AppTextStyles.sans(
+                      size: 11,
+                      color: AppColors.textDimmed,
+                    ),
+                  ),
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
@@ -342,11 +415,16 @@ class _ClubTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onEdit;
 
+  /// Swipe-to-remove covers touch; this visible affordance covers the
+  /// Windows/mouse scene where a swipe is not a natural gesture.
+  final VoidCallback onRemove;
+
   const _ClubTile({
     required this.club,
     required this.isSelected,
     required this.onTap,
     required this.onEdit,
+    required this.onRemove,
   });
 
   @override
@@ -379,10 +457,41 @@ class _ClubTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (isSelected) Icon(Icons.check, color: context.accent, size: 16),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: onEdit,
-            child: const Icon(Icons.edit, size: 16, color: AppColors.textMuted),
+          Tooltip(
+            message: 'Edit club',
+            child: Semantics(
+              button: true,
+              label: 'Edit ${club.shortName}',
+              child: GestureDetector(
+                onTap: onEdit,
+                behavior: HitTestBehavior.opaque,
+                child: const SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Icon(Icons.edit, size: 16, color: AppColors.textMuted),
+                ),
+              ),
+            ),
+          ),
+          Tooltip(
+            message: 'Remove from bag',
+            child: Semantics(
+              button: true,
+              label: 'Remove ${club.shortName} from bag',
+              child: GestureDetector(
+                onTap: onRemove,
+                behavior: HitTestBehavior.opaque,
+                child: const SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Icon(
+                    Icons.delete_outline,
+                    size: 16,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
