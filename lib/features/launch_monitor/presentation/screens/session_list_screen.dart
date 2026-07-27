@@ -411,6 +411,11 @@ class _SessionTile extends ConsumerWidget {
             ),
             _SessionActionsMenu(
               session: session,
+              // Only recovered drafts (nameless rows) can rejoin the live
+              // session; finished sessions are records, not resumable.
+              onResume: session.name.isEmpty
+                  ? () => _resumeSession(context, ref)
+                  : null,
               onRename: () => _promptRename(context, ref),
               onExport: () => _exportCsv(context, ref),
               onDelete: () => _promptDelete(context, ref),
@@ -419,6 +424,30 @@ class _SessionTile extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Reattaches a recovered draft to the live session and re-enters it.
+  void _resumeSession(BuildContext context, WidgetRef ref) {
+    final resumed = ref
+        .read(launchMonitorProvider.notifier)
+        .resumeDraftSession(session);
+    if (!resumed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.card,
+          content: Text(
+            'Finish the active session first.',
+            style: AppTextStyles.sans(size: 13),
+          ),
+        ),
+      );
+      return;
+    }
+    // The active-session tile takes over; drop the recovered row so the
+    // same session isn't listed twice.
+    ref.read(sessionsProvider.notifier).detachSession(session.id);
+    ref.read(selectedShotIndexProvider.notifier).state = 0;
+    context.push('/session/new');
   }
 
   Future<void> _exportCsv(BuildContext context, WidgetRef ref) async {
@@ -546,12 +575,16 @@ class _SessionTile extends ConsumerWidget {
 
 class _SessionActionsMenu extends StatelessWidget {
   final Session session;
+
+  /// Non-null only for recovered drafts, which can rejoin the live session.
+  final VoidCallback? onResume;
   final VoidCallback onRename;
   final VoidCallback onExport;
   final VoidCallback onDelete;
 
   const _SessionActionsMenu({
     required this.session,
+    this.onResume,
     required this.onRename,
     required this.onExport,
     required this.onDelete,
@@ -567,6 +600,9 @@ class _SessionActionsMenu extends StatelessWidget {
       padding: EdgeInsets.zero,
       onSelected: (action) {
         switch (action) {
+          case _SessionAction.resume:
+            onResume?.call();
+            break;
           case _SessionAction.rename:
             onRename();
             break;
@@ -579,6 +615,17 @@ class _SessionActionsMenu extends StatelessWidget {
         }
       },
       itemBuilder: (_) => [
+        if (onResume != null)
+          PopupMenuItem(
+            value: _SessionAction.resume,
+            child: Row(
+              children: [
+                Icon(Icons.play_arrow, size: 16, color: context.accent),
+                const SizedBox(width: 10),
+                Text('Resume', style: AppTextStyles.sans(size: 13)),
+              ],
+            ),
+          ),
         PopupMenuItem(
           value: _SessionAction.rename,
           child: Row(
@@ -625,7 +672,7 @@ class _SessionActionsMenu extends StatelessWidget {
   }
 }
 
-enum _SessionAction { rename, export, delete }
+enum _SessionAction { resume, rename, export, delete }
 
 // ── BLE connect chip ──────────────────────────────────────────────────────────
 

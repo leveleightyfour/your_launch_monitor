@@ -20,6 +20,7 @@ import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/commands.da
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 import 'package:omni_sniffer/shared/providers/hole_setup_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
@@ -470,6 +471,23 @@ class LaunchMonitor extends _$LaunchMonitor {
     _draftCreatedAt = null;
     draftName = null;
     state = state.copyWith(shots: []);
+  }
+
+  /// Loads a recovered draft (a session interrupted before "Save & Finish")
+  /// back into the live session: its shots return to the board and new shots
+  /// append to the same draft row, so finishing saves everything as one
+  /// session. Refuses when a live session is already in progress — resuming
+  /// would clobber it. The DB returns shots oldest-first; the live list
+  /// keeps the newest shot at index 0, hence the reverse.
+  bool resumeDraftSession(Session draft) {
+    if (state.shots.isNotEmpty || _draftSessionId != null) return false;
+    final id = int.tryParse(draft.id);
+    if (id == null) return false;
+    _draftSessionId = id;
+    _draftCreatedAt = draft.createdAt;
+    draftName = draft.name.isEmpty ? null : draft.name;
+    state = state.copyWith(shots: draft.shots.reversed.toList());
+    return true;
   }
 
   /// Discards the in-progress session for good: deletes the draft row and its
