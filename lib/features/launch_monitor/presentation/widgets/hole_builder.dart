@@ -457,27 +457,52 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
     });
   }
 
+  /// Compact enough that five actions share one phone-width row without
+  /// giving up a 44-point-tall target.
+  static final ButtonStyle _actionStyle = TextButton.styleFrom(
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    minimumSize: const Size(44, 44),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
+
   Widget _actions(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+    padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
     child: Row(
       children: [
         TextButton(
+          style: _actionStyle,
           onPressed: () => Navigator.of(context).pop(),
           child: Text(
             'Cancel',
             style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
           ),
         ),
+        // Turns the hole off entirely — the range plays as open fairway.
+        // This lived in the profile's Target section until the builder
+        // became the one place holes are managed. The grid is kept, so
+        // building again starts from what was there.
+        TextButton(
+          style: _actionStyle,
+          onPressed: () => Navigator.of(
+            context,
+          ).pop(widget.hole.copyWith(enabled: false, grid: _grid)),
+          child: Text(
+            'No hole',
+            style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
+          ),
+        ),
         const Spacer(),
         TextButton(
+          style: _actionStyle,
           onPressed: () => _openSavedHoles(context),
           child: Text(
             'Holes',
             style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 4),
         TextButton(
+          style: _actionStyle,
           onPressed: () => setState(() {
             _push();
             _grid = HoleGrid.blank(
@@ -491,7 +516,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
             style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: context.accent),
           onPressed: () => Navigator.of(

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
 
 import 'package:omni_sniffer/shared/app_version.dart';
-import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/hole_setup_controls.dart';
 import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/log.dart';
@@ -151,9 +150,6 @@ class ProfileScreen extends ConsumerWidget {
               current: accent,
               onSelect: accentNotifier.setAccent,
             ),
-            const SizedBox(height: 16),
-            _SectionHeader('Target'),
-            const HoleSetupControls(),
             const SizedBox(height: 16),
             _SectionHeader('Support'),
             _SettingsRow(
