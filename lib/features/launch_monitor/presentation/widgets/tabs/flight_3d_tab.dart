@@ -924,6 +924,12 @@ class _Scene {
   final Color greenCollar;
   final Color greenEdge;
   final Color haze;
+
+  /// How much of [haze] settles over the far ground, 0–1. Clear days sit
+  /// low, an overcast sky sits heavy, and night keeps the full-strength
+  /// dark fade that has always carried its depth cue.
+  final double hazeStrength;
+
   final Color treeTrunk;
   final Color treeCanopy;
   final Color treeCanopyLit;
@@ -942,6 +948,7 @@ class _Scene {
     required this.greenCollar,
     required this.greenEdge,
     required this.haze,
+    required this.hazeStrength,
     required this.treeTrunk,
     required this.treeCanopy,
     required this.treeCanopyLit,
@@ -961,6 +968,7 @@ class _Scene {
     greenCollar: AppColors.turfGreenCollar,
     greenEdge: AppColors.turfGreenEdge,
     haze: AppColors.turfHaze,
+    hazeStrength: 1.0,
     treeTrunk: AppColors.treeTrunk,
     treeCanopy: AppColors.treeCanopy,
     treeCanopyLit: AppColors.treeCanopyLit,
@@ -980,6 +988,7 @@ class _Scene {
     greenCollar: Color(0xFF5F9B54),
     greenEdge: Color(0xFF2E5B2B),
     haze: Color(0xFFB8D8EA),
+    hazeStrength: 0.35,
     treeTrunk: Color(0xFF5A4632),
     treeCanopy: Color(0xFF2E5B33),
     treeCanopyLit: Color(0xFF477B44),
@@ -999,6 +1008,7 @@ class _Scene {
     greenCollar: Color(0xFF64984F),
     greenEdge: Color(0xFF2E5B2B),
     haze: Color(0xFFF2DCA8),
+    hazeStrength: 0.55,
     treeTrunk: Color(0xFF5A4632),
     treeCanopy: Color(0xFF33602F),
     treeCanopyLit: Color(0xFF4E7F42),
@@ -1018,6 +1028,7 @@ class _Scene {
     greenCollar: Color(0xFF578C51),
     greenEdge: Color(0xFF2C4F2C),
     haze: Color(0xFFC2CBD2),
+    hazeStrength: 0.8,
     treeTrunk: Color(0xFF4E4234),
     treeCanopy: Color(0xFF2F4F33),
     treeCanopyLit: Color(0xFF416844),
@@ -1037,6 +1048,7 @@ class _Scene {
     greenCollar: Color(0xFF45753E),
     greenEdge: Color(0xFF6B9A55),
     haze: Color(0xFFD98A5B),
+    hazeStrength: 0.5,
     treeTrunk: Color(0xFF4A3A2C),
     treeCanopy: Color(0xFF26492B),
     treeCanopyLit: Color(0xFF3A6238),
@@ -1742,7 +1754,7 @@ class _FlightPainter extends CustomPainter {
       ),
       Paint()
         ..shader = ui.Gradient.linear(Offset(0, horizon), Offset(0, bottom), [
-          scene.haze,
+          scene.haze.withAlpha((255 * scene.hazeStrength).round()),
           scene.haze.withAlpha(0),
         ]),
     );
