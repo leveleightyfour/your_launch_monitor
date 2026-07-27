@@ -32,6 +32,8 @@ Future<HoleSetup?> showSavedHolesSheet(
   );
 }
 
+enum _HoleRowAction { update, share, delete }
+
 class SavedHolesSheet extends ConsumerWidget {
   /// The hole as it stands in the builder — what "Save this hole" keeps.
   final HoleSetup current;
@@ -104,47 +106,68 @@ class SavedHolesSheet extends ConsumerWidget {
                       color: AppColors.textMuted,
                     ),
                   ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Tooltip(
-                        message: 'Share',
-                        child: Semantics(
-                          button: true,
-                          label: 'Share ${saved.name}',
-                          child: GestureDetector(
-                            onTap: () => _share(context, saved),
-                            behavior: HitTestBehavior.opaque,
-                            child: const SizedBox(
-                              width: 40,
-                              height: 40,
-                              child: Icon(
-                                Icons.ios_share,
-                                size: 16,
-                                color: AppColors.textMuted,
-                              ),
+                  trailing: PopupMenuButton<_HoleRowAction>(
+                    icon: const Icon(
+                      Icons.more_vert,
+                      size: 18,
+                      color: AppColors.textDimmed,
+                    ),
+                    tooltip: 'Hole actions',
+                    color: AppColors.surface,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    onSelected: (action) => switch (action) {
+                      _HoleRowAction.update => _update(context, ref, saved),
+                      _HoleRowAction.share => _share(context, saved),
+                      _HoleRowAction.delete => _delete(context, ref, saved),
+                    },
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: _HoleRowAction.update,
+                        child: Row(
+                          children: [
+                            Icon(Icons.replay, size: 16, color: context.accent),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Update with current hole',
+                              style: AppTextStyles.sans(size: 13),
                             ),
-                          ),
+                          ],
                         ),
                       ),
-                      Tooltip(
-                        message: 'Delete',
-                        child: Semantics(
-                          button: true,
-                          label: 'Delete ${saved.name}',
-                          child: GestureDetector(
-                            onTap: () => _delete(context, ref, saved),
-                            behavior: HitTestBehavior.opaque,
-                            child: const SizedBox(
-                              width: 40,
-                              height: 40,
-                              child: Icon(
-                                Icons.delete_outline,
-                                size: 16,
-                                color: AppColors.textMuted,
+                      PopupMenuItem(
+                        value: _HoleRowAction.share,
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.ios_share,
+                              size: 16,
+                              color: context.accent,
+                            ),
+                            const SizedBox(width: 10),
+                            Text('Share', style: AppTextStyles.sans(size: 13)),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: _HoleRowAction.delete,
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.delete_outline,
+                              size: 16,
+                              color: Color(0xFFEF4444),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Delete',
+                              style: AppTextStyles.sans(
+                                size: 13,
+                                color: const Color(0xFFEF4444),
                               ),
                             ),
-                          ),
+                          ],
                         ),
                       ),
                     ],
@@ -342,6 +365,25 @@ class SavedHolesSheet extends ConsumerWidget {
         sharePositionOrigin: box == null
             ? null
             : box.localToGlobal(Offset.zero) & box.size,
+      ),
+    );
+  }
+
+  /// Overwrites a preset with the hole as it stands in the builder — the
+  /// "save my changes back" path, so tweaking a preset doesn't breed
+  /// near-duplicates. Undo restores what the preset was.
+  void _update(BuildContext context, WidgetRef ref, SavedHole saved) {
+    final notifier = ref.read(savedHolesProvider.notifier);
+    notifier.save(
+      SavedHole(name: saved.name, savedAt: DateTime.now(), hole: current),
+    );
+    showTransientSnackBar(
+      context,
+      message: '"${saved.name}" updated',
+      action: SnackBarAction(
+        label: 'Undo',
+        textColor: context.accent,
+        onPressed: () => notifier.save(saved),
       ),
     );
   }
