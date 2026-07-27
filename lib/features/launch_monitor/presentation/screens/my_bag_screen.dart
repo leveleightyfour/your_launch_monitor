@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:omni_sniffer/features/launch_monitor/application/bag_stats_providers.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/providers.dart';
+import 'package:omni_sniffer/features/launch_monitor/application/sessions_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/club_gapping.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/dispersion_tab.dart';
+import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/snackbars.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -565,128 +569,464 @@ class _DistancesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final clubs = ref.watch(clubsProvider);
-    final allShots = ref.watch(launchMonitorProvider.select((s) => s.shots));
+    final shots = ref.watch(bagShotsProvider);
+    final includeOutliers = ref.watch(bagIncludeOutliersProvider);
+    final prefs = ref.watch(unitPrefsProvider);
 
-    // Build per-club distance stats
-    final stats =
-        <({Club club, double avg, double high, double low, int count})>[];
+    // Robust per-club stats, in bag order.
+    final stats = <ClubCarryStats>[];
     for (final club in clubs) {
-      final shots = allShots.where((s) => s.clubId == club.id).toList();
-      if (shots.isEmpty) continue;
-      final carries = shots.map((s) => s.carry).toList();
-      final avg = carries.reduce((a, b) => a + b) / carries.length;
-      final high = carries.reduce((a, b) => a > b ? a : b);
-      final low = carries.reduce((a, b) => a < b ? a : b);
-      stats.add((
-        club: club,
-        avg: avg,
-        high: high,
-        low: low,
-        count: shots.length,
-      ));
+      final carries = <double>[
+        for (final s in shots)
+          if (s.clubId == club.id) prefs.dist(s.carry),
+      ];
+      if (carries.isEmpty) continue;
+      final st = ClubCarryStats.fromCarries(
+        club,
+        carries,
+        includeOutliers: includeOutliers,
+      );
+      if (st.hasData) stats.add(st);
     }
 
     if (stats.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.straighten, size: 40, color: AppColors.textDimmed),
-            const SizedBox(height: 12),
-            Text(
-              'No distance data yet',
-              style: AppTextStyles.sans(color: AppColors.textMuted),
+      return Column(
+        children: [
+          const _BagScopeBar(showOutlierToggle: false),
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.straighten,
+                    size: 40,
+                    color: AppColors.textDimmed,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No distance data in this range',
+                    style: AppTextStyles.sans(color: AppColors.textMuted),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Hit shots in a session, or widen the scope above',
+                    style: AppTextStyles.sans(
+                      size: 12,
+                      color: AppColors.textDimmed,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Hit shots in a session to see per-club distances',
-              style: AppTextStyles.sans(size: 12, color: AppColors.textDimmed),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
+    final excludedTotal = stats.fold<int>(
+      0,
+      (sum, s) => sum + s.excluded.length,
+    );
+
+    // Shared scale across all clubs so the bars are comparable.
+    var min = stats.first.shortest;
+    var max = stats.first.longest;
+    for (final s in stats) {
+      if (s.shortest < min) min = s.shortest;
+      if (s.longest > max) max = s.longest;
+    }
+    final pad = (max - min) * 0.05 + 1;
+    min -= pad;
+    max += pad;
+
     return Column(
       children: [
-        // Column headers
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: AppColors.border)),
+        const _BagScopeBar(showOutlierToggle: true),
+        if (excludedTotal > 0 && !includeOutliers)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Row(
+              children: [
+                Text(
+                  '$excludedTotal ${excludedTotal == 1 ? 'shot' : 'shots'} '
+                  'excluded as outliers',
+                  style: AppTextStyles.sans(
+                    size: 11,
+                    color: AppColors.textDimmed,
+                  ),
+                ),
+              ],
+            ),
           ),
-          child: Row(
+        const Divider(height: 1, color: AppColors.border),
+        Expanded(
+          child: ListView(
             children: [
-              Expanded(
-                flex: 3,
+              // ── Gapping chart ──
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
                 child: Text(
-                  'CLUB',
+                  'CARRY GAPPING · ${prefs.distLabel.toUpperCase()}',
                   style: AppTextStyles.sans(
                     size: 9,
-                    weight: FontWeight.w400,
+                    weight: FontWeight.w600,
                     color: AppColors.textDimmed,
                   ),
                 ),
               ),
-              _DistTh('AVG'),
-              _DistTh('HIGH'),
-              _DistTh('LOW'),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView.separated(
-            itemCount: stats.length,
-            separatorBuilder: (_, __) =>
-                const Divider(height: 1, color: AppColors.border),
-            itemBuilder: (_, i) {
-              final s = stats[i];
-              return Padding(
+              for (final s in stats)
+                _GapRow(stats: s, scaleMin: min, scaleMax: max),
+              const SizedBox(height: 12),
+              const Divider(height: 1, color: AppColors.border),
+              // ── Stats table ──
+              Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
-                  vertical: 10,
+                  vertical: 8,
+                ),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: AppColors.border)),
                 ),
                 child: Row(
                   children: [
                     Expanded(
                       flex: 3,
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: s.club.color,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            s.club.shortName,
-                            style: AppTextStyles.sans(size: 14),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '(${s.count})',
-                            style: AppTextStyles.sans(
-                              size: 10,
-                              color: AppColors.textDimmed,
-                            ),
-                          ),
-                        ],
+                      child: Text(
+                        'CLUB',
+                        style: AppTextStyles.sans(
+                          size: 9,
+                          weight: FontWeight.w400,
+                          color: AppColors.textDimmed,
+                        ),
                       ),
                     ),
-                    _DistCell(s.avg.toStringAsFixed(0), highlight: true),
-                    _DistCell(s.high.toStringAsFixed(0)),
-                    _DistCell(s.low.toStringAsFixed(0)),
+                    const _DistTh('MED'),
+                    const _DistTh('AVG'),
+                    const _DistTh('HIGH'),
+                    const _DistTh('LOW'),
                   ],
                 ),
-              );
-            },
+              ),
+              for (final s in stats) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: s.club.color,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              s.club.shortName,
+                              style: AppTextStyles.sans(size: 14),
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                s.excluded.isEmpty
+                                    ? '(${s.kept.length})'
+                                    : '(${s.kept.length} · ${s.excluded.length} out)',
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.sans(
+                                  size: 10,
+                                  color: AppColors.textDimmed,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _DistCell(s.median.toStringAsFixed(0), highlight: true),
+                      _DistCell(s.average.toStringAsFixed(0)),
+                      _DistCell(s.longest.toStringAsFixed(0)),
+                      _DistCell(s.shortest.toStringAsFixed(0)),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: AppColors.border),
+              ],
+            ],
           ),
         ),
       ],
+    );
+  }
+}
+
+/// One club's carry range on the shared scale: a colored band from shortest
+/// to longest kept carry, with a tick at the median.
+class _GapRow extends StatelessWidget {
+  final ClubCarryStats stats;
+  final double scaleMin;
+  final double scaleMax;
+
+  const _GapRow({
+    required this.stats,
+    required this.scaleMin,
+    required this.scaleMax,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final span = (scaleMax - scaleMin).clamp(1, double.infinity);
+    final startF = (stats.shortest - scaleMin) / span;
+    final endF = (stats.longest - scaleMin) / span;
+    final medF = (stats.median - scaleMin) / span;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 48,
+            child: Text(
+              stats.club.shortName,
+              style: AppTextStyles.sans(size: 11, color: Colors.white),
+            ),
+          ),
+          Expanded(
+            child: SizedBox(
+              height: 16,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final w = constraints.maxWidth;
+                  return Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [
+                      Container(
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: AppColors.card,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      Positioned(
+                        left: w * startF,
+                        width: ((endF - startF) * w).clamp(6.0, w),
+                        top: 4,
+                        height: 8,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: stats.club.color.withAlpha(150),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: (w * medF - 1).clamp(0.0, w - 2),
+                        width: 2,
+                        top: 1,
+                        height: 14,
+                        child: const ColoredBox(color: Colors.white),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 40,
+            child: Text(
+              stats.median.toStringAsFixed(0),
+              textAlign: TextAlign.right,
+              style: AppTextStyles.mono(size: 11, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Scope chips shared by the Distances and Dispersion tabs, plus the
+/// outlier toggle where stats are computed.
+class _BagScopeBar extends ConsumerWidget {
+  final bool showOutlierToggle;
+
+  const _BagScopeBar({required this.showOutlierToggle});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scope = ref.watch(bagScopeProvider);
+    final include = ref.watch(bagIncludeOutliersProvider);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _ScopeChip(
+              label: 'Last 5',
+              selected: scope.kind == BagScopeKind.lastFive,
+              onTap: () => ref.read(bagScopeProvider.notifier).state =
+                  const BagScope.lastFive(),
+            ),
+            const SizedBox(width: 8),
+            _ScopeChip(
+              label: 'All time',
+              selected: scope.kind == BagScopeKind.allTime,
+              onTap: () => ref.read(bagScopeProvider.notifier).state =
+                  const BagScope.allTime(),
+            ),
+            const SizedBox(width: 8),
+            _ScopeChip(
+              label: scope.kind == BagScopeKind.single
+                  ? (scope.sessionName ?? 'Session')
+                  : 'Pick session',
+              selected: scope.kind == BagScopeKind.single,
+              onTap: () => _pickSession(context, ref),
+            ),
+            if (showOutlierToggle) ...[
+              const SizedBox(width: 16),
+              _ScopeChip(
+                label: 'Include outliers',
+                selected: include,
+                onTap: () =>
+                    ref.read(bagIncludeOutliersProvider.notifier).state =
+                        !include,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _pickSession(BuildContext context, WidgetRef ref) {
+    final liveShots = ref.read(launchMonitorProvider).shots;
+    final sessions = ref.read(sessionsProvider);
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Show data from',
+              style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                if (liveShots.isNotEmpty)
+                  ListTile(
+                    title: Text(
+                      'Active session',
+                      style: AppTextStyles.sans(size: 14),
+                    ),
+                    subtitle: Text(
+                      '${liveShots.length} shots',
+                      style: AppTextStyles.sans(
+                        size: 11,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    onTap: () {
+                      ref
+                          .read(bagScopeProvider.notifier)
+                          .state = const BagScope.single(
+                        BagScope.liveSessionId,
+                        'Active session',
+                      );
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                for (final s in sessions)
+                  ListTile(
+                    title: Text(
+                      s.name.isEmpty ? 'Recovered session' : s.name,
+                      style: AppTextStyles.sans(size: 14),
+                    ),
+                    subtitle: Text(
+                      '${s.shots.length} shots',
+                      style: AppTextStyles.sans(
+                        size: 11,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    onTap: () {
+                      ref
+                          .read(bagScopeProvider.notifier)
+                          .state = BagScope.single(
+                        s.id,
+                        s.name.isEmpty ? 'Recovered session' : s.name,
+                      );
+                      Navigator.pop(ctx);
+                    },
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScopeChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ScopeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? context.accentSubtle : AppColors.card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected ? context.accent : AppColors.border2,
+            ),
+          ),
+          child: Text(
+            label,
+            style: AppTextStyles.sans(
+              size: 12,
+              weight: selected ? FontWeight.w600 : FontWeight.w400,
+              color: selected ? context.accent : AppColors.textMuted,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -742,33 +1082,53 @@ class _DispersionTabWrapper extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final allShots = ref.watch(launchMonitorProvider.select((s) => s.shots));
+    // Session history under the shared bag scope — not just the live
+    // session, which is empty whenever you browse the bag between rounds.
+    final shots = ref.watch(bagShotsProvider);
     final clubs = ref.watch(clubsProvider);
     final selected = ref.watch(selectedClubProvider);
 
-    if (allShots.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.blur_on, size: 40, color: AppColors.textDimmed),
-            const SizedBox(height: 12),
-            Text(
-              'No dispersion data yet',
-              style: AppTextStyles.sans(color: AppColors.textMuted),
-            ),
-          ],
+    return Column(
+      children: [
+        const _BagScopeBar(showOutlierToggle: false),
+        const Divider(height: 1, color: AppColors.border),
+        Expanded(
+          child: shots.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.blur_on,
+                        size: 40,
+                        color: AppColors.textDimmed,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'No dispersion data in this range',
+                        style: AppTextStyles.sans(color: AppColors.textMuted),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Hit shots in a session, or widen the scope above',
+                        style: AppTextStyles.sans(
+                          size: 12,
+                          color: AppColors.textDimmed,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : DispersionTab(
+                  allShots: shots,
+                  clubs: clubs,
+                  selectedClub: selected,
+                  onClubSelected: (club) =>
+                      ref.read(selectedClubProvider.notifier).state = club,
+                  showSidebar: true,
+                ),
         ),
-      );
-    }
-
-    return DispersionTab(
-      allShots: allShots,
-      clubs: clubs,
-      selectedClub: selected,
-      onClubSelected: (club) =>
-          ref.read(selectedClubProvider.notifier).state = club,
-      showSidebar: true,
+      ],
     );
   }
 }
