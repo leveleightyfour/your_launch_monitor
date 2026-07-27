@@ -13,6 +13,7 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/status
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/update_check_cta.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/services/csv_export_service.dart';
+import 'package:omni_sniffer/shared/snackbars.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 class SessionListScreen extends ConsumerWidget {
@@ -432,14 +433,9 @@ class _SessionTile extends ConsumerWidget {
         .read(launchMonitorProvider.notifier)
         .resumeDraftSession(session);
     if (!resumed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.card,
-          content: Text(
-            'Finish the active session first.',
-            style: AppTextStyles.sans(size: 13),
-          ),
-        ),
+      showTransientSnackBar(
+        context,
+        message: 'Finish the active session first.',
       );
       return;
     }

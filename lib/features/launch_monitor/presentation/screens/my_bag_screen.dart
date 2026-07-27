@@ -6,6 +6,7 @@ import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.
 import 'package:omni_sniffer/features/launch_monitor/application/providers.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/dispersion_tab.dart';
+import 'package:omni_sniffer/shared/snackbars.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 class MyBagScreen extends ConsumerStatefulWidget {
@@ -288,27 +289,16 @@ class _ClubsTab extends ConsumerWidget {
     }
     if (wasFilter) filterNotifier.state = null;
 
-    final accent = context.accent;
-    final messenger = ScaffoldMessenger.of(context);
-    // Replace any showing snackbar instead of queueing behind it — removing
-    // several clubs in a row otherwise leaves a backlog of stale undo bars.
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        backgroundColor: AppColors.card,
-        duration: const Duration(seconds: 3),
-        content: Text(
-          '${club.shortName} removed from bag',
-          style: AppTextStyles.sans(size: 13),
-        ),
-        action: SnackBarAction(
-          label: 'Undo',
-          textColor: accent,
-          onPressed: () {
-            clubsNotifier.insertClub(club, index);
-            if (wasActive) activeNotifier.state = club;
-          },
-        ),
+    showTransientSnackBar(
+      context,
+      message: '${club.shortName} removed from bag',
+      action: SnackBarAction(
+        label: 'Undo',
+        textColor: context.accent,
+        onPressed: () {
+          clubsNotifier.insertClub(club, index);
+          if (wasActive) activeNotifier.state = club;
+        },
       ),
     );
   }
