@@ -1165,7 +1165,7 @@ class _FlightPainter extends CustomPainter {
       camera = _fitCamera(size, rest);
     }
 
-    _paintBackdrop(canvas, size);
+    _paintBackdrop(canvas, camera, size);
     _paintGround(canvas, camera, halfWidth, maxDepth, gridStep);
     // A built hole replaces the analytic fairway-and-green entirely: its cells
     // already say what every patch of ground is, including the green.
@@ -1474,14 +1474,37 @@ class _FlightPainter extends CustomPainter {
 
   // ── Scene ──────────────────────────────────────────────────────────────────
 
-  void _paintBackdrop(Canvas canvas, Size size) {
+  /// Screen height of the ground plane's true horizon for this camera, or
+  /// null when the view has none (looking straight up or down).
+  ///
+  /// Projected along the camera's own forward direction flattened onto the
+  /// plane, so it tracks the real vanishing line under any yaw — and it is
+  /// deliberately NOT clamped into the viewport: a horizon far above the top
+  /// edge is information the sky and haze need, not an error to correct.
+  double? _horizonScreenY(_Camera camera) {
+    final flat = Vec3(camera.forward.x, 0, camera.forward.z);
+    if (flat.length < 1e-3) return null;
+    final far = camera.project(camera.position + flat.normalized * 10000);
+    if (far == null || !far.dy.isFinite) return null;
+    return far.dy;
+  }
+
+  void _paintBackdrop(Canvas canvas, _Camera camera, Size size) {
+    final horizon = _horizonScreenY(camera);
+    // Anchor the gradient to the horizon so the palest sky always meets the
+    // ground line, wherever the camera puts it. The shader clamps beyond its
+    // ends, so below the horizon (ground territory) stays horizon-toned and
+    // high above stays deep sky. No horizon in view: the camera is pointing
+    // at the ground, which will cover the backdrop anyway.
+    final anchor = horizon ?? size.height;
     canvas.drawRect(
       Offset.zero & size,
       Paint()
-        ..shader = ui.Gradient.linear(Offset.zero, Offset(0, size.height), [
-          scene.skyTop,
-          scene.skyHorizon,
-        ]),
+        ..shader = ui.Gradient.linear(
+          Offset(0, anchor - size.height * 0.9),
+          Offset(0, anchor),
+          [scene.skyTop, scene.skyHorizon],
+        ),
     );
   }
 
@@ -1698,26 +1721,30 @@ class _FlightPainter extends CustomPainter {
   ///
   /// Drawn over the ground but under the shot, so it never touches the trace.
   void _paintDistanceHaze(Canvas canvas, _Camera camera, Size size) {
-    // The horizon is wherever the ground plane vanishes. Fall back to the
-    // upper third if the camera is looking somewhere that has no horizon.
-    // A point behind the eye, or one the projection cannot resolve, yields a
-    // non-finite y. Letting that reach Gradient.linear locks the rasteriser
-    // rather than throwing, so it is checked before it is used.
-    final far = camera.project(const Vec3(0, 0, 10000));
-    final raw = (far != null && far.dy.isFinite) ? far.dy : size.height * 0.33;
-    final horizon = raw.clamp(0.0, size.height);
-    if (!horizon.isFinite || horizon >= size.height - 1) return;
+    // Anchored to the same true horizon as the sky, and never clamped into
+    // the viewport: with the horizon far above the top edge (camera looking
+    // down at near ground) only the weak tail of the fade reaches the frame,
+    // instead of a fresh opaque band pinned to the top. No horizon, no haze.
+    final horizon = _horizonScreenY(camera);
+    if (horizon == null || horizon >= size.height - 1) return;
+
+    // Reaches full clarity about half a viewport below the horizon; past
+    // that the haze would start eating the landing area.
+    final bottom = horizon + size.height * 0.5;
+    if (bottom <= 0) return;
 
     canvas.drawRect(
-      Rect.fromLTRB(0, horizon, size.width, size.height),
+      Rect.fromLTRB(
+        0,
+        math.max(0.0, horizon),
+        size.width,
+        math.min(size.height, bottom),
+      ),
       Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(0, horizon),
-          // Reaches full clarity a third of the way down from the horizon;
-          // past that the haze would start eating the landing area.
-          Offset(0, horizon + (size.height - horizon) * 0.55),
-          [scene.haze, scene.haze.withAlpha(0)],
-        ),
+        ..shader = ui.Gradient.linear(Offset(0, horizon), Offset(0, bottom), [
+          scene.haze,
+          scene.haze.withAlpha(0),
+        ]),
     );
   }
 
