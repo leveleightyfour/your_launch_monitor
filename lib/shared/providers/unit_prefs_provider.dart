@@ -33,6 +33,21 @@ enum DispersionStandard {
 
 // ── UnitPrefs ─────────────────────────────────────────────────────────────────
 
+/// The 3D flight view's sky, picked from curated scenes rather than a free
+/// colour: each choice pairs the sky with matching turf so the shot tracer
+/// and markers stay readable under all of them.
+enum SkyScene {
+  day('Day'),
+  morning('Morning'),
+  overcast('Overcast'),
+  dusk('Dusk'),
+  night('Night');
+
+  const SkyScene(this.label);
+
+  final String label;
+}
+
 class UnitPrefs {
   final DistanceUnit distance;
   final SpeedUnit speed;
@@ -47,12 +62,17 @@ class UnitPrefs {
   /// the physical device. Off by default.
   final bool showTestShotButton;
 
+  /// Which sky the 3D flight view renders under. Each choice is a full
+  /// coordinated scene (sky plus turf), not just a backdrop colour.
+  final SkyScene skyScene;
+
   const UnitPrefs({
     this.distance = DistanceUnit.meters,
     this.speed = SpeedUnit.mph,
     this.dispersionStandard = DispersionStandard.trackman,
     this.autoReconnect = true,
     this.showTestShotButton = false,
+    this.skyScene = SkyScene.day,
   });
 
   UnitPrefs copyWith({
@@ -61,14 +81,15 @@ class UnitPrefs {
     DispersionStandard? dispersionStandard,
     bool? autoReconnect,
     bool? showTestShotButton,
-  }) =>
-      UnitPrefs(
-        distance: distance ?? this.distance,
-        speed: speed ?? this.speed,
-        dispersionStandard: dispersionStandard ?? this.dispersionStandard,
-        autoReconnect: autoReconnect ?? this.autoReconnect,
-        showTestShotButton: showTestShotButton ?? this.showTestShotButton,
-      );
+    SkyScene? skyScene,
+  }) => UnitPrefs(
+    distance: distance ?? this.distance,
+    speed: speed ?? this.speed,
+    dispersionStandard: dispersionStandard ?? this.dispersionStandard,
+    autoReconnect: autoReconnect ?? this.autoReconnect,
+    showTestShotButton: showTestShotButton ?? this.showTestShotButton,
+    skyScene: skyScene ?? this.skyScene,
+  );
 
   /// Display label for distance values.
   String get distLabel => distance == DistanceUnit.meters ? 'm' : 'yds';
@@ -93,6 +114,7 @@ class UnitPrefs {
     'dispersionStandard': dispersionStandard.name,
     'autoReconnect': autoReconnect,
     'showTestShotButton': showTestShotButton,
+    'skyScene': skyScene.name,
   };
 
   factory UnitPrefs.fromJson(Map<String, dynamic> j) => UnitPrefs(
@@ -110,6 +132,10 @@ class UnitPrefs {
     ),
     autoReconnect: j['autoReconnect'] as bool? ?? true,
     showTestShotButton: j['showTestShotButton'] as bool? ?? false,
+    skyScene: SkyScene.values.firstWhere(
+      (e) => e.name == j['skyScene'],
+      orElse: () => SkyScene.day,
+    ),
   );
 }
 
@@ -150,6 +176,11 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
 
   void setDistance(DistanceUnit unit) {
     state = state.copyWith(distance: unit);
+    _save();
+  }
+
+  void setSkyScene(SkyScene scene) {
+    state = state.copyWith(skyScene: scene);
     _save();
   }
 

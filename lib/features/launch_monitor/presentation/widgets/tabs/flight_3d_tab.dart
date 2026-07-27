@@ -436,6 +436,72 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
     );
   }
 
+  /// Picks the scene the flight renders under. Curated pairings rather than
+  /// a free colour: every sky ships with turf that keeps the tracer and
+  /// markers readable.
+  void _pickSky() {
+    final current = ref.read(unitPrefsProvider).skyScene;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Text(
+                  'Sky',
+                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          for (final choice in SkyScene.values)
+            ListTile(
+              leading: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.border2),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      _Scene.of(choice).skyTop,
+                      _Scene.of(choice).skyHorizon,
+                    ],
+                  ),
+                ),
+              ),
+              title: Text(
+                choice.label,
+                style: AppTextStyles.sans(
+                  size: 14,
+                  weight: choice == current ? FontWeight.w600 : FontWeight.w400,
+                  color: choice == current ? ctx.accent : Colors.white,
+                ),
+              ),
+              trailing: choice == current
+                  ? Icon(Icons.check, color: ctx.accent, size: 18)
+                  : null,
+              onTap: () {
+                ref.read(unitPrefsProvider.notifier).setSkyScene(choice);
+                Navigator.pop(ctx);
+              },
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
   /// Chip row height plus its padding — the painter keeps the shot above it.
   static double _controlStripHeight(_Density density) =>
       density == _Density.compact ? 42 : 46;
@@ -452,6 +518,14 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
           size: buttonSize,
           tooltip: 'Previous shots with this club',
           onTap: () => setState(() => _showTrails = !_showTrails),
+        ),
+        const SizedBox(width: 6),
+        _RoundAction(
+          icon: Icons.filter_hdr,
+          active: false,
+          size: buttonSize,
+          tooltip: 'Sky',
+          onTap: _pickSky,
         ),
         const SizedBox(width: 6),
         _RoundAction(
@@ -831,6 +905,152 @@ List<Vec3> _clipPolygon(List<Vec3> poly) {
 
 // ── Painter ──────────────────────────────────────────────────────────────────
 
+/// Scene palette — the sky and every ground tone the painter draws that is
+/// not one of a built hole's own terrain cell colours. Night is the incumbent
+/// dark-range look; day is a soft daylight tuned so the white markers and the
+/// accent tracer stay readable, with the analytic fairway and green matched
+/// to the built-hole cell colours so both hole styles read as one world.
+class _Scene {
+  final Color skyTop;
+  final Color skyHorizon;
+  final Color ground;
+  final Color rough;
+  final Color roughClump;
+  final Color roughClumpDark;
+  final Color fairway;
+  final Color fairwayStripe;
+  final Color grid;
+  final Color green;
+  final Color greenCollar;
+  final Color greenEdge;
+  final Color haze;
+  final Color treeTrunk;
+  final Color treeCanopy;
+  final Color treeCanopyLit;
+
+  const _Scene({
+    required this.skyTop,
+    required this.skyHorizon,
+    required this.ground,
+    required this.rough,
+    required this.roughClump,
+    required this.roughClumpDark,
+    required this.fairway,
+    required this.fairwayStripe,
+    required this.grid,
+    required this.green,
+    required this.greenCollar,
+    required this.greenEdge,
+    required this.haze,
+    required this.treeTrunk,
+    required this.treeCanopy,
+    required this.treeCanopyLit,
+  });
+
+  static const night = _Scene(
+    skyTop: AppColors.background,
+    skyHorizon: AppColors.skyLow,
+    ground: AppColors.turfGround,
+    rough: AppColors.turfRough,
+    roughClump: AppColors.turfRoughClump,
+    roughClumpDark: AppColors.turfRoughClumpDark,
+    fairway: AppColors.turfFairway,
+    fairwayStripe: AppColors.turfFairwayStripe,
+    grid: AppColors.turfGrid,
+    green: AppColors.turfGreen,
+    greenCollar: AppColors.turfGreenCollar,
+    greenEdge: AppColors.turfGreenEdge,
+    haze: AppColors.turfHaze,
+    treeTrunk: AppColors.treeTrunk,
+    treeCanopy: AppColors.treeCanopy,
+    treeCanopyLit: AppColors.treeCanopyLit,
+  );
+
+  static const day = _Scene(
+    skyTop: Color(0xFF4A90C9),
+    skyHorizon: Color(0xFFB8D8EA),
+    ground: Color(0xFF3E5633),
+    rough: Color(0xFF41582D),
+    roughClump: Color(0xFF4C6636),
+    roughClumpDark: Color(0xFF364A24),
+    fairway: Color(0xFF4C7A47),
+    fairwayStripe: Color(0xFF548351),
+    grid: Color(0xFF3A5C36),
+    green: Color(0xFF74B863),
+    greenCollar: Color(0xFF5F9B54),
+    greenEdge: Color(0xFF2E5B2B),
+    haze: Color(0xFFB8D8EA),
+    treeTrunk: Color(0xFF5A4632),
+    treeCanopy: Color(0xFF2E5B33),
+    treeCanopyLit: Color(0xFF477B44),
+  );
+
+  static const morning = _Scene(
+    skyTop: Color(0xFF6FA3C9),
+    skyHorizon: Color(0xFFF2DCA8),
+    ground: Color(0xFF43552F),
+    rough: Color(0xFF475A2C),
+    roughClump: Color(0xFF526538),
+    roughClumpDark: Color(0xFF3C4B22),
+    fairway: Color(0xFF527B43),
+    fairwayStripe: Color(0xFF5A8450),
+    grid: Color(0xFF3F5A33),
+    green: Color(0xFF79B45F),
+    greenCollar: Color(0xFF64984F),
+    greenEdge: Color(0xFF2E5B2B),
+    haze: Color(0xFFF2DCA8),
+    treeTrunk: Color(0xFF5A4632),
+    treeCanopy: Color(0xFF33602F),
+    treeCanopyLit: Color(0xFF4E7F42),
+  );
+
+  static const overcast = _Scene(
+    skyTop: Color(0xFF7E8B96),
+    skyHorizon: Color(0xFFC2CBD2),
+    ground: Color(0xFF3D4A38),
+    rough: Color(0xFF44523A),
+    roughClump: Color(0xFF4D5C42),
+    roughClumpDark: Color(0xFF37452E),
+    fairway: Color(0xFF4C6E4A),
+    fairwayStripe: Color(0xFF527451),
+    grid: Color(0xFF3A5040),
+    green: Color(0xFF6BA363),
+    greenCollar: Color(0xFF578C51),
+    greenEdge: Color(0xFF2C4F2C),
+    haze: Color(0xFFC2CBD2),
+    treeTrunk: Color(0xFF4E4234),
+    treeCanopy: Color(0xFF2F4F33),
+    treeCanopyLit: Color(0xFF416844),
+  );
+
+  static const dusk = _Scene(
+    skyTop: Color(0xFF35406E),
+    skyHorizon: Color(0xFFD98A5B),
+    ground: Color(0xFF2E3B26),
+    rough: Color(0xFF333F22),
+    roughClump: Color(0xFF3C4A2A),
+    roughClumpDark: Color(0xFF28331A),
+    fairway: Color(0xFF3A5C36),
+    fairwayStripe: Color(0xFF416440),
+    grid: Color(0xFF2F4A33),
+    green: Color(0xFF4F8347),
+    greenCollar: Color(0xFF45753E),
+    greenEdge: Color(0xFF6B9A55),
+    haze: Color(0xFFD98A5B),
+    treeTrunk: Color(0xFF4A3A2C),
+    treeCanopy: Color(0xFF26492B),
+    treeCanopyLit: Color(0xFF3A6238),
+  );
+
+  static _Scene of(SkyScene choice) => switch (choice) {
+    SkyScene.day => day,
+    SkyScene.morning => morning,
+    SkyScene.overcast => overcast,
+    SkyScene.dusk => dusk,
+    SkyScene.night => night,
+  };
+}
+
 class _FlightPainter extends CustomPainter {
   final ShotTrajectory trajectory;
   final List<ShotTrajectory> ghosts;
@@ -863,6 +1083,10 @@ class _FlightPainter extends CustomPainter {
 
   /// Frame the whole hole rather than just the shot.
   final bool frameWholeHole;
+
+  /// Sky and turf palette, chosen by the user's sky preference.
+  /// Derived from [prefs], so `shouldRepaint`'s prefs check covers it.
+  _Scene get scene => _Scene.of(prefs.skyScene);
 
   _FlightPainter({
     required this.trajectory,
@@ -1254,11 +1478,10 @@ class _FlightPainter extends CustomPainter {
     canvas.drawRect(
       Offset.zero & size,
       Paint()
-        ..shader = ui.Gradient.linear(
-          Offset.zero,
-          Offset(0, size.height),
-          const [AppColors.background, AppColors.skyLow],
-        ),
+        ..shader = ui.Gradient.linear(Offset.zero, Offset(0, size.height), [
+          scene.skyTop,
+          scene.skyHorizon,
+        ]),
     );
   }
 
@@ -1321,14 +1544,11 @@ class _FlightPainter extends CustomPainter {
         _polygon3(
           canvas,
           camera,
-          [
-            Vec3(x0, 0, z0),
-            Vec3(x1, 0, z0),
-            Vec3(x1, 0, z1),
-            Vec3(x0, 0, z1),
-          ],
+          [Vec3(x0, 0, z0), Vec3(x1, 0, z0), Vec3(x1, 0, z1), Vec3(x0, 0, z1)],
           Paint()
-            ..color = banded && !band ? terrain.stripeColor : terrain.surfaceColor,
+            ..color = banded && !band
+                ? terrain.stripeColor
+                : terrain.surfaceColor,
         );
         col = end;
       }
@@ -1392,7 +1612,7 @@ class _FlightPainter extends CustomPainter {
       trunkBase,
       trunkTop,
       Paint()
-        ..color = AppColors.treeTrunk
+        ..color = scene.treeTrunk
         ..strokeWidth = math.max(1.0, rise * 0.16),
     );
 
@@ -1402,9 +1622,11 @@ class _FlightPainter extends CustomPainter {
       final (base0, width) = layer;
       final tip = camera.project(Vec3(base.x, height * (base0 + 0.42), base.z));
       final left = camera.project(
-          Vec3(base.x - spread * width, height * base0, base.z));
+        Vec3(base.x - spread * width, height * base0, base.z),
+      );
       final right = camera.project(
-          Vec3(base.x + spread * width, height * base0, base.z));
+        Vec3(base.x + spread * width, height * base0, base.z),
+      );
       if (tip == null || left == null || right == null) continue;
       canvas.drawPath(
         Path()
@@ -1412,8 +1634,7 @@ class _FlightPainter extends CustomPainter {
           ..lineTo(right.dx, right.dy)
           ..lineTo(left.dx, left.dy)
           ..close(),
-        Paint()
-          ..color = base0 > 0.5 ? AppColors.treeCanopyLit : AppColors.treeCanopy,
+        Paint()..color = base0 > 0.5 ? scene.treeCanopyLit : scene.treeCanopy,
       );
     }
   }
@@ -1437,12 +1658,12 @@ class _FlightPainter extends CustomPainter {
     for (var z = near; z < maxDepth; z += step) {
       // Thin the scatter out with distance: at the horizon the clumps would
       // otherwise converge into a solid band.
-      final depthFade =
-          (1 - (z - near) / (maxDepth - near)).clamp(0.0, 1.0);
+      final depthFade = (1 - (z - near) / (maxDepth - near)).clamp(0.0, 1.0);
       if (depthFade < 0.06) continue;
       for (var x = -halfWidth; x < halfWidth; x += step) {
         // Cheap positional hash — stable, and cheaper than a real noise field.
-        final h = ((x * 73856093).toInt() ^ (z * 19349663).toInt()) & 0x7fffffff;
+        final h =
+            ((x * 73856093).toInt() ^ (z * 19349663).toInt()) & 0x7fffffff;
         if (h % 100 > 62) continue;
         final jx = x + (h % 37) / 37.0 * step;
         final jz = z + ((h >> 7) % 41) / 41.0 * step;
@@ -1459,9 +1680,7 @@ class _FlightPainter extends CustomPainter {
             Vec3(jx - size * 0.7, 0, jz + size * 0.6),
           ],
           Paint()
-            ..color = (h & 1 == 0
-                    ? AppColors.turfRoughClump
-                    : AppColors.turfRoughClumpDark)
+            ..color = (h & 1 == 0 ? scene.roughClump : scene.roughClumpDark)
                 .withAlpha((150 * depthFade).round()),
         );
       }
@@ -1497,7 +1716,7 @@ class _FlightPainter extends CustomPainter {
           // Reaches full clarity a third of the way down from the horizon;
           // past that the haze would start eating the landing area.
           Offset(0, horizon + (size.height - horizon) * 0.55),
-          [AppColors.turfHaze, AppColors.turfHaze.withAlpha(0)],
+          [scene.haze, scene.haze.withAlpha(0)],
         ),
     );
   }
@@ -1520,18 +1739,12 @@ class _FlightPainter extends CustomPainter {
     // With a hole set, everything off the fairway and green really is rough —
     // the model says so — so the ground it sits on is coloured as rough rather
     // than as neutral scenery.
-    _polygon3(
-      canvas,
-      camera,
-      [
-        Vec3(-outerWidth, 0, -outerDepth),
-        Vec3(outerWidth, 0, -outerDepth),
-        Vec3(outerWidth, 0, outerDepth),
-        Vec3(-outerWidth, 0, outerDepth),
-      ],
-      Paint()
-        ..color = course != null ? AppColors.turfRough : AppColors.turfGround,
-    );
+    _polygon3(canvas, camera, [
+      Vec3(-outerWidth, 0, -outerDepth),
+      Vec3(outerWidth, 0, -outerDepth),
+      Vec3(outerWidth, 0, outerDepth),
+      Vec3(-outerWidth, 0, outerDepth),
+    ], Paint()..color = course != null ? scene.rough : scene.ground);
 
     // Fairway down the target line. With a hole configured it is the width the
     // player set and it stops at the front of the green.
@@ -1552,8 +1765,7 @@ class _FlightPainter extends CustomPainter {
     for (var lane = firstLane; lane < lastLane; lane++) {
       final left = math.max(lane * _stripeWidth, -fairwayHalf);
       // Overlap the neighbour a hair; abutting fills leave an antialiased seam.
-      final right =
-          math.min((lane + 1) * _stripeWidth + 0.05, fairwayHalf);
+      final right = math.min((lane + 1) * _stripeWidth + 0.05, fairwayHalf);
       if (right - left < 0.01) continue;
       _polygon3(
         canvas,
@@ -1564,10 +1776,7 @@ class _FlightPainter extends CustomPainter {
           Vec3(right, 0, fairwayEnd),
           Vec3(left, 0, fairwayEnd),
         ],
-        Paint()
-          ..color = lane.isEven
-              ? AppColors.turfFairway
-              : AppColors.turfFairwayStripe,
+        Paint()..color = lane.isEven ? scene.fairway : scene.fairwayStripe,
       );
     }
 
@@ -1583,7 +1792,7 @@ class _FlightPainter extends CustomPainter {
         Vec3(-halfWidth, 0, z),
         Vec3(halfWidth, 0, z),
         Paint()
-          ..color = AppColors.turfGrid.withAlpha((150 * fade).round())
+          ..color = scene.grid.withAlpha((150 * fade).round())
           ..strokeWidth = 1,
       );
     }
@@ -1597,7 +1806,7 @@ class _FlightPainter extends CustomPainter {
         Vec3(i * gridStep, 0, behind),
         Vec3(i * gridStep, 0, maxDepth),
         Paint()
-          ..color = AppColors.turfGrid.withAlpha(70)
+          ..color = scene.grid.withAlpha(70)
           ..strokeWidth = 1,
       );
     }
@@ -1635,26 +1844,21 @@ class _FlightPainter extends CustomPainter {
     // and it is the cue that reads first — the shape stops looking like a
     // painted patch and starts looking like a green.
     const collar = 2.2;
-    _polygon3(
-      canvas,
-      camera,
-      [
-        for (var i = 0; i < segments; i++)
-          Vec3(
-            course.greenOffset +
-                (halfWidth + collar) * math.cos(i * 2 * math.pi / segments),
-            0,
-            course.greenDistance +
-                (halfDepth + collar) * math.sin(i * 2 * math.pi / segments),
-          ),
-      ],
-      Paint()..color = AppColors.turfGreenCollar,
-    );
+    _polygon3(canvas, camera, [
+      for (var i = 0; i < segments; i++)
+        Vec3(
+          course.greenOffset +
+              (halfWidth + collar) * math.cos(i * 2 * math.pi / segments),
+          0,
+          course.greenDistance +
+              (halfDepth + collar) * math.sin(i * 2 * math.pi / segments),
+        ),
+    ], Paint()..color = scene.greenCollar);
 
-    _polygon3(canvas, camera, ring, Paint()..color = AppColors.turfGreen);
+    _polygon3(canvas, camera, ring, Paint()..color = scene.green);
 
     final edge = Paint()
-      ..color = AppColors.turfGreenEdge
+      ..color = scene.greenEdge
       ..strokeWidth = 1.4 * _s;
     for (var i = 0; i < ring.length; i++) {
       _line3(canvas, camera, ring[i], ring[(i + 1) % ring.length], edge);
@@ -1669,7 +1873,7 @@ class _FlightPainter extends CustomPainter {
         canvas,
         '${prefs.dist(course.greenDistance).round()} ${prefs.distLabel}',
         label.translate(0, -10),
-        AppTextStyles.mono(size: 9 * _s, color: AppColors.turfGreenEdge),
+        AppTextStyles.mono(size: 9 * _s, color: scene.greenEdge),
       );
     }
   }
