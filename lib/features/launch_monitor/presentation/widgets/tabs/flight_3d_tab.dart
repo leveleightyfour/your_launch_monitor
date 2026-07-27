@@ -782,6 +782,11 @@ class _Camera {
 
   static const double near = 1.0;
 
+  /// The world has no basements: no camera may sink below this eye height
+  /// (yards above the turf), however low the pitch drags or however far the
+  /// zoom pulls back.
+  static const double minEyeHeight = 1.0;
+
   const _Camera._({
     required this.position,
     required this.right,
@@ -805,7 +810,13 @@ class _Camera {
       math.sin(pitch),
       -math.cos(yaw) * math.cos(pitch),
     );
-    final position = focus + offset * distance;
+    var position = focus + offset * distance;
+    // Clamping the position rather than the pitch keeps the gesture smooth:
+    // dragging past the floor slides the camera along the ground instead of
+    // stopping dead — and the view keeps aiming at the focus either way.
+    if (position.y < minEyeHeight) {
+      position = Vec3(position.x, minEyeHeight, position.z);
+    }
     final forward = (focus - position).normalized;
     var right = Vec3.up.cross(forward);
     if (right.length < 1e-5) right = const Vec3(1, 0, 0);
@@ -830,6 +841,9 @@ class _Camera {
     required Size size,
     required double fovDegrees,
   }) {
+    if (position.y < minEyeHeight) {
+      position = Vec3(position.x, minEyeHeight, position.z);
+    }
     final forward = Vec3(
       math.sin(yaw) * math.cos(pitch),
       math.sin(pitch),
