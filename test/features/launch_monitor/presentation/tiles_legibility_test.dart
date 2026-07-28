@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/split_flap_text.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/tiles_tab.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -73,6 +74,20 @@ void main() {
       expect(find.text('mph'), findsNWidgets(2));
       // One shot: the average pill is that shot's own numbers.
       expect(find.textContaining('AVG'), findsWidgets);
+    });
+
+    testWidgets('every tile shares one digit size', (tester) async {
+      await pump(tester, const Size(1000, 700));
+
+      // '5500' and '131.8' used to render at different sizes because each
+      // value stretched to fill its own tile. The default metrics carry no
+      // direction letters, so every SplitFlapText is main digits and they
+      // must all agree.
+      final sizes = tester
+          .widgetList<SplitFlapText>(find.byType(SplitFlapText))
+          .map((w) => w.style.fontSize)
+          .toSet();
+      expect(sizes, hasLength(1));
     });
 
     testWidgets('a cramped phone split does not overflow', (tester) async {

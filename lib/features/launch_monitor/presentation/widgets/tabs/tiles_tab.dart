@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -452,10 +454,26 @@ class _MetricTile extends StatelessWidget {
               Expanded(
                 child: isImpact
                     ? _ImpactDisplay(shot: currentShot)
-                    : FittedBox(
-                        fit: BoxFit.contain,
-                        alignment: Alignment.center,
-                        child: _TileValue(text: currentStr),
+                    : LayoutBuilder(
+                        builder: (context, valueBox) {
+                          // One size for every tile, derived from the shared
+                          // tile geometry — height, and width at a nominal
+                          // five-digit value — so the grid reads as one
+                          // instrument panel instead of sizing each number by
+                          // its string length. scaleDown steps in only for
+                          // the rare value longer than the nominal.
+                          final base = math
+                              .min(
+                                valueBox.maxHeight * 0.92,
+                                valueBox.maxWidth / 3.5,
+                              )
+                              .clamp(8.0, 200.0);
+                          return FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.center,
+                            child: _TileValue(text: currentStr, size: base),
+                          );
+                        },
                       ),
               ),
               if (!compact && !isImpact && unit.isNotEmpty)
@@ -509,10 +527,14 @@ class _MetricTile extends StatelessWidget {
 /// suffix sits beside the digits at half size on the shared baseline. Tabular
 /// figures keep the split-flap animation from wobbling the layout as digits
 /// roll.
+///
+/// [size] is the digits' font size. The metric tiles pass one value computed
+/// from their shared geometry so every tile's digits match.
 class _TileValue extends StatelessWidget {
   final String text;
+  final double size;
 
-  const _TileValue({required this.text});
+  const _TileValue({required this.text, this.size = 108});
 
   static TextStyle _style(double size) => AppTextStyles.sans(
     size: size,
@@ -523,16 +545,16 @@ class _TileValue extends StatelessWidget {
   Widget build(BuildContext context) {
     final (number, suffix) = splitValueSuffix(text);
     if (suffix.isEmpty) {
-      return SplitFlapText(text: number, style: _style(108));
+      return SplitFlapText(text: number, style: _style(size));
     }
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.baseline,
       textBaseline: TextBaseline.alphabetic,
       children: [
-        SplitFlapText(text: number, style: _style(108)),
-        const SizedBox(width: 5),
-        SplitFlapText(text: suffix, style: _style(54)),
+        SplitFlapText(text: number, style: _style(size)),
+        SizedBox(width: size * 0.05),
+        SplitFlapText(text: suffix, style: _style(size * 0.5)),
       ],
     );
   }
