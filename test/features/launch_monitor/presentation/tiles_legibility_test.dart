@@ -25,14 +25,19 @@ void main() {
       expect(splitValueSuffix('1.35'), ('1.35', ''));
     });
 
-    test('degree and direction markers split off the digits', () {
-      expect(splitValueSuffix('17.3°'), ('17.3', '°'));
-      expect(splitValueSuffix('1.1° R'), ('1.1', '° R'));
-      expect(splitValueSuffix('5.2 T'), ('5.2', 'T'));
-    });
+    test(
+      'direction letters split off; the degree sign stays with the digits',
+      () {
+        // ° rendered small and baseline-aligned sinks to mid-height; at full
+        // size the glyph is already small and top-positioned.
+        expect(splitValueSuffix('17.3°'), ('17.3°', ''));
+        expect(splitValueSuffix('1.1° R'), ('1.1°', 'R'));
+        expect(splitValueSuffix('5.2 T'), ('5.2', 'T'));
+      },
+    );
 
     test('a negative number keeps its sign with the digits', () {
-      expect(splitValueSuffix('-3.2°'), ('-3.2', '°'));
+      expect(splitValueSuffix('-3.2°'), ('-3.2°', ''));
     });
 
     test('the null placeholder passes through whole', () {

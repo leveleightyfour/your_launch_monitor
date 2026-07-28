@@ -341,13 +341,17 @@ double? metricRaw(TileMetric m, ShotData? s, UnitPrefs prefs) {
   };
 }
 
-/// Splits a formatted metric into the number and whatever trails it — °, an
-/// R/L or T/H letter — so the digits can render full size with the suffix set
-/// smaller beside them. A suffix scaled with the digits was quietly shrinking
+/// Splits a formatted metric into the number and any trailing direction
+/// letter — R/L, T/H — so the digits can render full size with the letter set
+/// smaller beside them. A letter scaled with the digits was quietly shrinking
 /// every directional metric: '1.1° R' drew its digits far smaller than a
 /// bare '5500'.
+///
+/// The degree sign stays with the number: at full size the glyph is already
+/// small and sits at the top of the line, which is exactly where it belongs —
+/// shrunk and baseline-aligned like a letter it drops to mid-height.
 (String, String) splitValueSuffix(String value) {
-  final match = RegExp(r'^[-\d.]+').firstMatch(value);
+  final match = RegExp(r'^[-\d.]+°?').firstMatch(value);
   if (match == null) return (value, '');
   return (match.group(0)!, value.substring(match.end).trim());
 }
@@ -510,11 +514,10 @@ class _TileValue extends StatelessWidget {
 
   const _TileValue({required this.text});
 
-  static TextStyle _style(double size) =>
-      AppTextStyles.sans(size: size, weight: FontWeight.w800).copyWith(
-        fontFeatures: const [FontFeature.tabularFigures()],
-        height: 1.0,
-      );
+  static TextStyle _style(double size) => AppTextStyles.sans(
+    size: size,
+    weight: FontWeight.w800,
+  ).copyWith(fontFeatures: const [FontFeature.tabularFigures()], height: 1.0);
 
   @override
   Widget build(BuildContext context) {
