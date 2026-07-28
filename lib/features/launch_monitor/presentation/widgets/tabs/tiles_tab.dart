@@ -341,6 +341,17 @@ double? metricRaw(TileMetric m, ShotData? s, UnitPrefs prefs) {
   };
 }
 
+/// Splits a formatted metric into the number and whatever trails it — °, an
+/// R/L or T/H letter — so the digits can render full size with the suffix set
+/// smaller beside them. A suffix scaled with the digits was quietly shrinking
+/// every directional metric: '1.1° R' drew its digits far smaller than a
+/// bare '5500'.
+(String, String) splitValueSuffix(String value) {
+  final match = RegExp(r'^[-\d.]+').firstMatch(value);
+  if (match == null) return (value, '');
+  return (match.group(0)!, value.substring(match.end).trim());
+}
+
 String _fmtImpactH(double? v) {
   if (v == null) return '--';
   return '${v.abs().toStringAsFixed(1)} ${v >= 0 ? 'T' : 'H'}';
@@ -389,16 +400,16 @@ class _MetricTile extends StatelessWidget {
                 avgShot!.verticalImpact != null
             ? '±${(currentShot!.verticalImpact! - avgShot!.verticalImpact!).abs().toStringAsFixed(1)}'
             : '';
-        footer = 'H: $hAvg $hDiff  V: $vAvg $vDiff';
+        footer = 'H: $hAvg $hDiff · V: $vAvg $vDiff';
       } else if (avgShot != null) {
-        footer = 'AVG  H: $hAvg  V: $vAvg';
+        footer = 'AVG  H: $hAvg · V: $vAvg';
       }
     } else if (avgShot != null && currentShot != null) {
       final cur = metricRaw(metric, currentShot, prefs);
       final avg = metricRaw(metric, avgShot, prefs);
       if (cur != null && avg != null) {
         final diff = cur - avg;
-        footer = 'AVG $avgStr  ±${diff.abs().toStringAsFixed(1)}';
+        footer = 'AVG $avgStr · ±${diff.abs().toStringAsFixed(1)}';
       }
     } else if (avgShot != null) {
       footer = 'AVG $avgStr';
@@ -406,92 +417,120 @@ class _MetricTile extends StatelessWidget {
 
     final unit = tileUnit(metric, prefs);
 
+    // Label, value, unit and average stack as a column — the value takes
+    // every pixel the fixed rows leave, instead of living between hardcoded
+    // insets that starved it on small split-pane tiles.
     return Container(
       decoration: BoxDecoration(
         color: AppColors.card,
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Stack(
-        children: [
-          // Value fills the entire tile
-          Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                10,
-                22,
-                10,
-                footer.isNotEmpty ? 22 : 4,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+      child: LayoutBuilder(
+        builder: (context, box) {
+          // A short tile can't fit four rows; the digits matter most, so the
+          // unit line and the average give way first.
+          final compact = box.maxHeight < 96;
+          return Column(
+            children: [
+              Text(
+                metric.label.toUpperCase(),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.sans(
+                  size: 11,
+                  weight: FontWeight.w700,
+                  color: AppColors.textMuted,
+                ).copyWith(letterSpacing: 1.2),
               ),
-              child: isImpact
-                  ? _ImpactDisplay(shot: currentShot)
-                  : FittedBox(
-                      fit: BoxFit.contain,
-                      alignment: Alignment.center,
-                      child: SplitFlapText(
-                        text: currentStr,
-                        style: AppTextStyles.mono(
-                          size: 108,
-                          weight: FontWeight.w600,
-                        ),
+              const SizedBox(height: 2),
+              Expanded(
+                child: isImpact
+                    ? _ImpactDisplay(shot: currentShot)
+                    : FittedBox(
+                        fit: BoxFit.contain,
+                        alignment: Alignment.center,
+                        child: _TileValue(text: currentStr),
                       ),
-                    ),
-            ),
-          ),
-          // Label top-left, unit top-right
-          Positioned(
-            top: 5,
-            left: 8,
-            right: 8,
-            child: Row(
-              children: [
-                Expanded(
+              ),
+              if (!compact && !isImpact && unit.isNotEmpty)
+                Text(
+                  unit,
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.sans(
+                    size: 11,
+                    color: AppColors.textDimmed,
+                  ).copyWith(fontStyle: FontStyle.italic),
+                ),
+              if (!compact && footer.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                   child: Text(
-                    metric.label,
-                    style: AppTextStyles.sans(
-                      size: 11,
-                      weight: FontWeight.w600,
+                    footer,
+                    style: AppTextStyles.mono(
+                      size: 10,
                       color: AppColors.textMuted,
                     ),
                     overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
                   ),
                 ),
-                if (!isImpact && unit.isNotEmpty)
-                  Text(
-                    unit,
-                    style: AppTextStyles.sans(
-                      size: 11,
-                      color: AppColors.textDimmed,
-                    ).copyWith(fontStyle: FontStyle.italic),
-                  ),
               ],
-            ),
-          ),
-          // AVG pill pinned to bottom
-          if (footer.isNotEmpty)
-            Positioned(
-              bottom: 4,
-              left: 6,
-              right: 6,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  footer,
-                  style: AppTextStyles.mono(
-                    size: 10,
-                    color: AppColors.textMuted,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-        ],
+            ],
+          );
+        },
       ),
+    );
+  }
+}
+
+// ── Tile value ────────────────────────────────────────────────────────────────
+
+/// The tile's big number.
+///
+/// Digits render full size in a heavy sans — DM Mono tops out at w500, so the
+/// old `w600` request was silently falling back to medium, which is most of
+/// why these numbers read thinner than the design they came from. Any trailing
+/// suffix sits beside the digits at half size on the shared baseline. Tabular
+/// figures keep the split-flap animation from wobbling the layout as digits
+/// roll.
+class _TileValue extends StatelessWidget {
+  final String text;
+
+  const _TileValue({required this.text});
+
+  static TextStyle _style(double size) =>
+      AppTextStyles.sans(size: size, weight: FontWeight.w800).copyWith(
+        fontFeatures: const [FontFeature.tabularFigures()],
+        height: 1.0,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final (number, suffix) = splitValueSuffix(text);
+    if (suffix.isEmpty) {
+      return SplitFlapText(text: number, style: _style(108));
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        SplitFlapText(text: number, style: _style(108)),
+        const SizedBox(width: 5),
+        SplitFlapText(text: suffix, style: _style(54)),
+      ],
     );
   }
 }
@@ -531,17 +570,18 @@ class _ImpactValue extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            label,
-            style: AppTextStyles.sans(size: 11, color: AppColors.textDimmed),
+            label.toUpperCase(),
+            style: AppTextStyles.sans(
+              size: 10,
+              weight: FontWeight.w700,
+              color: AppColors.textDimmed,
+            ).copyWith(letterSpacing: 1.2),
           ),
           const SizedBox(height: 2),
           Expanded(
             child: FittedBox(
               fit: BoxFit.contain,
-              child: Text(
-                value,
-                style: AppTextStyles.mono(size: 108, weight: FontWeight.w600),
-              ),
+              child: _TileValue(text: value),
             ),
           ),
           Text(
