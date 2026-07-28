@@ -50,6 +50,11 @@ class TilesTab extends ConsumerWidget {
     final last = selectedShot ?? (shots.isEmpty ? null : shots.first);
     final tablet = isTablet(context);
 
+    // The widest value on show sets one shared digit size for the grid: as
+    // large as the tiles allow while every tile still matches. Measured with
+    // the value typeface itself, not estimated from character counts.
+    final maxEms = _maxValueEms(metrics, last, prefs);
+
     const gap = 10.0;
     const pad = 12.0;
     // Reserve space at bottom for the Customize button
@@ -112,6 +117,7 @@ class TilesTab extends ConsumerWidget {
                     currentShot: last,
                     avgShot: avg,
                     prefs: prefs,
+                    valueEms: maxEms,
                   ),
                 );
               },
@@ -358,6 +364,39 @@ double? metricRaw(TileMetric m, ShotData? s, UnitPrefs prefs) {
   return (match.group(0)!, value.substring(match.end).trim());
 }
 
+/// Width of a rendered tile value, in ems of the digit size — the number at
+/// full size plus any direction letter at half size, measured with the value
+/// typeface itself.
+double _valueEms(String text) {
+  const ref = 100.0;
+  double width(String t, double size) {
+    final painter = TextPainter(
+      text: TextSpan(text: t, style: _TileValue._style(size)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final w = painter.width;
+    painter.dispose();
+    return w;
+  }
+
+  final (number, suffix) = splitValueSuffix(text);
+  var total = width(number, ref);
+  if (suffix.isNotEmpty) total += ref * 0.05 + width(suffix, ref / 2);
+  return total / ref;
+}
+
+/// The widest em-width among the values the grid is currently showing — what
+/// one shared digit size has to accommodate. The impact tile keeps its own
+/// two-line layout and does not take part.
+double _maxValueEms(List<TileMetric> metrics, ShotData? shot, UnitPrefs prefs) {
+  var widest = 1.0;
+  for (final m in metrics) {
+    if (m == TileMetric.impactLocation) continue;
+    widest = math.max(widest, _valueEms(metricValue(m, shot, prefs)));
+  }
+  return widest;
+}
+
 String _fmtImpactH(double? v) {
   if (v == null) return '--';
   return '${v.abs().toStringAsFixed(1)} ${v >= 0 ? 'T' : 'H'}';
@@ -376,12 +415,17 @@ class _MetricTile extends StatelessWidget {
   final ShotData? avgShot;
   final UnitPrefs prefs;
 
+  /// Em-width of the widest value in the grid; the digit size all tiles
+  /// share is whatever lets that value fill its tile.
+  final double valueEms;
+
   const _MetricTile({
     super.key,
     required this.metric,
     required this.currentShot,
     required this.avgShot,
     required this.prefs,
+    required this.valueEms,
   });
 
   @override
@@ -456,18 +500,18 @@ class _MetricTile extends StatelessWidget {
                     ? _ImpactDisplay(shot: currentShot)
                     : LayoutBuilder(
                         builder: (context, valueBox) {
-                          // One size for every tile, derived from the shared
-                          // tile geometry — height, and width at a nominal
-                          // five-digit value — so the grid reads as one
-                          // instrument panel instead of sizing each number by
-                          // its string length. scaleDown steps in only for
-                          // the rare value longer than the nominal.
+                          // Every tile shares this size: the value area's
+                          // height, capped so the grid's widest value —
+                          // measured, not estimated — just fits the width.
+                          // That is the largest size uniformity permits.
+                          // scaleDown stays as a guard against the font
+                          // swapping under the measurement.
                           final base = math
                               .min(
-                                valueBox.maxHeight * 0.92,
-                                valueBox.maxWidth / 3.5,
+                                valueBox.maxHeight * 0.95,
+                                valueBox.maxWidth * 0.98 / valueEms,
                               )
-                              .clamp(8.0, 200.0);
+                              .clamp(8.0, 400.0);
                           return FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.center,
