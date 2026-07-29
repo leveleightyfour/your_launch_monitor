@@ -143,4 +143,52 @@ void main() {
       expect(b.totalSpinRpm.abs(), greaterThan(0));
     });
   });
+
+  group('the device signs its spin axis the other way round', () {
+    // Evidence, not inference. squaregolf-connector converts outward with
+    //   SpinAxis: ballMetrics.SpinAxis * -1
+    //   SideSpin: ballMetrics.SidespinRPM * -1
+    // in both internal/core/gspro/data_conversion.go on main and
+    // internal/plugins/connectapi/data_conversion.go on the refactor branch,
+    // so it survived a full rewrite. GSPro's convention is positive for a
+    // fade, so a positive number out of the Omni means a draw.
+    //
+    // HLA is passed through untouched in the same function: the start line
+    // agrees and only the spin is mirrored. That combination is what shows a
+    // baby draw as a baby cut while the launch direction still looks right.
+
+    test('a positive reported axis is a draw, so it must curve left', () {
+      // What the device would send for a gentle draw.
+      final b = parseShotBallMetrics(_frame(axisLo: '2c', axisHi: '01'));
+      expect(b.spinAxis, 3.0, reason: 'device reports +3');
+
+      // Fed straight in, +3 curves the ball right — the wrong way.
+      expect(_curveYards(6200, b.spinAxis), greaterThan(0));
+      // Negated, it draws.
+      expect(_curveYards(6200, -b.spinAxis), lessThan(0));
+    });
+
+    test('sidespin carries the same inversion, so one negation covers both',
+        () {
+      // With the axis unmeasured the shape is recovered from the components,
+      // and those are mirrored too — so correcting once at the end is right
+      // and correcting in both places would cancel out.
+      final b = parseShotBallMetrics(
+        _frame(axisLo: '00', axisHi: '80', sideLo: '64', sideHi: '00'),
+      );
+
+      expect(b.isSpinAxisValid, isFalse);
+      expect(b.sidespinRpm, greaterThan(0));
+      final derived = math.atan2(
+            b.sidespinRpm.toDouble(),
+            b.backspinRpm.toDouble(),
+          ) *
+          180.0 /
+          math.pi;
+      expect(derived, greaterThan(0),
+          reason: 'positive sidespin gives a positive axis, device convention');
+      expect(_curveYards(6200, -derived), lessThan(0),
+          reason: 'and negated it draws, like the reported axis does');
+    });
+  });
 }

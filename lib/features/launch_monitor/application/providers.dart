@@ -703,7 +703,17 @@ class LaunchMonitor extends _$LaunchMonitor {
     return hole.enabled ? hole : null;
   }
 
-  /// Spin axis to simulate the shape from, in degrees.
+  /// Spin axis to simulate the shape from, in degrees, in *this app's*
+  /// convention: positive curves the ball right.
+  ///
+  /// Square Golf reports the opposite sign. The squaregolf-connector project
+  /// negates it on the way out to GSPro — `SpinAxis: ballMetrics.SpinAxis * -1`
+  /// alongside `SideSpin: ballMetrics.SidespinRPM * -1` — and GSPro's
+  /// convention is positive for a fade. Both of that project's branches do it,
+  /// so the author reaffirmed it through a full rewrite. Notably HLA is passed
+  /// straight through: the start line agrees, only the spin is mirrored, which
+  /// is exactly what turns a baby draw into a baby cut while leaving the
+  /// launch direction looking right.
   ///
   /// The reported axis is preferred, but only when the device says it measured
   /// one. It is the sole driver of curvature — an axis of zero is a perfectly
@@ -713,9 +723,15 @@ class LaunchMonitor extends _$LaunchMonitor {
   ///
   /// Backspin and sidespin are reported in their own right, and between them
   /// they describe the same axis. When the device could not give one directly
-  /// but did give those, the axis is recovered from them. This is the inverse
-  /// of the decomposition the parser already does in the other direction.
+  /// but did give those, the axis is recovered from them. Sidespin carries the
+  /// same inverted sign, so the one negation at the end covers both routes.
   static double _spinAxisFor(sg.BallMetrics b) {
+    final reported = _deviceSpinAxis(b);
+    return -reported;
+  }
+
+  /// The axis as the device means it, before the sign is corrected.
+  static double _deviceSpinAxis(sg.BallMetrics b) {
     if (b.isSpinAxisValid) return b.spinAxis;
     if (b.isBackspinValid &&
         b.isSidespinValid &&
