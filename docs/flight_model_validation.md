@@ -275,9 +275,10 @@ where it shouldn't be.
   and slope, none of which are knowable from a BLE packet. Roll should be read
   as "about this far, on this kind of surface", not as a measurement. With no
   hole configured everything is fairway; configuring one selects green,
-  fairway or rough by where the ball is, but the green and rough presets are
-  scaled by hand rather than fitted, so trust their ordering over their
-  absolute values.
+  fairway or rough by where the ball is. The green preset is tuned against
+  hop-and-stop field behaviour (a tour-spec 8-iron holds inside ~3 yards, a
+  wedge checks — asserted in the validation tests); the rough preset is still
+  scaled by hand, so trust ordering over absolute values there.
 - **Hole boundaries are hard.** No fringe or collar, no bunkers, no slope: the
   turf changes discontinuously at the edge of the green and at the edge of the
   fairway.

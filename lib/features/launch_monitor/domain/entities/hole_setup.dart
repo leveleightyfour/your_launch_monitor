@@ -85,30 +85,30 @@ class HoleSetup {
     double? fairwayWidth,
     HoleGrid? grid,
     bool clearGrid = false,
-  }) =>
-      HoleSetup(
-        enabled: enabled ?? this.enabled,
-        greenDistance: greenDistance ?? this.greenDistance,
-        greenWidth: greenWidth ?? this.greenWidth,
-        greenDepth: greenDepth ?? this.greenDepth,
-        greenOffset: greenOffset ?? this.greenOffset,
-        fairwayWidth: fairwayWidth ?? this.fairwayWidth,
-        grid: clearGrid ? null : (grid ?? this.grid),
-      ).clamped;
+  }) => HoleSetup(
+    enabled: enabled ?? this.enabled,
+    greenDistance: greenDistance ?? this.greenDistance,
+    greenWidth: greenWidth ?? this.greenWidth,
+    greenDepth: greenDepth ?? this.greenDepth,
+    greenOffset: greenOffset ?? this.greenOffset,
+    fairwayWidth: fairwayWidth ?? this.fairwayWidth,
+    grid: clearGrid ? null : (grid ?? this.grid),
+  ).clamped;
 
   /// Every dimension forced into a sane range.
   HoleSetup get clamped => HoleSetup(
-        enabled: enabled,
-        greenDistance:
-            greenDistance.clamp(minGreenDistance, maxGreenDistance).toDouble(),
-        greenWidth: greenWidth.clamp(minGreenSize, maxGreenSize).toDouble(),
-        greenDepth: greenDepth.clamp(minGreenSize, maxGreenSize).toDouble(),
-        greenOffset:
-            greenOffset.clamp(-maxGreenOffset, maxGreenOffset).toDouble(),
-        fairwayWidth:
-            fairwayWidth.clamp(minFairwayWidth, maxFairwayWidth).toDouble(),
-        grid: grid,
-      );
+    enabled: enabled,
+    greenDistance: greenDistance
+        .clamp(minGreenDistance, maxGreenDistance)
+        .toDouble(),
+    greenWidth: greenWidth.clamp(minGreenSize, maxGreenSize).toDouble(),
+    greenDepth: greenDepth.clamp(minGreenSize, maxGreenSize).toDouble(),
+    greenOffset: greenOffset.clamp(-maxGreenOffset, maxGreenOffset).toDouble(),
+    fairwayWidth: fairwayWidth
+        .clamp(minFairwayWidth, maxFairwayWidth)
+        .toDouble(),
+    grid: grid,
+  );
 
   /// Downrange distance to the front edge of the green.
   double get greenFront => greenDistance - greenDepth / 2;
@@ -176,38 +176,42 @@ class HoleSetup {
 
   /// Whether touching down here ends the shot on the spot. Handed to the
   /// flight model, which knows nothing about hazards beyond this answer.
-  bool stopsAt(double x, double z) =>
-      enabled && terrainAt(x, z).stopsShot;
+  bool stopsAt(double x, double z) => enabled && terrainAt(x, z).stopsShot;
 
   /// Distance from the pin to a resting ball, in yards.
+  ///
+  /// A pin placed on a built hole wins; otherwise the analytic green's
+  /// centre stands in for it, as it always has.
   double distanceFromPin(Vec3 rest) {
-    final dx = rest.x - greenOffset;
-    final dz = rest.z - greenDistance;
+    final placed = grid?.pinCentre;
+    final px = placed?.$1 ?? greenOffset;
+    final pz = placed?.$2 ?? greenDistance;
+    final dx = rest.x - px;
+    final dz = rest.z - pz;
     return math.sqrt(dx * dx + dz * dz);
   }
 
   Map<String, dynamic> toJson() => {
-        'enabled': enabled,
-        'greenDistance': greenDistance,
-        'greenWidth': greenWidth,
-        'greenDepth': greenDepth,
-        'greenOffset': greenOffset,
-        'fairwayWidth': fairwayWidth,
-        if (grid != null) 'grid': grid!.toJson(),
-      };
+    'enabled': enabled,
+    'greenDistance': greenDistance,
+    'greenWidth': greenWidth,
+    'greenDepth': greenDepth,
+    'greenOffset': greenOffset,
+    'fairwayWidth': fairwayWidth,
+    if (grid != null) 'grid': grid!.toJson(),
+  };
 
   factory HoleSetup.fromJson(Map<String, dynamic> json) => HoleSetup(
-        enabled: json['enabled'] as bool? ?? false,
-        greenDistance: (json['greenDistance'] as num?)?.toDouble() ?? 165,
-        greenWidth: (json['greenWidth'] as num?)?.toDouble() ?? 30,
-        greenDepth: (json['greenDepth'] as num?)?.toDouble() ?? 25,
-        greenOffset: (json['greenOffset'] as num?)?.toDouble() ?? 0,
-        fairwayWidth: (json['fairwayWidth'] as num?)?.toDouble() ?? 40,
-        grid: json['grid'] == null
-            ? null
-            : HoleGrid.fromJson(
-                (json['grid'] as Map).cast<String, dynamic>()),
-      ).clamped;
+    enabled: json['enabled'] as bool? ?? false,
+    greenDistance: (json['greenDistance'] as num?)?.toDouble() ?? 165,
+    greenWidth: (json['greenWidth'] as num?)?.toDouble() ?? 30,
+    greenDepth: (json['greenDepth'] as num?)?.toDouble() ?? 25,
+    greenOffset: (json['greenOffset'] as num?)?.toDouble() ?? 0,
+    fairwayWidth: (json['fairwayWidth'] as num?)?.toDouble() ?? 40,
+    grid: json['grid'] == null
+        ? null
+        : HoleGrid.fromJson((json['grid'] as Map).cast<String, dynamic>()),
+  ).clamped;
 
   @override
   bool operator ==(Object other) =>
@@ -222,13 +226,20 @@ class HoleSetup {
           grid == other.grid;
 
   @override
-  int get hashCode => Object.hash(enabled, greenDistance, greenWidth,
-      greenDepth, greenOffset, fairwayWidth, grid);
+  int get hashCode => Object.hash(
+    enabled,
+    greenDistance,
+    greenWidth,
+    greenDepth,
+    greenOffset,
+    fairwayWidth,
+    grid,
+  );
 
   @override
   String toString() => enabled
       ? 'HoleSetup(green ${greenDistance}y '
-          '${greenWidth}x${greenDepth}y, offset $greenOffset, '
-          'fairway ${fairwayWidth}y)'
+            '${greenWidth}x${greenDepth}y, offset $greenOffset, '
+            'fairway ${fairwayWidth}y)'
       : 'HoleSetup(off)';
 }

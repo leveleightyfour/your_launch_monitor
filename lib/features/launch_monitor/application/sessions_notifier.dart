@@ -22,7 +22,10 @@ class SessionsNotifier extends Notifier<List<Session>> {
     // showing them on bare ground while the app is set up to play a hole, they
     // adopt whatever is configured now. Sessions that recorded their own hole
     // keep it, so their numbers never move.
-    ref.listen(holeSetupProvider, (_, next) => state = _withHole(_stored, next));
+    ref.listen(
+      holeSetupProvider,
+      (_, next) => state = _withHole(_stored, next),
+    );
     _loadFromDb();
     return const [];
   }
@@ -64,6 +67,15 @@ class SessionsNotifier extends Notifier<List<Session>> {
     }
     // Reload from DB so all shots carry their dbIds.
     await _loadFromDb();
+  }
+
+  /// Removes a session from the list without touching the DB — used when a
+  /// recovered draft is resumed and its row becomes the live session again
+  /// (the active-session tile takes over). Finishing reloads from the DB,
+  /// so the session reappears here once saved.
+  void detachSession(String id) {
+    _stored = _stored.where((s) => s.id != id).toList();
+    state = state.where((s) => s.id != id).toList();
   }
 
   Future<void> removeSession(String id) async {

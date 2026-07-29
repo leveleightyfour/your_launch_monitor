@@ -71,11 +71,8 @@ class Vec3 {
     return len == 0 ? zero : Vec3(x / len, y / len, z / len);
   }
 
-  Vec3 cross(Vec3 o) => Vec3(
-        y * o.z - z * o.y,
-        z * o.x - x * o.z,
-        x * o.y - y * o.x,
-      );
+  Vec3 cross(Vec3 o) =>
+      Vec3(y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x);
 
   double dot(Vec3 o) => x * o.x + y * o.y + z * o.z;
 
@@ -247,11 +244,15 @@ class GroundModel {
   );
 
   /// Watered green: grabs hard, barely rebounds, so spin bites.
+  ///
+  /// Tuned against hop-and-stop reality rather than fitted data (no public
+  /// reference exists for turf): a tour-spec 8-iron holds inside ~3 yards,
+  /// a wedge checks, and a low-spin long iron still releases.
   static const green = GroundModel(
-    ploughing: 0.26,
-    slidingFriction: 0.50,
+    ploughing: 0.40,
+    slidingFriction: 0.55,
     rollingResistance: 0.32,
-    restitutionScale: 0.70,
+    restitutionScale: 0.50,
   );
 
   /// Baked-out links fairway.
@@ -355,19 +356,21 @@ class BallFlightModel {
   static const standard = BallFlightModel();
 
   BallFlightModel copyWith({GroundModel? ground}) => BallFlightModel(
-        dragBase: dragBase,
-        dragPerSpin: dragPerSpin,
-        dragAtLowSpeed: dragAtLowSpeed,
-        liftMax: liftMax,
-        liftHalfSpin: liftHalfSpin,
-        spinDecaySeconds: spinDecaySeconds,
-        stepSeconds: stepSeconds,
-        ground: ground ?? this.ground,
-      );
+    dragBase: dragBase,
+    dragPerSpin: dragPerSpin,
+    dragAtLowSpeed: dragAtLowSpeed,
+    liftMax: liftMax,
+    liftHalfSpin: liftHalfSpin,
+    spinDecaySeconds: spinDecaySeconds,
+    stepSeconds: stepSeconds,
+    ground: ground ?? this.ground,
+  );
 
   double dragCoefficient(double spinRatio, double speedMps) {
-    final slowFactor =
-        ((dragSpeedRefMps - speedMps) / dragSpeedRefMps).clamp(0.0, 1.0);
+    final slowFactor = ((dragSpeedRefMps - speedMps) / dragSpeedRefMps).clamp(
+      0.0,
+      1.0,
+    );
     // Upper bound only: a zero-drag configuration has to stay representable
     // so the integrator can be checked against the analytic vacuum solution.
     return (dragBase + dragPerSpin * spinRatio + dragAtLowSpeed * slowFactor)
@@ -423,7 +426,8 @@ class BallFlightModel {
       v0 * math.cos(theta) * math.cos(phi),
     );
     var position = Vec3.zero;
-    var spin = _spinAxisVector(velocity.normalized, spinAxisDeg) *
+    var spin =
+        _spinAxisVector(velocity.normalized, spinAxisDeg) *
         (spinRpm.abs() * _rpmToRadPerSec);
 
     final points = <TrajectoryPoint>[
@@ -469,8 +473,9 @@ class BallFlightModel {
 
     // Interpolate the touchdown state back onto the ground plane.
     final dy = previousPosition.y - position.y;
-    final frac =
-        dy.abs() < 1e-9 ? 1.0 : (previousPosition.y / dy).clamp(0.0, 1.0);
+    final frac = dy.abs() < 1e-9
+        ? 1.0
+        : (previousPosition.y / dy).clamp(0.0, 1.0);
     final landPosition = Vec3(
       previousPosition.x + (position.x - previousPosition.x) * frac,
       0,
@@ -493,8 +498,9 @@ class BallFlightModel {
 
     final carry = landPosition.z * _mToYd;
     final offline = landPosition.x * _mToYd;
-    final horizontalSpeed = math
-        .sqrt(landVelocity.x * landVelocity.x + landVelocity.z * landVelocity.z);
+    final horizontalSpeed = math.sqrt(
+      landVelocity.x * landVelocity.x + landVelocity.z * landVelocity.z,
+    );
     final descentAngle = horizontalSpeed <= 0
         ? 90.0
         : math.atan2(-landVelocity.y, horizontalSpeed) * _radToDeg;
@@ -559,12 +565,12 @@ class BallFlightModel {
   // ── Airborne ───────────────────────────────────────────────────────────────
 
   TrajectoryPoint _toPoint(double t, Vec3 p, Vec3 v) => TrajectoryPoint(
-        t: t,
-        x: p.x * _mToYd,
-        y: p.y * _mToYd,
-        z: p.z * _mToYd,
-        speed: v.length * _mpsToMph,
-      );
+    t: t,
+    x: p.x * _mToYd,
+    y: p.y * _mToYd,
+    z: p.z * _mToYd,
+    speed: v.length * _mpsToMph,
+  );
 
   /// Classic RK4 over the coupled position/velocity state. Spin is held
   /// constant across the step; it decays two orders of magnitude more slowly
@@ -709,7 +715,9 @@ class BallFlightModel {
         if (p.y <= 0) {
           // Land on the plane, then bounce.
           final drop = previousY - p.y;
-          final frac = drop.abs() < 1e-9 ? 1.0 : (previousY / drop).clamp(0.0, 1.0);
+          final frac = drop.abs() < 1e-9
+              ? 1.0
+              : (previousY / drop).clamp(0.0, 1.0);
           p = Vec3(p.x, 0, p.z);
           t -= h * (1 - frac);
           final impact = _bounce(v, w, turfAt(p));

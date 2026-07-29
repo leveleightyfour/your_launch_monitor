@@ -60,7 +60,20 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     if (widget.initialName != null) {
       ref.read(launchMonitorProvider.notifier).draftName = widget.initialName;
     }
+    // The split opens on whatever pair it was last configured to.
+    final prefs = ref.read(unitPrefsProvider);
+    _splitLeft = _paneFromName(prefs.splitLeftPane, _ActivePaneView.table);
+    _splitRight = _paneFromName(
+      prefs.splitRightPane,
+      _ActivePaneView.dispersion,
+    );
   }
+
+  static _ActivePaneView _paneFromName(String name, _ActivePaneView fallback) =>
+      _ActivePaneView.values.firstWhere(
+        (v) => v.name == name,
+        orElse: () => fallback,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -122,8 +135,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         leftPane: _splitLeft,
         rightPane: _splitRight,
         selectedShotIndex: selectedInClub >= 0 ? selectedInClub : 0,
-        onLeftChanged: (v) => setState(() => _splitLeft = v),
-        onRightChanged: (v) => setState(() => _splitRight = v),
+        onLeftChanged: (v) {
+          setState(() => _splitLeft = v);
+          ref.read(unitPrefsProvider.notifier).setSplitPanes(left: v.name);
+        },
+        onRightChanged: (v) {
+          setState(() => _splitRight = v);
+          ref.read(unitPrefsProvider.notifier).setSplitPanes(right: v.name);
+        },
         onShotSelected: (i) =>
             ref.read(selectedShotIndexProvider.notifier).state = i ?? 0,
       ),
@@ -900,6 +919,9 @@ class _ActiveSplitView extends StatelessWidget {
           shots: shots,
           selectedShot: highlightedShot,
           clubs: clubs,
+          // Half a screen is too small to spend a row on numbers the
+          // neighbouring pane already shows.
+          showStatBar: false,
         );
       case _ActivePaneView.club:
         return ClubTab(

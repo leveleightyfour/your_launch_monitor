@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_grid.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/terrain.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/saved_holes_sheet.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
@@ -48,6 +49,10 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
   late HoleGrid _grid;
   Terrain _brush = Terrain.fairway;
 
+  /// When set, taps place the pin instead of painting. A deliberate mode
+  /// rather than a terrain: the pin is one marker, not a surface.
+  bool _pinTool = false;
+
   /// Undo is a stack of whole grids rather than a diff. A hole is small enough
   /// that copying it is free, and painting is the kind of thing people undo a
   /// lot of.
@@ -67,8 +72,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
     // Opening the builder on a hole that was only ever described by numbers
     // seeds the grid from that description, so the fairway and green already
     // there are the starting point rather than a blank sheet.
-    _grid = widget.hole.grid ??
-        seedHoleGrid(widget.hole, cellSize: _cellSize);
+    _grid = widget.hole.grid ?? seedHoleGrid(widget.hole, cellSize: _cellSize);
     // Open looking at the tee — a hole gets built from where it is played
     // from. `reverse` was doing the opposite, and only a render showed it.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -79,8 +83,49 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
 
   /// Five squares in whatever unit the profile is set to.
   double get _cellSize => HoleGrid.cellSizeForUnit(
-        metric: widget.prefs.distance == DistanceUnit.meters,
-      );
+    metric: widget.prefs.distance == DistanceUnit.meters,
+  );
+
+  /// Switch the plan between coarse and fine squares. Resampling keeps the
+  /// painted ground (and the pin), and it is undoable like any stroke.
+  Widget _cellSizeChip(double sizeYards) {
+    final selected = (_grid.cellSize - sizeYards).abs() < 0.01;
+    final display = widget.prefs.dist(sizeYards);
+    final text = display == display.roundToDouble()
+        ? display.round().toString()
+        : display.toStringAsFixed(1);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: 'Cell size $text ${widget.prefs.distLabel}',
+      child: GestureDetector(
+        onTap: selected
+            ? null
+            : () => setState(() {
+                _push();
+                _grid = _grid.resized(sizeYards);
+              }),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+          decoration: BoxDecoration(
+            color: selected ? context.accentSubtle : AppColors.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? context.accent : AppColors.border,
+            ),
+          ),
+          child: Text(
+            text,
+            style: AppTextStyles.mono(
+              size: 11,
+              color: selected ? context.accent : AppColors.textMuted,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   /// The grid being edited. Exposed so the painting rules can be tested
   /// without reaching through the widget tree.
@@ -97,6 +142,24 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
     final cell = _cellAt(local, size);
     if (cell == null) return;
     final (col, row) = cell;
+
+    if (_pinTool) {
+      // Placing a pin is a deliberate tap, not a drag stroke.
+      if (!starting) return;
+      // Tap the pin's own cell again to lift it; anywhere green re-plants
+      // it. withPin refuses everything that isn't green, so a tap on sand
+      // or water simply does nothing.
+      final next = col == _grid.pinCol && row == _grid.pinRow
+          ? _grid.withoutPin()
+          : _grid.withPin(col, row);
+      if (identical(next, _grid)) return;
+      setState(() {
+        _push();
+        _grid = next;
+      });
+      return;
+    }
+
     if (_grid.at(col, row) == _brush) return;
     setState(() {
       if (starting) _push();
@@ -151,46 +214,45 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
   /// Widen or narrow the hole. Both edges move together, so the target line
   /// stays down the middle.
   Widget _widthBar() => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-        child: Row(
-          children: [
-            // Plus/minus rather than unfold chevrons: same stepper meaning,
-            // and these glyphs are already in the shipped release's icon
-            // font, so the control renders on Shorebird-patched installs.
-            _stepButton(
-              Icons.remove,
-              label: 'Narrow hole',
-              _grid.cols <= HoleGrid.minCols
-                  ? null
-                  : () => setState(() {
-                        _push();
-                        _grid = _grid.narrowed();
-                      }),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                '${widget.prefs.dist(_grid.width).round()} '
-                '${widget.prefs.distLabel} wide',
-                textAlign: TextAlign.center,
-                style:
-                    AppTextStyles.mono(size: 11, color: AppColors.textMuted),
-              ),
-            ),
-            const SizedBox(width: 10),
-            _stepButton(
-              Icons.add,
-              label: 'Widen hole',
-              _grid.cols >= HoleGrid.maxCols
-                  ? null
-                  : () => setState(() {
-                        _push();
-                        _grid = _grid.widened();
-                      }),
-            ),
-          ],
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+    child: Row(
+      children: [
+        // Plus/minus rather than unfold chevrons: same stepper meaning,
+        // and these glyphs are already in the shipped release's icon
+        // font, so the control renders on Shorebird-patched installs.
+        _stepButton(
+          Icons.remove,
+          label: 'Narrow hole',
+          _grid.cols <= HoleGrid.minCols
+              ? null
+              : () => setState(() {
+                  _push();
+                  _grid = _grid.narrowed();
+                }),
         ),
-      );
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            '${widget.prefs.dist(_grid.width).round()} '
+            '${widget.prefs.distLabel} wide',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.mono(size: 11, color: AppColors.textMuted),
+          ),
+        ),
+        const SizedBox(width: 10),
+        _stepButton(
+          Icons.add,
+          label: 'Widen hole',
+          _grid.cols >= HoleGrid.maxCols
+              ? null
+              : () => setState(() {
+                  _push();
+                  _grid = _grid.widened();
+                }),
+        ),
+      ],
+    ),
+  );
 
   /// The plan, scrolling vertically.
   ///
@@ -198,167 +260,196 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
   /// and grows downwards — which is the axis that varies. The view starts at
   /// the tee, since that is where a hole gets built from.
   Widget _plan() => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final cellPx = constraints.maxWidth / _grid.cols;
-            final planSize = Size(constraints.maxWidth, cellPx * _grid.rows);
-            return Column(
-              children: [
-                // Offsets from the target line, pinned above the plan rather
-                // than drawn on it. On the plan they scrolled away with the
-                // ground, so they were only ever visible at the end of the
-                // hole you were not shaping.
-                SizedBox(
-                  height: 15,
-                  width: constraints.maxWidth,
-                  child: CustomPaint(
-                    painter: _WidthRulerPainter(_grid, widget.prefs),
-                  ),
-                ),
-                Expanded(child: _scrollingPlan(planSize)),
-              ],
-            );
-          },
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final cellPx = constraints.maxWidth / _grid.cols;
+        final planSize = Size(constraints.maxWidth, cellPx * _grid.rows);
+        return Column(
+          children: [
+            // Offsets from the target line, pinned above the plan rather
+            // than drawn on it. On the plan they scrolled away with the
+            // ground, so they were only ever visible at the end of the
+            // hole you were not shaping.
+            SizedBox(
+              height: 15,
+              width: constraints.maxWidth,
+              child: CustomPaint(
+                painter: _WidthRulerPainter(_grid, widget.prefs),
+              ),
+            ),
+            Expanded(child: _scrollingPlan(planSize)),
+          ],
+        );
+      },
+    ),
+  );
 
   Widget _scrollingPlan(Size planSize) {
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SingleChildScrollView(
-                controller: _scroll,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapDown: (d) =>
-                      _paintAt(d.localPosition, planSize, starting: true),
-                  onPanStart: (d) =>
-                      _paintAt(d.localPosition, planSize, starting: true),
-                  onPanUpdate: (d) =>
-                      _paintAt(d.localPosition, planSize, starting: false),
-                  child: CustomPaint(
-                    painter: _PlanPainter(_grid, widget.prefs),
-                    size: planSize,
-                    child: SizedBox(
-                      width: planSize.width,
-                      height: planSize.height,
-                    ),
-                  ),
-                ),
-              ),
-            );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SingleChildScrollView(
+        controller: _scroll,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (d) => _paintAt(d.localPosition, planSize, starting: true),
+          onPanStart: (d) =>
+              _paintAt(d.localPosition, planSize, starting: true),
+          onPanUpdate: (d) =>
+              _paintAt(d.localPosition, planSize, starting: false),
+          child: CustomPaint(
+            painter: _PlanPainter(_grid, widget.prefs),
+            size: planSize,
+            child: SizedBox(width: planSize.width, height: planSize.height),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Extend or shorten the hole. The far end moves; the tee stays put.
   Widget _lengthBar() => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-        child: Row(
-          children: [
-            _stepButton(
-              Icons.remove,
-              label: 'Shorten hole',
-              _grid.rows <= HoleGrid.minRows
-                  ? null
-                  : () => setState(() {
-                        _push();
-                        _grid = _grid.shortened();
-                      }),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                '${widget.prefs.dist(_grid.length).round()} '
-                '${widget.prefs.distLabel} to the far end',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.mono(
-                    size: 11, color: AppColors.textMuted),
-              ),
-            ),
-            const SizedBox(width: 10),
-            _stepButton(
-              Icons.add,
-              label: 'Extend hole',
-              _grid.rows >= HoleGrid.maxRows
-                  ? null
-                  : () => setState(() {
-                        _push();
-                        _grid = _grid.extended();
-                      }),
-            ),
-          ],
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+    child: Row(
+      children: [
+        _stepButton(
+          Icons.remove,
+          label: 'Shorten hole',
+          _grid.rows <= HoleGrid.minRows
+              ? null
+              : () => setState(() {
+                  _push();
+                  _grid = _grid.shortened();
+                }),
         ),
-      );
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            '${widget.prefs.dist(_grid.length).round()} '
+            '${widget.prefs.distLabel} to the far end',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.mono(size: 11, color: AppColors.textMuted),
+          ),
+        ),
+        const SizedBox(width: 10),
+        _stepButton(
+          Icons.add,
+          label: 'Extend hole',
+          _grid.rows >= HoleGrid.maxRows
+              ? null
+              : () => setState(() {
+                  _push();
+                  _grid = _grid.extended();
+                }),
+        ),
+      ],
+    ),
+  );
 
   Widget _header(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text('Hole builder',
-                  style:
-                      AppTextStyles.sans(size: 16, weight: FontWeight.w600)),
-            ),
-            Text(
-              '${_grid.cols}×${_grid.rows}',
-              style: AppTextStyles.mono(size: 11, color: AppColors.textDimmed),
-            ),
-            IconButton(
-              icon: const Icon(Icons.undo, size: 18),
-              color: _history.isEmpty
-                  ? AppColors.textDimmed
-                  : AppColors.textMuted,
-              onPressed: _history.isEmpty
-                  ? null
-                  : () => setState(() => _grid = _history.removeLast()),
-            ),
-          ],
+    padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            'Hole builder',
+            style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+          ),
         ),
-      );
+        _cellSizeChip(_cellSize),
+        const SizedBox(width: 6),
+        _cellSizeChip(_cellSize / 2),
+        const SizedBox(width: 10),
+        Text(
+          '${_grid.cols}×${_grid.rows}',
+          style: AppTextStyles.mono(size: 11, color: AppColors.textDimmed),
+        ),
+        IconButton(
+          icon: const Icon(Icons.undo, size: 18),
+          color: _history.isEmpty ? AppColors.textDimmed : AppColors.textMuted,
+          onPressed: _history.isEmpty
+              ? null
+              : () => setState(() => _grid = _history.removeLast()),
+        ),
+      ],
+    ),
+  );
 
   Widget _palette() => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          alignment: WrapAlignment.center,
-          children: [
-            for (final t in Terrain.values)
-              GestureDetector(
-                onTap: () => setState(() => _brush = t),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: _brush == t
-                          ? context.accent
-                          : AppColors.border,
-                      width: _brush == t ? 1.6 : 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: t.planColor,
-                          borderRadius: BorderRadius.circular(3),
-                          border: Border.all(color: AppColors.border2),
-                        ),
-                      ),
-                      const SizedBox(width: 7),
-                      Text(t.label, style: AppTextStyles.sans(size: 12)),
-                    ],
-                  ),
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    child: Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      alignment: WrapAlignment.center,
+      children: [
+        for (final t in Terrain.values)
+          GestureDetector(
+            onTap: () => setState(() {
+              _brush = t;
+              _pinTool = false;
+            }),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _brush == t && !_pinTool
+                      ? context.accent
+                      : AppColors.border,
+                  width: _brush == t && !_pinTool ? 1.6 : 1,
                 ),
               ),
-          ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: t.planColor,
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(color: AppColors.border2),
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                  Text(t.label, style: AppTextStyles.sans(size: 12)),
+                ],
+              ),
+            ),
+          ),
+        // The pin tool: tap a green cell to plant the flag at its
+        // centre, tap it again to lift it. Only green takes a pin.
+        Semantics(
+          button: true,
+          selected: _pinTool,
+          label: 'Place pin on a green square',
+          child: GestureDetector(
+            onTap: () => setState(() => _pinTool = true),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _pinTool ? context.accent : AppColors.border,
+                  width: _pinTool ? 1.6 : 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.flag, size: 13, color: AppColors.pinFlag),
+                  const SizedBox(width: 6),
+                  Text('Pin', style: AppTextStyles.sans(size: 12)),
+                ],
+              ),
+            ),
+          ),
         ),
-      );
+      ],
+    ),
+  );
 
   /// [quarterTurns] rotates the glyph. The fold icons read vertically, which
   /// is right for length and wrong for width — the arrows should point along
@@ -371,70 +462,123 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
     VoidCallback? onTap, {
     required String label,
     int quarterTurns = 0,
-  }) =>
-      Semantics(
-        button: true,
-        enabled: onTap != null,
-        label: label,
-        child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: AppColors.card,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: RotatedBox(
-            quarterTurns: quarterTurns,
-            child: Icon(
-              icon,
-              size: 17,
-              color: onTap == null ? AppColors.textDimmed : AppColors.textMuted,
-            ),
+  }) => Semantics(
+    button: true,
+    enabled: onTap != null,
+    label: label,
+    child: GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: RotatedBox(
+          quarterTurns: quarterTurns,
+          child: Icon(
+            icon,
+            size: 17,
+            color: onTap == null ? AppColors.textDimmed : AppColors.textMuted,
           ),
         ),
-        ),
-      );
+      ),
+    ),
+  );
+
+  /// Opens the hole library. A loaded hole replaces the plan (undoable);
+  /// the sheet also saves, shares, and imports holes.
+  Future<void> _openSavedHoles(BuildContext context) async {
+    final loaded = await showSavedHolesSheet(
+      context,
+      current: widget.hole.copyWith(enabled: true, grid: _grid),
+    );
+    if (loaded == null || !mounted) return;
+    setState(() {
+      _push();
+      _grid = loaded.grid ?? seedHoleGrid(loaded, cellSize: _cellSize);
+    });
+  }
+
+  /// Compact enough that five actions share one phone-width row without
+  /// giving up a 44-point-tall target.
+  static final ButtonStyle _actionStyle = TextButton.styleFrom(
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    minimumSize: const Size(44, 44),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
 
   Widget _actions(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-        child: Row(
-          children: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text('Cancel',
-                  style: AppTextStyles.sans(
-                      size: 13, color: AppColors.textMuted)),
-            ),
-            const Spacer(),
-            TextButton(
-              onPressed: () => setState(() {
-                _push();
-                _grid = HoleGrid.blank(
-                  cellSize: _grid.cellSize,
-                  width: _grid.width,
-                  length: _grid.length,
-                );
-              }),
-              child: Text('Clear',
-                  style: AppTextStyles.sans(
-                      size: 13, color: AppColors.textMuted)),
-            ),
-            const SizedBox(width: 8),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: context.accent),
-              onPressed: () => Navigator.of(context).pop(
-                widget.hole.copyWith(enabled: true, grid: _grid),
-              ),
-              child: Text('Use hole',
-                  style: AppTextStyles.sans(
-                      size: 13, weight: FontWeight.w600, color: Colors.black)),
-            ),
-          ],
+    padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+    child: Row(
+      children: [
+        TextButton(
+          style: _actionStyle,
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancel',
+            style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
+          ),
         ),
-      );
+        // Turns the hole off entirely — the range plays as open fairway.
+        // This lived in the profile's Target section until the builder
+        // became the one place holes are managed. The grid is kept, so
+        // building again starts from what was there.
+        TextButton(
+          style: _actionStyle,
+          onPressed: () => Navigator.of(
+            context,
+          ).pop(widget.hole.copyWith(enabled: false, grid: _grid)),
+          child: Text(
+            'No hole',
+            style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
+          ),
+        ),
+        const Spacer(),
+        TextButton(
+          style: _actionStyle,
+          onPressed: () => _openSavedHoles(context),
+          child: Text(
+            'Holes',
+            style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
+          ),
+        ),
+        const SizedBox(width: 4),
+        TextButton(
+          style: _actionStyle,
+          onPressed: () => setState(() {
+            _push();
+            _grid = HoleGrid.blank(
+              cellSize: _grid.cellSize,
+              width: _grid.width,
+              length: _grid.length,
+            );
+          }),
+          child: Text(
+            'Clear',
+            style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
+          ),
+        ),
+        const SizedBox(width: 6),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: context.accent),
+          onPressed: () => Navigator.of(
+            context,
+          ).pop(widget.hole.copyWith(enabled: true, grid: _grid)),
+          child: Text(
+            'Use hole',
+            style: AppTextStyles.sans(
+              size: 13,
+              weight: FontWeight.w600,
+              color: Colors.black,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Top-down plan of the grid. Tee at the bottom, target line up the middle.
@@ -461,15 +605,34 @@ class _PlanPainter extends CustomPainter {
     final cw = size.width / grid.cols;
     final ch = size.height / grid.rows;
 
+    // Cells merge into horizontal runs before drawing — the same trick the
+    // 3D painter uses. A fine-celled hole is tens of thousands of cells,
+    // and per-cell rects at that count drop frames while painting.
     for (var row = 0; row < grid.rows; row++) {
       // Row 0 is the tee and belongs at the bottom of the plan.
       final top = size.height - (row + 1) * ch;
-      for (var col = 0; col < grid.cols; col++) {
+      var runStart = 0;
+      var runTerrain = grid.at(0, row);
+      void flush(int endCol) {
         canvas.drawRect(
-          Rect.fromLTWH(col * cw, top, cw + 0.5, ch + 0.5),
-          Paint()..color = grid.at(col, row).planColor,
+          Rect.fromLTWH(
+            runStart * cw,
+            top,
+            (endCol - runStart) * cw + 0.5,
+            ch + 0.5,
+          ),
+          Paint()..color = runTerrain.planColor,
         );
       }
+
+      for (var col = 1; col < grid.cols; col++) {
+        final terrain = grid.at(col, row);
+        if (terrain == runTerrain) continue;
+        flush(col);
+        runStart = col;
+        runTerrain = terrain;
+      }
+      flush(grid.cols);
     }
 
     // Cell lines, but only while they are far enough apart to be a guide
@@ -480,7 +643,10 @@ class _PlanPainter extends CustomPainter {
         ..strokeWidth = 0.5;
       for (var col = 1; col < grid.cols; col++) {
         canvas.drawLine(
-            Offset(col * cw, 0), Offset(col * cw, size.height), line);
+          Offset(col * cw, 0),
+          Offset(col * cw, size.height),
+          line,
+        );
       }
       for (var row = 1; row < grid.rows; row++) {
         final y = size.height - row * ch;
@@ -498,6 +664,30 @@ class _PlanPainter extends CustomPainter {
     );
 
     _paintDistances(canvas, size);
+    _paintPin(canvas, size, cw, ch);
+  }
+
+  /// The placed pin, drawn as a little flagstick at its cell's centre —
+  /// the same marker the 3D view plants, seen from above.
+  void _paintPin(Canvas canvas, Size size, double cw, double ch) {
+    if (!grid.hasPin) return;
+    final cx = (grid.pinCol! + 0.5) * cw;
+    final cy = size.height - (grid.pinRow! + 0.5) * ch;
+
+    canvas.drawCircle(Offset(cx, cy), 2.4, Paint()..color = Colors.white);
+    canvas.drawLine(
+      Offset(cx, cy),
+      Offset(cx, cy - 11),
+      Paint()
+        ..color = Colors.white
+        ..strokeWidth = 1.4,
+    );
+    final flag = Path()
+      ..moveTo(cx, cy - 11)
+      ..lineTo(cx + 6.5, cy - 8.5)
+      ..lineTo(cx, cy - 6)
+      ..close();
+    canvas.drawPath(flag, Paint()..color = AppColors.pinFlag);
   }
 
   /// Distance from the tee, so a green or a carry can be placed on a number
@@ -565,11 +755,7 @@ HoleGrid seedHoleGrid(
 }) {
   // Long enough to hold the green with room past it, wide enough to miss.
   final length = (hole.greenDistance + 80).clamp(120.0, 700.0).toDouble();
-  final grid = HoleGrid.blank(
-    cellSize: cellSize,
-    width: 140,
-    length: length,
-  );
+  final grid = HoleGrid.blank(cellSize: cellSize, width: 140, length: length);
   final cells = <Terrain>[];
   for (var row = 0; row < grid.rows; row++) {
     for (var col = 0; col < grid.cols; col++) {

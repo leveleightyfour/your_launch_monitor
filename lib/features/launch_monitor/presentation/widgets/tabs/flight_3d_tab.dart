@@ -145,11 +145,17 @@ class Flight3DTab extends ConsumerStatefulWidget {
 
   final List<Club> clubs;
 
+  /// Whether the stat bar renders above the scene. The full-tab view wants
+  /// it; a split pane is too small to spend a row on numbers that already
+  /// live in the neighbouring pane's table.
+  final bool showStatBar;
+
   const Flight3DTab({
     super.key,
     required this.shots,
     this.selectedShot,
     this.clubs = const [],
+    this.showStatBar = true,
   });
 
   @override
@@ -159,6 +165,10 @@ class Flight3DTab extends ConsumerStatefulWidget {
 class _Flight3DTabState extends ConsumerState<Flight3DTab>
     with SingleTickerProviderStateMixin {
   late final AnimationController _replay;
+
+  /// Fitted-camera memo shared by the two painting layers, so the framing
+  /// bisection runs once per camera change instead of once per painted frame.
+  final _fitCache = _FitCameraCache();
 
   FlightCamera _camera = FlightCamera.behind;
 
@@ -330,12 +340,13 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
         final density = _Density.forSize(constraints.biggest);
         return Column(
           children: [
-            _FlightStatBar(
-              shot: shot,
-              trajectory: trajectory,
-              prefs: prefs,
-              density: density,
-            ),
+            if (widget.showStatBar)
+              _FlightStatBar(
+                shot: shot,
+                trajectory: trajectory,
+                prefs: prefs,
+                density: density,
+              ),
             Expanded(
               child: Stack(
                 children: [
@@ -409,29 +420,131 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
           );
         });
       },
-      child: AnimatedBuilder(
-        animation: _replay,
-        builder: (context, _) => CustomPaint(
-          painter: _FlightPainter(
-            trajectory: trajectory,
-            ghosts: ghosts,
-            progress: _replay.value,
-            flightFraction: _flightFraction,
-            yaw: _yaw,
-            pitch: _pitch,
-            zoom: _zoom,
-            follow: _camera == FlightCamera.follow,
-            firstPerson: _camera == FlightCamera.behind,
-            shotColor: shotColor,
-            accent: context.accent,
-            prefs: prefs,
-            density: density,
-            controlStripHeight: _controlStripHeight(density),
-            hole: hole,
-            frameWholeHole: _camera == FlightCamera.hole,
+      // Two layers: the world, and the shot flying through it. The scene
+      // holds still for a whole replay, so it sits behind its own repaint
+      // boundary and repaints only when the camera or the world changes. The
+      // tracer listens to the replay clock directly — no per-tick widget
+      // rebuild — and repaints alone. Follow is the exception: its camera
+      // tracks the ball, so there the scene listens to the clock too.
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          RepaintBoundary(
+            child: CustomPaint(
+              isComplex: true,
+              painter: _ScenePainter(
+                trajectory: trajectory,
+                replay: _replay,
+                flightFraction: _flightFraction,
+                yaw: _yaw,
+                pitch: _pitch,
+                zoom: _zoom,
+                follow: _camera == FlightCamera.follow,
+                firstPerson: _camera == FlightCamera.behind,
+                prefs: prefs,
+                density: density,
+                controlStripHeight: _controlStripHeight(density),
+                hole: hole,
+                frameWholeHole: _camera == FlightCamera.hole,
+                fitCache: _fitCache,
+                ghosts: ghosts,
+                shotColor: shotColor,
+                repaint: _camera == FlightCamera.follow ? _replay : null,
+              ),
+              child: const SizedBox.expand(),
+            ),
           ),
-          child: const SizedBox.expand(),
-        ),
+          RepaintBoundary(
+            child: CustomPaint(
+              painter: _FlightPainter(
+                trajectory: trajectory,
+                replay: _replay,
+                flightFraction: _flightFraction,
+                yaw: _yaw,
+                pitch: _pitch,
+                zoom: _zoom,
+                follow: _camera == FlightCamera.follow,
+                firstPerson: _camera == FlightCamera.behind,
+                prefs: prefs,
+                density: density,
+                controlStripHeight: _controlStripHeight(density),
+                hole: hole,
+                frameWholeHole: _camera == FlightCamera.hole,
+                fitCache: _fitCache,
+                shotColor: shotColor,
+                accent: context.accent,
+                repaint: _replay,
+              ),
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Picks the scene the flight renders under. Curated pairings rather than
+  /// a free colour: every sky ships with turf that keeps the tracer and
+  /// markers readable.
+  void _pickSky() {
+    final current = ref.read(unitPrefsProvider).skyScene;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Text(
+                  'Sky',
+                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          for (final choice in SkyScene.values)
+            ListTile(
+              leading: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.border2),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      _Scene.of(choice).skyTop,
+                      _Scene.of(choice).skyHorizon,
+                    ],
+                  ),
+                ),
+              ),
+              title: Text(
+                choice.label,
+                style: AppTextStyles.sans(
+                  size: 14,
+                  weight: choice == current ? FontWeight.w600 : FontWeight.w400,
+                  color: choice == current ? ctx.accent : Colors.white,
+                ),
+              ),
+              trailing: choice == current
+                  ? Icon(Icons.check, color: ctx.accent, size: 18)
+                  : null,
+              onTap: () {
+                ref.read(unitPrefsProvider.notifier).setSkyScene(choice);
+                Navigator.pop(ctx);
+              },
+            ),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }
@@ -452,6 +565,14 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
           size: buttonSize,
           tooltip: 'Previous shots with this club',
           onTap: () => setState(() => _showTrails = !_showTrails),
+        ),
+        const SizedBox(width: 6),
+        _RoundAction(
+          icon: Icons.filter_hdr,
+          active: false,
+          size: buttonSize,
+          tooltip: 'Sky',
+          onTap: _pickSky,
         ),
         const SizedBox(width: 6),
         _RoundAction(
@@ -708,6 +829,11 @@ class _Camera {
 
   static const double near = 1.0;
 
+  /// The world has no basements: no camera may sink below this eye height
+  /// (yards above the turf), however low the pitch drags or however far the
+  /// zoom pulls back.
+  static const double minEyeHeight = 1.0;
+
   const _Camera._({
     required this.position,
     required this.right,
@@ -731,7 +857,13 @@ class _Camera {
       math.sin(pitch),
       -math.cos(yaw) * math.cos(pitch),
     );
-    final position = focus + offset * distance;
+    var position = focus + offset * distance;
+    // Clamping the position rather than the pitch keeps the gesture smooth:
+    // dragging past the floor slides the camera along the ground instead of
+    // stopping dead — and the view keeps aiming at the focus either way.
+    if (position.y < minEyeHeight) {
+      position = Vec3(position.x, minEyeHeight, position.z);
+    }
     final forward = (focus - position).normalized;
     var right = Vec3.up.cross(forward);
     if (right.length < 1e-5) right = const Vec3(1, 0, 0);
@@ -756,6 +888,9 @@ class _Camera {
     required Size size,
     required double fovDegrees,
   }) {
+    if (position.y < minEyeHeight) {
+      position = Vec3(position.x, minEyeHeight, position.z);
+    }
     final forward = Vec3(
       math.sin(yaw) * math.cos(pitch),
       math.sin(pitch),
@@ -831,12 +966,178 @@ List<Vec3> _clipPolygon(List<Vec3> poly) {
 
 // ── Painter ──────────────────────────────────────────────────────────────────
 
-class _FlightPainter extends CustomPainter {
-  final ShotTrajectory trajectory;
-  final List<ShotTrajectory> ghosts;
+/// Scene palette — the sky and every ground tone the painter draws that is
+/// not one of a built hole's own terrain cell colours. Night is the incumbent
+/// dark-range look; day is a soft daylight tuned so the white markers and the
+/// accent tracer stay readable, with the analytic fairway and green matched
+/// to the built-hole cell colours so both hole styles read as one world.
+class _Scene {
+  final Color skyTop;
+  final Color skyHorizon;
+  final Color ground;
+  final Color rough;
+  final Color roughClump;
+  final Color roughClumpDark;
+  final Color fairway;
+  final Color fairwayStripe;
+  final Color grid;
+  final Color green;
+  final Color greenCollar;
+  final Color greenEdge;
+  final Color haze;
 
-  /// 0 at impact, 1 once the ball has come to rest.
-  final double progress;
+  /// How much of [haze] settles over the far ground, 0–1. Clear days sit
+  /// low, an overcast sky sits heavy, and night keeps the full-strength
+  /// dark fade that has always carried its depth cue.
+  final double hazeStrength;
+
+  final Color treeTrunk;
+  final Color treeCanopy;
+  final Color treeCanopyLit;
+
+  const _Scene({
+    required this.skyTop,
+    required this.skyHorizon,
+    required this.ground,
+    required this.rough,
+    required this.roughClump,
+    required this.roughClumpDark,
+    required this.fairway,
+    required this.fairwayStripe,
+    required this.grid,
+    required this.green,
+    required this.greenCollar,
+    required this.greenEdge,
+    required this.haze,
+    required this.hazeStrength,
+    required this.treeTrunk,
+    required this.treeCanopy,
+    required this.treeCanopyLit,
+  });
+
+  static const night = _Scene(
+    skyTop: AppColors.background,
+    skyHorizon: AppColors.skyLow,
+    ground: AppColors.turfGround,
+    rough: AppColors.turfRough,
+    roughClump: AppColors.turfRoughClump,
+    roughClumpDark: AppColors.turfRoughClumpDark,
+    fairway: AppColors.turfFairway,
+    fairwayStripe: AppColors.turfFairwayStripe,
+    grid: AppColors.turfGrid,
+    green: AppColors.turfGreen,
+    greenCollar: AppColors.turfGreenCollar,
+    greenEdge: AppColors.turfGreenEdge,
+    haze: AppColors.turfHaze,
+    hazeStrength: 1.0,
+    treeTrunk: AppColors.treeTrunk,
+    treeCanopy: AppColors.treeCanopy,
+    treeCanopyLit: AppColors.treeCanopyLit,
+  );
+
+  static const day = _Scene(
+    skyTop: Color(0xFF4A90C9),
+    skyHorizon: Color(0xFFB8D8EA),
+    ground: Color(0xFF3E5633),
+    rough: Color(0xFF41582D),
+    roughClump: Color(0xFF4C6636),
+    roughClumpDark: Color(0xFF364A24),
+    fairway: Color(0xFF4C7A47),
+    fairwayStripe: Color(0xFF548351),
+    grid: Color(0xFF3A5C36),
+    green: Color(0xFF74B863),
+    greenCollar: Color(0xFF5F9B54),
+    greenEdge: Color(0xFF2E5B2B),
+    haze: Color(0xFFB8D8EA),
+    hazeStrength: 0.35,
+    treeTrunk: Color(0xFF5A4632),
+    treeCanopy: Color(0xFF2E5B33),
+    treeCanopyLit: Color(0xFF477B44),
+  );
+
+  static const morning = _Scene(
+    skyTop: Color(0xFF6FA3C9),
+    skyHorizon: Color(0xFFF2DCA8),
+    ground: Color(0xFF43552F),
+    rough: Color(0xFF475A2C),
+    roughClump: Color(0xFF526538),
+    roughClumpDark: Color(0xFF3C4B22),
+    fairway: Color(0xFF527B43),
+    fairwayStripe: Color(0xFF5A8450),
+    grid: Color(0xFF3F5A33),
+    green: Color(0xFF79B45F),
+    greenCollar: Color(0xFF64984F),
+    greenEdge: Color(0xFF2E5B2B),
+    haze: Color(0xFFF2DCA8),
+    hazeStrength: 0.55,
+    treeTrunk: Color(0xFF5A4632),
+    treeCanopy: Color(0xFF33602F),
+    treeCanopyLit: Color(0xFF4E7F42),
+  );
+
+  static const overcast = _Scene(
+    skyTop: Color(0xFF7E8B96),
+    skyHorizon: Color(0xFFC2CBD2),
+    ground: Color(0xFF3D4A38),
+    rough: Color(0xFF44523A),
+    roughClump: Color(0xFF4D5C42),
+    roughClumpDark: Color(0xFF37452E),
+    fairway: Color(0xFF4C6E4A),
+    fairwayStripe: Color(0xFF527451),
+    grid: Color(0xFF3A5040),
+    green: Color(0xFF6BA363),
+    greenCollar: Color(0xFF578C51),
+    greenEdge: Color(0xFF2C4F2C),
+    haze: Color(0xFFC2CBD2),
+    hazeStrength: 0.8,
+    treeTrunk: Color(0xFF4E4234),
+    treeCanopy: Color(0xFF2F4F33),
+    treeCanopyLit: Color(0xFF416844),
+  );
+
+  static const dusk = _Scene(
+    skyTop: Color(0xFF35406E),
+    skyHorizon: Color(0xFFD98A5B),
+    ground: Color(0xFF2E3B26),
+    rough: Color(0xFF333F22),
+    roughClump: Color(0xFF3C4A2A),
+    roughClumpDark: Color(0xFF28331A),
+    fairway: Color(0xFF3A5C36),
+    fairwayStripe: Color(0xFF416440),
+    grid: Color(0xFF2F4A33),
+    green: Color(0xFF4F8347),
+    greenCollar: Color(0xFF45753E),
+    greenEdge: Color(0xFF6B9A55),
+    haze: Color(0xFFD98A5B),
+    hazeStrength: 0.5,
+    treeTrunk: Color(0xFF4A3A2C),
+    treeCanopy: Color(0xFF26492B),
+    treeCanopyLit: Color(0xFF3A6238),
+  );
+
+  static _Scene of(SkyScene choice) => switch (choice) {
+    SkyScene.day => day,
+    SkyScene.morning => morning,
+    SkyScene.overcast => overcast,
+    SkyScene.dusk => dusk,
+    SkyScene.night => night,
+  };
+}
+
+/// Camera and geometry shared by the two painting layers.
+///
+/// The world and the shot paint on separate layers — the scene holds still
+/// for a whole replay while the tracer moves every tick — so each layer's
+/// painter derives the same camera from the same inputs, with the expensive
+/// fitted camera memoized in a shared [_FitCameraCache].
+abstract class _ViewPainter extends CustomPainter {
+  final ShotTrajectory trajectory;
+
+  /// Replay clock; 0 at impact, 1 once the ball has come to rest. Read
+  /// through [progress] at paint time rather than copied into a field, so a
+  /// layer that repaints on the clock's ticks sees the current value without
+  /// being rebuilt.
+  final Animation<double> replay;
 
   /// Share of [progress] spent airborne; the rest is the bounce and roll.
   final double flightFraction;
@@ -849,8 +1150,6 @@ class _FlightPainter extends CustomPainter {
   /// Stand at the tee and watch, instead of orbiting the shot from outside.
   final bool firstPerson;
 
-  final Color shotColor;
-  final Color accent;
   final UnitPrefs prefs;
   final _Density density;
 
@@ -864,29 +1163,52 @@ class _FlightPainter extends CustomPainter {
   /// Frame the whole hole rather than just the shot.
   final bool frameWholeHole;
 
-  _FlightPainter({
+  /// Fitted-camera memo shared with the sibling layer's painter.
+  final _FitCameraCache fitCache;
+
+  /// Sky and turf palette, chosen by the user's sky preference.
+  /// Derived from [prefs], so `shouldRepaint`'s prefs check covers it.
+  _Scene get scene => _Scene.of(prefs.skyScene);
+
+  _ViewPainter({
     required this.trajectory,
-    required this.ghosts,
-    required this.progress,
+    required this.replay,
     required this.flightFraction,
     required this.yaw,
     required this.pitch,
     required this.zoom,
     required this.follow,
     required this.firstPerson,
-    required this.shotColor,
-    required this.accent,
     required this.prefs,
     required this.density,
     required this.controlStripHeight,
     required this.hole,
     required this.frameWholeHole,
+    required this.fitCache,
+    super.repaint,
   });
 
-  /// Width of one mown band, in yards. Roughly a triplex mower's pass.
-  static const _stripeWidth = 5.0;
-
   double get _s => density.scale;
+
+  double get progress => replay.value;
+
+  /// The camera both layers agree on for this frame.
+  _Camera _resolveCamera(Size size) {
+    if (firstPerson) return _standingCamera(size);
+    if (follow) {
+      final rest = trajectory.restPosition;
+      final heading = math.atan2(rest.x, math.max(rest.z, 1));
+      final ball = _ballPosition();
+      return _Camera.orbit(
+        focus: Vec3(ball.x, ball.y + 3, ball.z),
+        yaw: yaw + heading,
+        pitch: pitch,
+        distance: (55.0 + trajectory.apex * 0.6) * zoom,
+        size: size,
+      );
+    }
+    return fitCache.resolve(this, size);
+  }
 
   /// Fraction of the airborne path that has been drawn.
   double get _flightProgress =>
@@ -898,94 +1220,6 @@ class _FlightPainter extends CustomPainter {
       : ((progress - flightFraction) / (1 - flightFraction)).clamp(0.0, 1.0);
 
   bool get _hasLanded => _flightProgress >= 1.0;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.width <= 0 || size.height <= 0 || trajectory.isEmpty) return;
-
-    // CustomPaint does not clip to its own bounds. The ground plane is drawn
-    // far larger than the shot so its far edge reads as a horizon, and at some
-    // camera angles it projects well outside this widget and over whatever
-    // sits beside it — the split-view neighbour, the shot list, the nav bar.
-    canvas.clipRect(Offset.zero & size);
-
-    final rest = trajectory.restPosition;
-    final range = math.max(trajectory.totalDistance, 40.0);
-    final ball = _ballPosition();
-
-    // Grid spacing follows the display unit so the labels stay round numbers.
-    final gridStep = prefs.distance == DistanceUnit.meters ? 25 / 0.9144 : 25.0;
-    final course = hole;
-    final halfWidth = math.max(
-      math.max(rest.x.abs() + 2 * gridStep, 3 * gridStep),
-      math.max(range * 0.3, course == null ? 0.0 : course.fairwayWidth * 0.9),
-    );
-    // The hole has to be drawn even when the shot falls well short of it.
-    final maxDepth =
-        math.max(range, course == null ? 0.0 : course.greenBack + 20) +
-        2 * gridStep;
-
-    final _Camera camera;
-    if (firstPerson) {
-      camera = _standingCamera(size);
-    } else if (follow) {
-      final heading = math.atan2(rest.x, math.max(rest.z, 1));
-      camera = _Camera.orbit(
-        focus: Vec3(ball.x, ball.y + 3, ball.z),
-        yaw: yaw + heading,
-        pitch: pitch,
-        distance: (55.0 + trajectory.apex * 0.6) * zoom,
-        size: size,
-      );
-    } else {
-      camera = _fitCamera(size, rest);
-    }
-
-    _paintBackdrop(canvas, size);
-    _paintGround(canvas, camera, halfWidth, maxDepth, gridStep);
-    // A built hole replaces the analytic fairway-and-green entirely: its cells
-    // already say what every patch of ground is, including the green.
-    final built = course?.grid;
-    if (built != null) {
-      _paintGridHole(canvas, camera, built);
-      _paintPinAt(canvas, camera, built);
-    } else {
-      if (course != null && density.atLeastMedium) {
-        _paintRoughTexture(canvas, camera, course, halfWidth, maxDepth);
-      }
-      if (course != null) _paintGreen(canvas, camera, course);
-    }
-    _paintDistanceHaze(canvas, camera, size);
-    // Trees stand on the ground, so they go over the haze — otherwise the far
-    // ones would be washed out at the base and solid at the top.
-    if (built != null) _paintTrees(canvas, camera, built);
-    if (density.atLeastMedium) {
-      _paintDistanceLabels(canvas, camera, gridStep, maxDepth, halfWidth);
-    }
-
-    for (final ghost in ghosts) {
-      final path = _pathFor(camera, ghost.points, ghost.points.length - 1);
-      if (path != null) {
-        canvas.drawPath(
-          path,
-          Paint()
-            ..color = shotColor.withAlpha(50)
-            ..strokeWidth = 1.2 * _s
-            ..style = PaintingStyle.stroke,
-        );
-      }
-    }
-
-    if (_hasLanded) _paintLandingMarks(canvas, camera);
-
-    final flightSegments = _visibleSegments(trajectory.points, _flightProgress);
-    _paintCurtain(canvas, camera, flightSegments);
-    _paintShadow(canvas, camera, trajectory.points, flightSegments);
-    _paintFlightPath(canvas, camera, flightSegments);
-    _paintGroundPath(canvas, camera);
-    _paintApexMarker(canvas, camera, ball);
-    _paintBall(canvas, camera, ball);
-  }
 
   // ── Framing ────────────────────────────────────────────────────────────────
 
@@ -1162,10 +1396,10 @@ class _FlightPainter extends CustomPainter {
 
   // ── Geometry helpers ───────────────────────────────────────────────────────
 
-  static int _visibleSegments(List<TrajectoryPoint> points, double progress) =>
+  int _visibleSegments(List<TrajectoryPoint> points, double progress) =>
       (progress * (points.length - 1)).ceil().clamp(1, points.length - 1);
 
-  static Vec3 _interpolate(List<TrajectoryPoint> points, double progress) {
+  Vec3 _interpolate(List<TrajectoryPoint> points, double progress) {
     final scaled = progress.clamp(0.0, 1.0) * (points.length - 1);
     final i = scaled.floor().clamp(0, points.length - 1);
     final j = math.min(i + 1, points.length - 1);
@@ -1248,26 +1482,225 @@ class _FlightPainter extends CustomPainter {
     canvas.drawPath(path, paint);
   }
 
+  Vec3? _apexPoint() {
+    final points = trajectory.points;
+    if (points.isEmpty) return null;
+    var best = points.first;
+    for (final p in points) {
+      if (p.y > best.y) best = p;
+    }
+    return Vec3(best.x, best.y, best.z);
+  }
+
+  void _label(Canvas canvas, String text, Offset at, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(
+      canvas,
+      Offset(at.dx - painter.width / 2, at.dy - painter.height / 2),
+    );
+  }
+
+  /// Everything that moves the camera or recolours the world — the test both
+  /// layers' `shouldRepaint` builds on.
+  bool _viewChanged(_ViewPainter old) =>
+      old.trajectory != trajectory ||
+      old.flightFraction != flightFraction ||
+      old.yaw != yaw ||
+      old.pitch != pitch ||
+      old.zoom != zoom ||
+      old.follow != follow ||
+      old.firstPerson != firstPerson ||
+      old.prefs != prefs ||
+      old.density != density ||
+      old.controlStripHeight != controlStripHeight ||
+      old.hole != hole ||
+      old.frameWholeHole != frameWholeHole;
+}
+
+/// Memo for the fitted camera.
+///
+/// Fitting is a bisection over the shot's framing points — the better part of
+/// a thousand projections — and during a replay its inputs never change: the
+/// same camera frames every tick. One instance is shared by both painting
+/// layers, so even a camera change costs one fit, not two.
+class _FitCameraCache {
+  (Size, double, double, double, double, ShotTrajectory, HoleSetup?, bool)?
+  _key;
+  _Camera? _camera;
+
+  _Camera resolve(_ViewPainter p, Size size) {
+    final key = (
+      size,
+      p.yaw,
+      p.pitch,
+      p.zoom,
+      p.controlStripHeight,
+      p.trajectory,
+      p.hole,
+      p.frameWholeHole,
+    );
+    if (key != _key) {
+      _key = key;
+      _camera = p._fitCamera(size, p.trajectory.restPosition);
+    }
+    return _camera!;
+  }
+}
+
+/// The world the shot flies through: sky, turf, the hole, trees, labels and
+/// the ghost trails. Everything here holds still while a replay runs, so this
+/// layer repaints only when the camera, the palette or the hole changes.
+/// Follow is the exception — its camera tracks the ball — so there it listens
+/// to the replay clock like the flight layer does.
+class _ScenePainter extends _ViewPainter {
+  /// Earlier shots drawn as faint context behind the live one.
+  final List<ShotTrajectory> ghosts;
+
+  final Color shotColor;
+
+  _ScenePainter({
+    required super.trajectory,
+    required super.replay,
+    required super.flightFraction,
+    required super.yaw,
+    required super.pitch,
+    required super.zoom,
+    required super.follow,
+    required super.firstPerson,
+    required super.prefs,
+    required super.density,
+    required super.controlStripHeight,
+    required super.hole,
+    required super.frameWholeHole,
+    required super.fitCache,
+    required this.ghosts,
+    required this.shotColor,
+    super.repaint,
+  });
+
+  /// Width of one mown band, in yards. Roughly a triplex mower's pass.
+  static const _stripeWidth = 5.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0 || trajectory.isEmpty) return;
+
+    // CustomPaint does not clip to its own bounds. The ground plane is drawn
+    // far larger than the shot so its far edge reads as a horizon, and at some
+    // camera angles it projects well outside this widget and over whatever
+    // sits beside it — the split-view neighbour, the shot list, the nav bar.
+    canvas.clipRect(Offset.zero & size);
+
+    final rest = trajectory.restPosition;
+    final range = math.max(trajectory.totalDistance, 40.0);
+
+    // Grid spacing follows the display unit so the labels stay round numbers.
+    final gridStep = prefs.distance == DistanceUnit.meters ? 25 / 0.9144 : 25.0;
+    final course = hole;
+    final halfWidth = math.max(
+      math.max(rest.x.abs() + 2 * gridStep, 3 * gridStep),
+      math.max(range * 0.3, course == null ? 0.0 : course.fairwayWidth * 0.9),
+    );
+    // The hole has to be drawn even when the shot falls well short of it.
+    final maxDepth =
+        math.max(range, course == null ? 0.0 : course.greenBack + 20) +
+        2 * gridStep;
+
+    final camera = _resolveCamera(size);
+
+    _paintBackdrop(canvas, camera, size);
+    _paintGround(canvas, camera, halfWidth, maxDepth, gridStep);
+    // A built hole replaces the analytic fairway-and-green entirely: its cells
+    // already say what every patch of ground is, including the green.
+    final built = course?.grid;
+    if (built != null) {
+      _paintGridHole(canvas, camera, built);
+      _paintPinAt(canvas, camera, built);
+    } else {
+      if (course != null && density.atLeastMedium) {
+        _paintRoughTexture(canvas, camera, course, halfWidth, maxDepth);
+      }
+      if (course != null) _paintGreen(canvas, camera, course);
+    }
+    _paintDistanceHaze(canvas, camera, size);
+    // Trees stand on the ground, so they go over the haze — otherwise the far
+    // ones would be washed out at the base and solid at the top.
+    if (built != null) _paintTrees(canvas, camera, built);
+    if (density.atLeastMedium) {
+      _paintDistanceLabels(canvas, camera, gridStep, maxDepth, halfWidth);
+    }
+
+    for (final ghost in ghosts) {
+      final path = _pathFor(camera, ghost.points, ghost.points.length - 1);
+      if (path != null) {
+        canvas.drawPath(
+          path,
+          Paint()
+            ..color = shotColor.withAlpha(50)
+            ..strokeWidth = 1.2 * _s
+            ..style = PaintingStyle.stroke,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ScenePainter old) =>
+      _viewChanged(old) ||
+      old.ghosts.length != ghosts.length ||
+      old.shotColor != shotColor;
+
   // ── Scene ──────────────────────────────────────────────────────────────────
 
-  void _paintBackdrop(Canvas canvas, Size size) {
+  /// Screen height of the ground plane's true horizon for this camera, or
+  /// null when the view has none (looking straight up or down).
+  ///
+  /// Projected along the camera's own forward direction flattened onto the
+  /// plane, so it tracks the real vanishing line under any yaw — and it is
+  /// deliberately NOT clamped into the viewport: a horizon far above the top
+  /// edge is information the sky and haze need, not an error to correct.
+  double? _horizonScreenY(_Camera camera) {
+    final flat = Vec3(camera.forward.x, 0, camera.forward.z);
+    if (flat.length < 1e-3) return null;
+    final far = camera.project(camera.position + flat.normalized * 10000);
+    if (far == null || !far.dy.isFinite) return null;
+    return far.dy;
+  }
+
+  void _paintBackdrop(Canvas canvas, _Camera camera, Size size) {
+    final horizon = _horizonScreenY(camera);
+    // Anchor the gradient to the horizon so the palest sky always meets the
+    // ground line, wherever the camera puts it. The shader clamps beyond its
+    // ends, so below the horizon (ground territory) stays horizon-toned and
+    // high above stays deep sky. No horizon in view: the camera is pointing
+    // at the ground, which will cover the backdrop anyway.
+    final anchor = horizon ?? size.height;
     canvas.drawRect(
       Offset.zero & size,
       Paint()
         ..shader = ui.Gradient.linear(
-          Offset.zero,
-          Offset(0, size.height),
-          const [AppColors.background, AppColors.skyLow],
+          Offset(0, anchor - size.height * 0.9),
+          Offset(0, anchor),
+          [scene.skyTop, scene.skyHorizon],
         ),
     );
   }
 
-  /// The pin on a built hole: the middle of wherever the green cells are.
+  /// The pin on a built hole.
   ///
-  /// A painted green has no centre to read off a setting, so it is measured.
-  /// No green cells means no pin, which is correct — a hole can be built
-  /// without one.
+  /// A pin the player placed wins; without one, the middle of wherever the
+  /// green cells are stands in — a painted green has no centre to read off
+  /// a setting, so it is measured. No green cells means no pin, which is
+  /// correct — a hole can be built without one.
   void _paintPinAt(Canvas canvas, _Camera camera, HoleGrid grid) {
+    final placed = grid.pinCentre;
+    if (placed != null) {
+      _paintFlagstick(canvas, camera, Vec3(placed.$1, 0, placed.$2));
+      return;
+    }
     var sx = 0.0, sz = 0.0, n = 0;
     for (var row = 0; row < grid.rows; row++) {
       for (var col = 0; col < grid.cols; col++) {
@@ -1321,14 +1754,11 @@ class _FlightPainter extends CustomPainter {
         _polygon3(
           canvas,
           camera,
-          [
-            Vec3(x0, 0, z0),
-            Vec3(x1, 0, z0),
-            Vec3(x1, 0, z1),
-            Vec3(x0, 0, z1),
-          ],
+          [Vec3(x0, 0, z0), Vec3(x1, 0, z0), Vec3(x1, 0, z1), Vec3(x0, 0, z1)],
           Paint()
-            ..color = banded && !band ? terrain.stripeColor : terrain.surfaceColor,
+            ..color = banded && !band
+                ? terrain.stripeColor
+                : terrain.surfaceColor,
         );
         col = end;
       }
@@ -1341,10 +1771,20 @@ class _FlightPainter extends CustomPainter {
   /// depth handling — they are painted before the shot, so a tree never hides
   /// the ball. That is deliberate: the trace is the subject of the view, and
   /// interleaving it properly would mean splitting the path by depth.
-  void _paintTrees(Canvas canvas, _Camera camera, HoleGrid grid) {
-    final cell = grid.cellSize;
-    final stands = <({double depth, Vec3 at, double scale})>[];
+  /// Where the trees stand comes from the grid alone, so it is computed once
+  /// per grid and kept. A dense stand on a fine grid is hundreds of cells,
+  /// and rescanning every cell of the grid for them — with the jitter hash
+  /// re-run per cell — was a real share of the cost of repainting a wooded
+  /// hole.
+  static final Expando<List<({Vec3 at, double scale})>> _standsByGrid =
+      Expando();
 
+  static List<({Vec3 at, double scale})> _treeStands(HoleGrid grid) {
+    final cached = _standsByGrid[grid];
+    if (cached != null) return cached;
+
+    final cell = grid.cellSize;
+    final stands = <({Vec3 at, double scale})>[];
     for (var row = 0; row < grid.rows; row++) {
       for (var col = 0; col < grid.cols; col++) {
         if (grid.at(col, row) != Terrain.trees) continue;
@@ -1352,30 +1792,48 @@ class _FlightPainter extends CustomPainter {
         final h = (col * 73856093) ^ (row * 19349663);
         final jx = ((h & 0xff) / 255.0 - 0.5) * cell * 0.6;
         final jz = (((h >> 8) & 0xff) / 255.0 - 0.5) * cell * 0.6;
-        final at = Vec3(
-          grid.left + (col + 0.5) * cell + jx,
-          0,
-          (row + 0.5) * cell + jz,
-        );
-        final depth = camera.depthOf(at);
-        if (depth <= 0) continue;
         stands.add((
-          depth: depth,
-          at: at,
+          at: Vec3(
+            grid.left + (col + 0.5) * cell + jx,
+            0,
+            (row + 0.5) * cell + jz,
+          ),
           scale: 0.8 + ((h >> 16) & 0xff) / 255.0 * 0.5,
         ));
       }
     }
+    return _standsByGrid[grid] = stands;
+  }
 
-    stands.sort((a, b) => b.depth.compareTo(a.depth));
-    for (final t in stands) {
-      _paintTree(canvas, camera, t.at, t.scale);
+  void _paintTrees(Canvas canvas, _Camera camera, HoleGrid grid) {
+    final visible = <({double depth, Vec3 at, double scale})>[];
+    for (final stand in _treeStands(grid)) {
+      final depth = camera.depthOf(stand.at);
+      if (depth <= 0) continue;
+      visible.add((depth: depth, at: stand.at, scale: stand.scale));
+    }
+    visible.sort((a, b) => b.depth.compareTo(a.depth));
+
+    // One set of paints for the whole stand, not three per tree.
+    final trunk = Paint()..color = scene.treeTrunk;
+    final canopyLit = Paint()..color = scene.treeCanopyLit;
+    final canopyShade = Paint()..color = scene.treeCanopy;
+    for (final t in visible) {
+      _paintTree(canvas, camera, t.at, t.scale, trunk, canopyLit, canopyShade);
     }
   }
 
   /// One tree: a trunk and two canopy layers, built from ground-anchored
   /// verticals so it scales with the projection like everything else.
-  void _paintTree(Canvas canvas, _Camera camera, Vec3 base, double scale) {
+  void _paintTree(
+    Canvas canvas,
+    _Camera camera,
+    Vec3 base,
+    double scale,
+    Paint trunk,
+    Paint canopyLit,
+    Paint canopyShade,
+  ) {
     final height = 9.0 * scale;
     final spread = 3.2 * scale;
 
@@ -1391,9 +1849,7 @@ class _FlightPainter extends CustomPainter {
     canvas.drawLine(
       trunkBase,
       trunkTop,
-      Paint()
-        ..color = AppColors.treeTrunk
-        ..strokeWidth = math.max(1.0, rise * 0.16),
+      trunk..strokeWidth = math.max(1.0, rise * 0.16),
     );
 
     // Canopy as two stacked triangles — enough to read as a conifer at any
@@ -1402,9 +1858,11 @@ class _FlightPainter extends CustomPainter {
       final (base0, width) = layer;
       final tip = camera.project(Vec3(base.x, height * (base0 + 0.42), base.z));
       final left = camera.project(
-          Vec3(base.x - spread * width, height * base0, base.z));
+        Vec3(base.x - spread * width, height * base0, base.z),
+      );
       final right = camera.project(
-          Vec3(base.x + spread * width, height * base0, base.z));
+        Vec3(base.x + spread * width, height * base0, base.z),
+      );
       if (tip == null || left == null || right == null) continue;
       canvas.drawPath(
         Path()
@@ -1412,8 +1870,7 @@ class _FlightPainter extends CustomPainter {
           ..lineTo(right.dx, right.dy)
           ..lineTo(left.dx, left.dy)
           ..close(),
-        Paint()
-          ..color = base0 > 0.5 ? AppColors.treeCanopyLit : AppColors.treeCanopy,
+        base0 > 0.5 ? canopyLit : canopyShade,
       );
     }
   }
@@ -1437,12 +1894,12 @@ class _FlightPainter extends CustomPainter {
     for (var z = near; z < maxDepth; z += step) {
       // Thin the scatter out with distance: at the horizon the clumps would
       // otherwise converge into a solid band.
-      final depthFade =
-          (1 - (z - near) / (maxDepth - near)).clamp(0.0, 1.0);
+      final depthFade = (1 - (z - near) / (maxDepth - near)).clamp(0.0, 1.0);
       if (depthFade < 0.06) continue;
       for (var x = -halfWidth; x < halfWidth; x += step) {
         // Cheap positional hash — stable, and cheaper than a real noise field.
-        final h = ((x * 73856093).toInt() ^ (z * 19349663).toInt()) & 0x7fffffff;
+        final h =
+            ((x * 73856093).toInt() ^ (z * 19349663).toInt()) & 0x7fffffff;
         if (h % 100 > 62) continue;
         final jx = x + (h % 37) / 37.0 * step;
         final jz = z + ((h >> 7) % 41) / 41.0 * step;
@@ -1459,9 +1916,7 @@ class _FlightPainter extends CustomPainter {
             Vec3(jx - size * 0.7, 0, jz + size * 0.6),
           ],
           Paint()
-            ..color = (h & 1 == 0
-                    ? AppColors.turfRoughClump
-                    : AppColors.turfRoughClumpDark)
+            ..color = (h & 1 == 0 ? scene.roughClump : scene.roughClumpDark)
                 .withAlpha((150 * depthFade).round()),
         );
       }
@@ -1479,26 +1934,30 @@ class _FlightPainter extends CustomPainter {
   ///
   /// Drawn over the ground but under the shot, so it never touches the trace.
   void _paintDistanceHaze(Canvas canvas, _Camera camera, Size size) {
-    // The horizon is wherever the ground plane vanishes. Fall back to the
-    // upper third if the camera is looking somewhere that has no horizon.
-    // A point behind the eye, or one the projection cannot resolve, yields a
-    // non-finite y. Letting that reach Gradient.linear locks the rasteriser
-    // rather than throwing, so it is checked before it is used.
-    final far = camera.project(const Vec3(0, 0, 10000));
-    final raw = (far != null && far.dy.isFinite) ? far.dy : size.height * 0.33;
-    final horizon = raw.clamp(0.0, size.height);
-    if (!horizon.isFinite || horizon >= size.height - 1) return;
+    // Anchored to the same true horizon as the sky, and never clamped into
+    // the viewport: with the horizon far above the top edge (camera looking
+    // down at near ground) only the weak tail of the fade reaches the frame,
+    // instead of a fresh opaque band pinned to the top. No horizon, no haze.
+    final horizon = _horizonScreenY(camera);
+    if (horizon == null || horizon >= size.height - 1) return;
+
+    // Reaches full clarity about half a viewport below the horizon; past
+    // that the haze would start eating the landing area.
+    final bottom = horizon + size.height * 0.5;
+    if (bottom <= 0) return;
 
     canvas.drawRect(
-      Rect.fromLTRB(0, horizon, size.width, size.height),
+      Rect.fromLTRB(
+        0,
+        math.max(0.0, horizon),
+        size.width,
+        math.min(size.height, bottom),
+      ),
       Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(0, horizon),
-          // Reaches full clarity a third of the way down from the horizon;
-          // past that the haze would start eating the landing area.
-          Offset(0, horizon + (size.height - horizon) * 0.55),
-          [AppColors.turfHaze, AppColors.turfHaze.withAlpha(0)],
-        ),
+        ..shader = ui.Gradient.linear(Offset(0, horizon), Offset(0, bottom), [
+          scene.haze.withAlpha((255 * scene.hazeStrength).round()),
+          scene.haze.withAlpha(0),
+        ]),
     );
   }
 
@@ -1520,18 +1979,12 @@ class _FlightPainter extends CustomPainter {
     // With a hole set, everything off the fairway and green really is rough —
     // the model says so — so the ground it sits on is coloured as rough rather
     // than as neutral scenery.
-    _polygon3(
-      canvas,
-      camera,
-      [
-        Vec3(-outerWidth, 0, -outerDepth),
-        Vec3(outerWidth, 0, -outerDepth),
-        Vec3(outerWidth, 0, outerDepth),
-        Vec3(-outerWidth, 0, outerDepth),
-      ],
-      Paint()
-        ..color = course != null ? AppColors.turfRough : AppColors.turfGround,
-    );
+    _polygon3(canvas, camera, [
+      Vec3(-outerWidth, 0, -outerDepth),
+      Vec3(outerWidth, 0, -outerDepth),
+      Vec3(outerWidth, 0, outerDepth),
+      Vec3(-outerWidth, 0, outerDepth),
+    ], Paint()..color = course != null ? scene.rough : scene.ground);
 
     // Fairway down the target line. With a hole configured it is the width the
     // player set and it stops at the front of the green.
@@ -1539,36 +1992,39 @@ class _FlightPainter extends CustomPainter {
     // It is drawn as mown bands rather than one strip: the way the bands
     // converge is most of what makes the surface read as receding, and it
     // costs a dozen extra polygons.
-    final fairwayHalf = course != null
-        ? course.fairwayWidth / 2
-        : math.min(halfWidth * 0.5, 30.0);
-    final fairwayEnd = course != null ? course.greenFront : maxDepth;
-    // Lanes are laid out from the target line outwards, not from the fairway
-    // edge inwards. Anchoring at the edge moved every band whenever the width
-    // changed, and left the two sides of the fairway out of step with each
-    // other.
-    final firstLane = (-fairwayHalf / _stripeWidth).floor();
-    final lastLane = (fairwayHalf / _stripeWidth).ceil();
-    for (var lane = firstLane; lane < lastLane; lane++) {
-      final left = math.max(lane * _stripeWidth, -fairwayHalf);
-      // Overlap the neighbour a hair; abutting fills leave an antialiased seam.
-      final right =
-          math.min((lane + 1) * _stripeWidth + 0.05, fairwayHalf);
-      if (right - left < 0.01) continue;
-      _polygon3(
-        canvas,
-        camera,
-        [
-          Vec3(left, 0, behind),
-          Vec3(right, 0, behind),
-          Vec3(right, 0, fairwayEnd),
-          Vec3(left, 0, fairwayEnd),
-        ],
-        Paint()
-          ..color = lane.isEven
-              ? AppColors.turfFairway
-              : AppColors.turfFairwayStripe,
-      );
+    //
+    // A built hole paints none of this: its cells say where the mown ground
+    // is, and these analytic bands would show through every cell the grid
+    // calls rough — a phantom default fairway under the painted hole.
+    if (course?.grid == null) {
+      final fairwayHalf = course != null
+          ? course.fairwayWidth / 2
+          : math.min(halfWidth * 0.5, 30.0);
+      final fairwayEnd = course != null ? course.greenFront : maxDepth;
+      // Lanes are laid out from the target line outwards, not from the
+      // fairway edge inwards. Anchoring at the edge moved every band
+      // whenever the width changed, and left the two sides of the fairway
+      // out of step with each other.
+      final firstLane = (-fairwayHalf / _stripeWidth).floor();
+      final lastLane = (fairwayHalf / _stripeWidth).ceil();
+      for (var lane = firstLane; lane < lastLane; lane++) {
+        final left = math.max(lane * _stripeWidth, -fairwayHalf);
+        // Overlap the neighbour a hair; abutting fills leave an antialiased
+        // seam.
+        final right = math.min((lane + 1) * _stripeWidth + 0.05, fairwayHalf);
+        if (right - left < 0.01) continue;
+        _polygon3(
+          canvas,
+          camera,
+          [
+            Vec3(left, 0, behind),
+            Vec3(right, 0, behind),
+            Vec3(right, 0, fairwayEnd),
+            Vec3(left, 0, fairwayEnd),
+          ],
+          Paint()..color = lane.isEven ? scene.fairway : scene.fairwayStripe,
+        );
+      }
     }
 
     // Cross lines — faded with distance so the horizon doesn't turn solid.
@@ -1583,7 +2039,7 @@ class _FlightPainter extends CustomPainter {
         Vec3(-halfWidth, 0, z),
         Vec3(halfWidth, 0, z),
         Paint()
-          ..color = AppColors.turfGrid.withAlpha((150 * fade).round())
+          ..color = scene.grid.withAlpha((150 * fade).round())
           ..strokeWidth = 1,
       );
     }
@@ -1597,7 +2053,7 @@ class _FlightPainter extends CustomPainter {
         Vec3(i * gridStep, 0, behind),
         Vec3(i * gridStep, 0, maxDepth),
         Paint()
-          ..color = AppColors.turfGrid.withAlpha(70)
+          ..color = scene.grid.withAlpha(70)
           ..strokeWidth = 1,
       );
     }
@@ -1635,26 +2091,21 @@ class _FlightPainter extends CustomPainter {
     // and it is the cue that reads first — the shape stops looking like a
     // painted patch and starts looking like a green.
     const collar = 2.2;
-    _polygon3(
-      canvas,
-      camera,
-      [
-        for (var i = 0; i < segments; i++)
-          Vec3(
-            course.greenOffset +
-                (halfWidth + collar) * math.cos(i * 2 * math.pi / segments),
-            0,
-            course.greenDistance +
-                (halfDepth + collar) * math.sin(i * 2 * math.pi / segments),
-          ),
-      ],
-      Paint()..color = AppColors.turfGreenCollar,
-    );
+    _polygon3(canvas, camera, [
+      for (var i = 0; i < segments; i++)
+        Vec3(
+          course.greenOffset +
+              (halfWidth + collar) * math.cos(i * 2 * math.pi / segments),
+          0,
+          course.greenDistance +
+              (halfDepth + collar) * math.sin(i * 2 * math.pi / segments),
+        ),
+    ], Paint()..color = scene.greenCollar);
 
-    _polygon3(canvas, camera, ring, Paint()..color = AppColors.turfGreen);
+    _polygon3(canvas, camera, ring, Paint()..color = scene.green);
 
     final edge = Paint()
-      ..color = AppColors.turfGreenEdge
+      ..color = scene.greenEdge
       ..strokeWidth = 1.4 * _s;
     for (var i = 0; i < ring.length; i++) {
       _line3(canvas, camera, ring[i], ring[(i + 1) % ring.length], edge);
@@ -1669,7 +2120,7 @@ class _FlightPainter extends CustomPainter {
         canvas,
         '${prefs.dist(course.greenDistance).round()} ${prefs.distLabel}',
         label.translate(0, -10),
-        AppTextStyles.mono(size: 9 * _s, color: AppColors.turfGreenEdge),
+        AppTextStyles.mono(size: 9 * _s, color: scene.greenEdge),
       );
     }
   }
@@ -1722,6 +2173,61 @@ class _FlightPainter extends CustomPainter {
       );
     }
   }
+}
+
+/// The shot itself: tracer, height curtain, shadow, ball and its marks.
+/// The only layer that repaints on every tick of the replay clock, so it
+/// carries only what actually moves; the world behind it sits still in
+/// [_ScenePainter]'s cached layer.
+class _FlightPainter extends _ViewPainter {
+  final Color shotColor;
+  final Color accent;
+
+  _FlightPainter({
+    required super.trajectory,
+    required super.replay,
+    required super.flightFraction,
+    required super.yaw,
+    required super.pitch,
+    required super.zoom,
+    required super.follow,
+    required super.firstPerson,
+    required super.prefs,
+    required super.density,
+    required super.controlStripHeight,
+    required super.hole,
+    required super.frameWholeHole,
+    required super.fitCache,
+    required this.shotColor,
+    required this.accent,
+    super.repaint,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0 || trajectory.isEmpty) return;
+
+    // Clipped for the same reason as the scene layer: at some camera angles
+    // the marks project outside this widget, over its neighbours.
+    canvas.clipRect(Offset.zero & size);
+
+    final camera = _resolveCamera(size);
+    final ball = _ballPosition();
+
+    if (_hasLanded) _paintLandingMarks(canvas, camera);
+
+    final flightSegments = _visibleSegments(trajectory.points, _flightProgress);
+    _paintCurtain(canvas, camera, flightSegments);
+    _paintShadow(canvas, camera, trajectory.points, flightSegments);
+    _paintFlightPath(canvas, camera, flightSegments);
+    _paintGroundPath(canvas, camera);
+    _paintApexMarker(canvas, camera, ball);
+    _paintBall(canvas, camera, ball);
+  }
+
+  @override
+  bool shouldRepaint(_FlightPainter old) =>
+      _viewChanged(old) || old.shotColor != shotColor || old.accent != accent;
 
   void _paintCurtain(Canvas canvas, _Camera camera, int upTo) {
     final points = trajectory.points;
@@ -1852,16 +2358,6 @@ class _FlightPainter extends CustomPainter {
     );
   }
 
-  Vec3? _apexPoint() {
-    final points = trajectory.points;
-    if (points.isEmpty) return null;
-    var best = points.first;
-    for (final p in points) {
-      if (p.y > best.y) best = p;
-    }
-    return Vec3(best.x, best.y, best.z);
-  }
-
   /// Rings at the pitch mark, plus the carry read-out.
   void _paintLandingMarks(Canvas canvas, _Camera camera) {
     final landing = Vec3(trajectory.offline, 0, trajectory.carry);
@@ -1921,34 +2417,4 @@ class _FlightPainter extends CustomPainter {
     );
     canvas.drawCircle(at, 4 * _s, Paint()..color = Colors.white);
   }
-
-  void _label(Canvas canvas, String text, Offset at, TextStyle style) {
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    painter.paint(
-      canvas,
-      Offset(at.dx - painter.width / 2, at.dy - painter.height / 2),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_FlightPainter old) =>
-      old.trajectory != trajectory ||
-      old.ghosts.length != ghosts.length ||
-      old.progress != progress ||
-      old.flightFraction != flightFraction ||
-      old.yaw != yaw ||
-      old.pitch != pitch ||
-      old.zoom != zoom ||
-      old.follow != follow ||
-      old.firstPerson != firstPerson ||
-      old.shotColor != shotColor ||
-      old.accent != accent ||
-      old.prefs != prefs ||
-      old.density != density ||
-      old.controlStripHeight != controlStripHeight ||
-      old.hole != hole ||
-      old.frameWholeHole != frameWholeHole;
 }

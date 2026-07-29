@@ -32,13 +32,15 @@ class ClubsNotifier extends Notifier<List<Club>> {
     if (saved.isNotEmpty) state = saved;
   }
 
-  Future<void> _persist() =>
-      ref.read(appDatabaseProvider).saveAllClubs(state);
+  Future<void> _persist() => ref.read(appDatabaseProvider).saveAllClubs(state);
 
   void updateClubTags(String id, {String? manufacturer, String? model}) {
     state = [
       for (final c in state)
-        if (c.id == id) c.copyWith(manufacturer: manufacturer, model: model) else c,
+        if (c.id == id)
+          c.copyWith(manufacturer: manufacturer, model: model)
+        else
+          c,
     ];
     _persist();
   }
@@ -50,6 +52,15 @@ class ClubsNotifier extends Notifier<List<Club>> {
 
   void removeClub(String id) {
     state = state.where((c) => c.id != id).toList();
+    _persist();
+  }
+
+  /// Re-inserts a removed club at its old position — the undo for
+  /// [removeClub], keeping its manufacturer and model tags.
+  void insertClub(Club club, int index) {
+    final next = [...state];
+    next.insert(index.clamp(0, next.length), club);
+    state = next;
     _persist();
   }
 }

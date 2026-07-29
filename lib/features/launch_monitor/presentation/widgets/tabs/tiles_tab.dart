@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -47,6 +49,11 @@ class TilesTab extends ConsumerWidget {
     final avg = shots.isEmpty ? null : ShotData.averageOf(shots);
     final last = selectedShot ?? (shots.isEmpty ? null : shots.first);
     final tablet = isTablet(context);
+
+    // The widest value on show sets one shared digit size for the grid: as
+    // large as the tiles allow while every tile still matches. Measured with
+    // the value typeface itself, not estimated from character counts.
+    final maxEms = _maxValueEms(metrics, last, prefs);
 
     const gap = 10.0;
     const pad = 12.0;
@@ -110,6 +117,7 @@ class TilesTab extends ConsumerWidget {
                     currentShot: last,
                     avgShot: avg,
                     prefs: prefs,
+                    valueEms: maxEms,
                   ),
                 );
               },
@@ -341,6 +349,54 @@ double? metricRaw(TileMetric m, ShotData? s, UnitPrefs prefs) {
   };
 }
 
+/// Splits a formatted metric into the number and any trailing direction
+/// letter — R/L, T/H — so the digits can render full size with the letter set
+/// smaller beside them. A letter scaled with the digits was quietly shrinking
+/// every directional metric: '1.1° R' drew its digits far smaller than a
+/// bare '5500'.
+///
+/// The degree sign stays with the number: at full size the glyph is already
+/// small and sits at the top of the line, which is exactly where it belongs —
+/// shrunk and baseline-aligned like a letter it drops to mid-height.
+(String, String) splitValueSuffix(String value) {
+  final match = RegExp(r'^[-\d.]+°?').firstMatch(value);
+  if (match == null) return (value, '');
+  return (match.group(0)!, value.substring(match.end).trim());
+}
+
+/// Width of a rendered tile value, in ems of the digit size — the number at
+/// full size plus any direction letter at half size, measured with the value
+/// typeface itself.
+double _valueEms(String text) {
+  const ref = 100.0;
+  double width(String t, double size) {
+    final painter = TextPainter(
+      text: TextSpan(text: t, style: _TileValue._style(size)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final w = painter.width;
+    painter.dispose();
+    return w;
+  }
+
+  final (number, suffix) = splitValueSuffix(text);
+  var total = width(number, ref);
+  if (suffix.isNotEmpty) total += ref * 0.05 + width(suffix, ref / 2);
+  return total / ref;
+}
+
+/// The widest em-width among the values the grid is currently showing — what
+/// one shared digit size has to accommodate. The impact tile keeps its own
+/// two-line layout and does not take part.
+double _maxValueEms(List<TileMetric> metrics, ShotData? shot, UnitPrefs prefs) {
+  var widest = 1.0;
+  for (final m in metrics) {
+    if (m == TileMetric.impactLocation) continue;
+    widest = math.max(widest, _valueEms(metricValue(m, shot, prefs)));
+  }
+  return widest;
+}
+
 String _fmtImpactH(double? v) {
   if (v == null) return '--';
   return '${v.abs().toStringAsFixed(1)} ${v >= 0 ? 'T' : 'H'}';
@@ -359,12 +415,17 @@ class _MetricTile extends StatelessWidget {
   final ShotData? avgShot;
   final UnitPrefs prefs;
 
+  /// Em-width of the widest value in the grid; the digit size all tiles
+  /// share is whatever lets that value fill its tile.
+  final double valueEms;
+
   const _MetricTile({
     super.key,
     required this.metric,
     required this.currentShot,
     required this.avgShot,
     required this.prefs,
+    required this.valueEms,
   });
 
   @override
@@ -389,16 +450,16 @@ class _MetricTile extends StatelessWidget {
                 avgShot!.verticalImpact != null
             ? '±${(currentShot!.verticalImpact! - avgShot!.verticalImpact!).abs().toStringAsFixed(1)}'
             : '';
-        footer = 'H: $hAvg $hDiff  V: $vAvg $vDiff';
+        footer = 'H: $hAvg $hDiff · V: $vAvg $vDiff';
       } else if (avgShot != null) {
-        footer = 'AVG  H: $hAvg  V: $vAvg';
+        footer = 'AVG  H: $hAvg · V: $vAvg';
       }
     } else if (avgShot != null && currentShot != null) {
       final cur = metricRaw(metric, currentShot, prefs);
       final avg = metricRaw(metric, avgShot, prefs);
       if (cur != null && avg != null) {
         final diff = cur - avg;
-        footer = 'AVG $avgStr  ±${diff.abs().toStringAsFixed(1)}';
+        footer = 'AVG $avgStr · ±${diff.abs().toStringAsFixed(1)}';
       }
     } else if (avgShot != null) {
       footer = 'AVG $avgStr';
@@ -406,92 +467,139 @@ class _MetricTile extends StatelessWidget {
 
     final unit = tileUnit(metric, prefs);
 
+    // Label, value, unit and average stack as a column — the value takes
+    // every pixel the fixed rows leave, instead of living between hardcoded
+    // insets that starved it on small split-pane tiles.
     return Container(
       decoration: BoxDecoration(
         color: AppColors.card,
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Stack(
-        children: [
-          // Value fills the entire tile
-          Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                10,
-                22,
-                10,
-                footer.isNotEmpty ? 22 : 4,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+      child: LayoutBuilder(
+        builder: (context, box) {
+          // A short tile can't fit four rows; the digits matter most, so the
+          // unit line and the average give way first.
+          final compact = box.maxHeight < 96;
+          return Column(
+            children: [
+              Text(
+                metric.label.toUpperCase(),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.sans(
+                  size: 11,
+                  weight: FontWeight.w700,
+                  color: AppColors.textMuted,
+                ).copyWith(letterSpacing: 1.2),
               ),
-              child: isImpact
-                  ? _ImpactDisplay(shot: currentShot)
-                  : FittedBox(
-                      fit: BoxFit.contain,
-                      alignment: Alignment.center,
-                      child: SplitFlapText(
-                        text: currentStr,
-                        style: AppTextStyles.mono(
-                          size: 108,
-                          weight: FontWeight.w600,
-                        ),
+              const SizedBox(height: 2),
+              Expanded(
+                child: isImpact
+                    ? _ImpactDisplay(shot: currentShot)
+                    : LayoutBuilder(
+                        builder: (context, valueBox) {
+                          // Every tile shares this size: the value area's
+                          // height, capped so the grid's widest value —
+                          // measured, not estimated — just fits the width.
+                          // That is the largest size uniformity permits.
+                          // scaleDown stays as a guard against the font
+                          // swapping under the measurement.
+                          final base = math
+                              .min(
+                                valueBox.maxHeight * 0.95,
+                                valueBox.maxWidth * 0.98 / valueEms,
+                              )
+                              .clamp(8.0, 400.0);
+                          return FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.center,
+                            child: _TileValue(text: currentStr, size: base),
+                          );
+                        },
                       ),
-                    ),
-            ),
-          ),
-          // Label top-left, unit top-right
-          Positioned(
-            top: 5,
-            left: 8,
-            right: 8,
-            child: Row(
-              children: [
-                Expanded(
+              ),
+              if (!compact && !isImpact && unit.isNotEmpty)
+                Text(
+                  unit,
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.sans(
+                    size: 11,
+                    color: AppColors.textDimmed,
+                  ).copyWith(fontStyle: FontStyle.italic),
+                ),
+              if (!compact && footer.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                   child: Text(
-                    metric.label,
-                    style: AppTextStyles.sans(
-                      size: 11,
-                      weight: FontWeight.w600,
+                    footer,
+                    style: AppTextStyles.mono(
+                      size: 10,
                       color: AppColors.textMuted,
                     ),
                     overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
                   ),
                 ),
-                if (!isImpact && unit.isNotEmpty)
-                  Text(
-                    unit,
-                    style: AppTextStyles.sans(
-                      size: 11,
-                      color: AppColors.textDimmed,
-                    ).copyWith(fontStyle: FontStyle.italic),
-                  ),
               ],
-            ),
-          ),
-          // AVG pill pinned to bottom
-          if (footer.isNotEmpty)
-            Positioned(
-              bottom: 4,
-              left: 6,
-              right: 6,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  footer,
-                  style: AppTextStyles.mono(
-                    size: 10,
-                    color: AppColors.textMuted,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-        ],
+            ],
+          );
+        },
       ),
+    );
+  }
+}
+
+// ── Tile value ────────────────────────────────────────────────────────────────
+
+/// The tile's big number.
+///
+/// Digits render full size in a heavy sans — DM Mono tops out at w500, so the
+/// old `w600` request was silently falling back to medium, which is most of
+/// why these numbers read thinner than the design they came from. Any trailing
+/// suffix sits beside the digits at half size on the shared baseline. Tabular
+/// figures keep the split-flap animation from wobbling the layout as digits
+/// roll.
+///
+/// [size] is the digits' font size. The metric tiles pass one value computed
+/// from their shared geometry so every tile's digits match.
+class _TileValue extends StatelessWidget {
+  final String text;
+  final double size;
+
+  const _TileValue({required this.text, this.size = 108});
+
+  static TextStyle _style(double size) => AppTextStyles.sans(
+    size: size,
+    weight: FontWeight.w800,
+  ).copyWith(fontFeatures: const [FontFeature.tabularFigures()], height: 1.0);
+
+  @override
+  Widget build(BuildContext context) {
+    final (number, suffix) = splitValueSuffix(text);
+    if (suffix.isEmpty) {
+      return SplitFlapText(text: number, style: _style(size));
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        SplitFlapText(text: number, style: _style(size)),
+        SizedBox(width: size * 0.05),
+        SplitFlapText(text: suffix, style: _style(size * 0.5)),
+      ],
     );
   }
 }
@@ -531,17 +639,18 @@ class _ImpactValue extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            label,
-            style: AppTextStyles.sans(size: 11, color: AppColors.textDimmed),
+            label.toUpperCase(),
+            style: AppTextStyles.sans(
+              size: 10,
+              weight: FontWeight.w700,
+              color: AppColors.textDimmed,
+            ).copyWith(letterSpacing: 1.2),
           ),
           const SizedBox(height: 2),
           Expanded(
             child: FittedBox(
               fit: BoxFit.contain,
-              child: Text(
-                value,
-                style: AppTextStyles.mono(size: 108, weight: FontWeight.w600),
-              ),
+              child: _TileValue(text: value),
             ),
           ),
           Text(

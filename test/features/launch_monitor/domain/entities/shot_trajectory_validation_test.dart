@@ -33,15 +33,14 @@ ShotTrajectory _flight(
   double spin = 3000,
   double spinAxis = 0,
   double? roll,
-}) =>
-    model.simulate(
-      ballSpeedMph: ballSpeed,
-      launchAngleDeg: launchAngle,
-      launchDirectionDeg: launchDirection,
-      spinRpm: spin,
-      spinAxisDeg: spinAxis,
-      measuredRollYds: roll,
-    );
+}) => model.simulate(
+  ballSpeedMph: ballSpeed,
+  launchAngleDeg: launchAngle,
+  launchDirectionDeg: launchDirection,
+  spinRpm: spin,
+  spinAxisDeg: spinAxis,
+  measuredRollYds: roll,
+);
 
 void main() {
   const model = BallFlightModel.standard;
@@ -76,8 +75,12 @@ void main() {
             v * v * math.pow(math.sin(theta), 2) / (2 * _g) * _mToYd;
         final expectedTime = 2 * v * math.sin(theta) / _g;
 
-        final flight =
-            _flight(vacuum, ballSpeed: speedMph, launchAngle: angleDeg, spin: 0);
+        final flight = _flight(
+          vacuum,
+          ballSpeed: speedMph,
+          launchAngle: angleDeg,
+          spin: 0,
+        );
 
         expect(flight.carry, closeTo(expectedRange, expectedRange * 0.0005));
         expect(flight.apex, closeTo(expectedApex, expectedApex * 0.002));
@@ -93,16 +96,28 @@ void main() {
     });
 
     test('launch direction rotates the whole flight rigidly', () {
-      final straight =
-          _flight(vacuum, ballSpeed: 150, launchAngle: 15, spin: 0);
-      final pushed = _flight(vacuum,
-          ballSpeed: 150, launchAngle: 15, launchDirection: 10, spin: 0);
+      final straight = _flight(
+        vacuum,
+        ballSpeed: 150,
+        launchAngle: 15,
+        spin: 0,
+      );
+      final pushed = _flight(
+        vacuum,
+        ballSpeed: 150,
+        launchAngle: 15,
+        launchDirection: 10,
+        spin: 0,
+      );
 
-      final groundDistance =
-          math.sqrt(pushed.carry * pushed.carry + pushed.offline * pushed.offline);
+      final groundDistance = math.sqrt(
+        pushed.carry * pushed.carry + pushed.offline * pushed.offline,
+      );
       expect(groundDistance, closeTo(straight.carry, straight.carry * 0.0005));
-      expect(math.atan2(pushed.offline, pushed.carry) * 180 / math.pi,
-          closeTo(10, 0.01));
+      expect(
+        math.atan2(pushed.offline, pushed.carry) * 180 / math.pi,
+        closeTo(10, 0.01),
+      );
     });
   });
 
@@ -112,11 +127,11 @@ void main() {
   group('time-step convergence', () {
     test('halving the step barely moves the answer, and shrinks fast', () {
       double carryAt(double h) => _flight(
-            BallFlightModel(stepSeconds: h),
-            ballSpeed: 167,
-            launchAngle: 10.9,
-            spin: 2686,
-          ).carry;
+        BallFlightModel(stepSeconds: h),
+        ballSpeed: 167,
+        launchAngle: 10.9,
+        spin: 2686,
+      ).carry;
 
       final coarse = carryAt(0.02);
       final normal = carryAt(0.01);
@@ -134,11 +149,11 @@ void main() {
 
     test('the ground phase is also step-independent', () {
       double totalAt(double h) => _flight(
-            BallFlightModel(stepSeconds: h),
-            ballSpeed: 150,
-            launchAngle: 12,
-            spin: 3000,
-          ).totalDistance;
+        BallFlightModel(stepSeconds: h),
+        ballSpeed: 150,
+        launchAngle: 12,
+        spin: 3000,
+      ).totalDistance;
 
       expect(totalAt(0.005), closeTo(totalAt(0.0025), 0.5));
     });
@@ -172,7 +187,12 @@ void main() {
     });
 
     test('drag never adds energy: the ball only slows down in the air', () {
-      final flight = _flight(model, ballSpeed: 150, launchAngle: 14, spin: 3000);
+      final flight = _flight(
+        model,
+        ballSpeed: 150,
+        launchAngle: 14,
+        spin: 3000,
+      );
       // Speed dips to a minimum near the apex and recovers as it falls, but it
       // can never exceed the launch speed.
       for (final p in flight.points) {
@@ -195,9 +215,18 @@ void main() {
 
     test('backspin buys back most of what drag costs', () {
       const dragOnly = BallFlightModel(liftMax: 0);
-      final real = _flight(model, ballSpeed: 167, launchAngle: 10.9, spin: 2686);
-      final noLift =
-          _flight(dragOnly, ballSpeed: 167, launchAngle: 10.9, spin: 2686);
+      final real = _flight(
+        model,
+        ballSpeed: 167,
+        launchAngle: 10.9,
+        spin: 2686,
+      );
+      final noLift = _flight(
+        dragOnly,
+        ballSpeed: 167,
+        launchAngle: 10.9,
+        spin: 2686,
+      );
 
       // A driver hit at 10.9° with no lift would be a low runner; backspin is
       // what makes the launch condition work at all.
@@ -205,18 +234,22 @@ void main() {
     });
 
     test('left and right are mirror images', () {
-      final right = _flight(model,
-          ballSpeed: 150,
-          launchAngle: 13,
-          launchDirection: 4,
-          spin: 3200,
-          spinAxis: 12);
-      final left = _flight(model,
-          ballSpeed: 150,
-          launchAngle: 13,
-          launchDirection: -4,
-          spin: 3200,
-          spinAxis: -12);
+      final right = _flight(
+        model,
+        ballSpeed: 150,
+        launchAngle: 13,
+        launchDirection: 4,
+        spin: 3200,
+        spinAxis: 12,
+      );
+      final left = _flight(
+        model,
+        ballSpeed: 150,
+        launchAngle: 13,
+        launchDirection: -4,
+        spin: 3200,
+        spinAxis: -12,
+      );
 
       expect(left.carry, closeTo(right.carry, 1e-9));
       expect(left.offline, closeTo(-right.offline, 1e-9));
@@ -234,41 +267,57 @@ void main() {
     test('carry rises monotonically with ball speed', () {
       var previous = 0.0;
       for (var speed = 90.0; speed <= 180.0; speed += 10) {
-        final carry =
-            _flight(model, ballSpeed: speed, launchAngle: 12, spin: 2800).carry;
+        final carry = _flight(
+          model,
+          ballSpeed: speed,
+          launchAngle: 12,
+          spin: 2800,
+        ).carry;
         expect(carry, greaterThan(previous));
         previous = carry;
       }
     });
 
-    test('carry against launch angle is single-peaked with an interior peak',
-        () {
-      final carries = <double, double>{
-        for (var angle = 4.0; angle <= 34.0; angle += 2)
-          angle: _flight(model, ballSpeed: 160, launchAngle: angle, spin: 2600)
-              .carry,
-      };
-      final best = carries.entries.reduce((a, b) => a.value >= b.value ? a : b);
-
-      expect(best.key, greaterThan(4.0));
-      expect(best.key, lessThan(34.0));
-      // Single-peaked: strictly rising to the peak, strictly falling after.
-      final angles = carries.keys.toList()..sort();
-      for (var i = 1; i < angles.length; i++) {
-        final rising = angles[i] <= best.key;
-        expect(
-          carries[angles[i]]! > carries[angles[i - 1]]!,
-          rising,
-          reason: 'carry should ${rising ? 'rise' : 'fall'} at ${angles[i]}°',
+    test(
+      'carry against launch angle is single-peaked with an interior peak',
+      () {
+        final carries = <double, double>{
+          for (var angle = 4.0; angle <= 34.0; angle += 2)
+            angle: _flight(
+              model,
+              ballSpeed: 160,
+              launchAngle: angle,
+              spin: 2600,
+            ).carry,
+        };
+        final best = carries.entries.reduce(
+          (a, b) => a.value >= b.value ? a : b,
         );
-      }
-    });
+
+        expect(best.key, greaterThan(4.0));
+        expect(best.key, lessThan(34.0));
+        // Single-peaked: strictly rising to the peak, strictly falling after.
+        final angles = carries.keys.toList()..sort();
+        for (var i = 1; i < angles.length; i++) {
+          final rising = angles[i] <= best.key;
+          expect(
+            carries[angles[i]]! > carries[angles[i - 1]]!,
+            rising,
+            reason: 'carry should ${rising ? 'rise' : 'fall'} at ${angles[i]}°',
+          );
+        }
+      },
+    );
 
     test('carry against spin is single-peaked', () {
       final carries = <double, double>{
         for (var spin = 500.0; spin <= 9000.0; spin += 500)
-          spin: _flight(model, ballSpeed: 165, launchAngle: 11, spin: spin)
-              .carry,
+          spin: _flight(
+            model,
+            ballSpeed: 165,
+            launchAngle: 11,
+            spin: spin,
+          ).carry,
       };
       final best = carries.entries.reduce((a, b) => a.value >= b.value ? a : b);
 
@@ -289,7 +338,12 @@ void main() {
     });
 
     test('spin decays over the flight', () {
-      final flight = _flight(model, ballSpeed: 150, launchAngle: 14, spin: 6000);
+      final flight = _flight(
+        model,
+        ballSpeed: 150,
+        launchAngle: 14,
+        spin: 6000,
+      );
 
       expect(flight.landingSpin, lessThan(6000));
       expect(flight.landingSpin, greaterThan(6000 * 0.6));
@@ -299,17 +353,31 @@ void main() {
       final tilts = [0.0, 5.0, 10.0, 15.0, 20.0];
       var previous = -1.0;
       for (final tilt in tilts) {
-        final curve = _flight(model,
-                ballSpeed: 150, launchAngle: 12, spin: 3000, spinAxis: tilt)
-            .curve;
+        final curve = _flight(
+          model,
+          ballSpeed: 150,
+          launchAngle: 12,
+          spin: 3000,
+          spinAxis: tilt,
+        ).curve;
         expect(curve, greaterThan(previous));
         previous = curve;
       }
 
-      final lowSpin = _flight(model,
-          ballSpeed: 150, launchAngle: 12, spin: 2000, spinAxis: 10);
-      final highSpin = _flight(model,
-          ballSpeed: 150, launchAngle: 12, spin: 5000, spinAxis: 10);
+      final lowSpin = _flight(
+        model,
+        ballSpeed: 150,
+        launchAngle: 12,
+        spin: 2000,
+        spinAxis: 10,
+      );
+      final highSpin = _flight(
+        model,
+        ballSpeed: 150,
+        launchAngle: 12,
+        spin: 5000,
+        spinAxis: 10,
+      );
       expect(highSpin.curve, greaterThan(lowSpin.curve));
     });
   });
@@ -329,9 +397,12 @@ void main() {
       var best = -1.0;
       for (var launch = 6.0; launch <= 24.0; launch += 0.5) {
         for (var spin = 1600.0; spin <= 4400.0; spin += 100) {
-          final carry = _flight(model,
-                  ballSpeed: ballSpeed, launchAngle: launch, spin: spin)
-              .carry;
+          final carry = _flight(
+            model,
+            ballSpeed: ballSpeed,
+            launchAngle: launch,
+            spin: spin,
+          ).carry;
           if (carry > best) best = carry;
         }
       }
@@ -345,11 +416,18 @@ void main() {
       (double, double) spinWindow,
     ) {
       var best = -1.0;
-      for (var launch = launchWindow.$1; launch <= launchWindow.$2; launch += 0.5) {
+      for (
+        var launch = launchWindow.$1;
+        launch <= launchWindow.$2;
+        launch += 0.5
+      ) {
         for (var spin = spinWindow.$1; spin <= spinWindow.$2; spin += 50) {
-          final carry = _flight(model,
-                  ballSpeed: ballSpeed, launchAngle: launch, spin: spin)
-              .carry;
+          final carry = _flight(
+            model,
+            ballSpeed: ballSpeed,
+            launchAngle: launch,
+            spin: spin,
+          ).carry;
           if (carry > best) best = carry;
         }
       }
@@ -361,10 +439,18 @@ void main() {
       test('the driver window is within 2% of maximum carry at '
           '${clubSpeed}mph', () {
         final ballSpeed = clubSpeed * 1.48;
-        final launchWindow = OptimalRanges.getRange(ClubType.wood, 'launchAngle',
-            clubSpeed: clubSpeed, clubId: 'dr');
-        final spinWindow = OptimalRanges.getRange(ClubType.wood, 'spinRate',
-            clubSpeed: clubSpeed, clubId: 'dr');
+        final launchWindow = OptimalRanges.getRange(
+          ClubType.wood,
+          'launchAngle',
+          clubSpeed: clubSpeed,
+          clubId: 'dr',
+        );
+        final spinWindow = OptimalRanges.getRange(
+          ClubType.wood,
+          'spinRate',
+          clubSpeed: clubSpeed,
+          clubId: 'dr',
+        );
 
         final max = bestCarry(ballSpeed);
         final inWindow = bestCarryInWindow(ballSpeed, launchWindow, spinWindow);
@@ -381,7 +467,8 @@ void main() {
         expect(
           (max - inWindow) / max,
           lessThan(0.035),
-          reason: 'window best $inWindow vs global best $max '
+          reason:
+              'window best $inWindow vs global best $max '
               '(launch $launchWindow, spin $spinWindow)',
         );
       });
@@ -394,9 +481,12 @@ void main() {
         var bestSpin = 0.0;
         for (var launch = 6.0; launch <= 24.0; launch += 0.5) {
           for (var spin = 1600.0; spin <= 4400.0; spin += 100) {
-            final carry = _flight(model,
-                    ballSpeed: ballSpeed, launchAngle: launch, spin: spin)
-                .carry;
+            final carry = _flight(
+              model,
+              ballSpeed: ballSpeed,
+              launchAngle: launch,
+              spin: spin,
+            ).carry;
             if (carry > best) {
               best = carry;
               bestLaunch = launch;
@@ -420,7 +510,12 @@ void main() {
   // ───────────────────────────────────────────────────────────────────────────
   group('bounce and roll', () {
     test('every bounce dissipates energy and the ball ends at rest', () {
-      final flight = _flight(model, ballSpeed: 155, launchAngle: 12, spin: 2800);
+      final flight = _flight(
+        model,
+        ballSpeed: 155,
+        launchAngle: 12,
+        spin: 2800,
+      );
       final ground = flight.groundPoints;
 
       expect(ground.length, greaterThan(3));
@@ -453,41 +548,84 @@ void main() {
     });
 
     test('the ground path starts at the pitch mark and ends at rest', () {
-      final flight = _flight(model,
-          ballSpeed: 150, launchAngle: 13, launchDirection: 2, spin: 3000);
+      final flight = _flight(
+        model,
+        ballSpeed: 150,
+        launchAngle: 13,
+        launchDirection: 2,
+        spin: 3000,
+      );
 
-      expect(flight.groundPoints.last.z,
-          closeTo(flight.restPosition.z, 0.5));
-      expect(flight.groundPoints.last.x,
-          closeTo(flight.restPosition.x, 0.5));
+      expect(flight.groundPoints.last.z, closeTo(flight.restPosition.z, 0.5));
+      expect(flight.groundPoints.last.x, closeTo(flight.restPosition.x, 0.5));
       expect(flight.totalDistance, closeTo(flight.restPosition.z, 1e-9));
     });
 
     test('more backspin at landing means less roll', () {
       var previous = double.infinity;
       for (final spin in const [2000.0, 4000.0, 6000.0, 8000.0, 10000.0]) {
-        final roll =
-            _flight(model, ballSpeed: 120, launchAngle: 20, spin: spin).roll;
+        final roll = _flight(
+          model,
+          ballSpeed: 120,
+          launchAngle: 20,
+          spin: spin,
+        ).roll;
         expect(roll, lessThan(previous), reason: 'roll at $spin rpm');
         previous = roll;
       }
     });
 
     test('a steeper landing angle means less roll', () {
-      final shallow =
-          _flight(model, ballSpeed: 140, launchAngle: 10, spin: 3000);
+      final shallow = _flight(
+        model,
+        ballSpeed: 140,
+        launchAngle: 10,
+        spin: 3000,
+      );
       final steep = _flight(model, ballSpeed: 140, launchAngle: 30, spin: 3000);
 
       expect(steep.descentAngle, greaterThan(shallow.descentAngle));
       expect(steep.roll, lessThan(shallow.roll));
     });
 
+    test('a well-struck 8-iron holds a receptive green', () {
+      // Field report: a tour-spec 8-iron was rolling out ~7 m on a green,
+      // which is fairway behaviour. On a soft green it should hop and stop
+      // inside about 3 yards — while a low-spin strike still releases more,
+      // so the fence between them stays meaningful.
+      final greenModel = model.copyWith(ground: GroundModel.green);
+      final struck = _flight(
+        greenModel,
+        ballSpeed: 115,
+        launchAngle: 18,
+        spin: 8100,
+      );
+      final lowSpin = _flight(
+        greenModel,
+        ballSpeed: 108,
+        launchAngle: 20,
+        spin: 5500,
+      );
+
+      expect(struck.roll, lessThan(3.0));
+      expect(struck.roll, greaterThan(-1.5));
+      expect(lowSpin.roll, greaterThan(struck.roll + 1.5));
+    });
+
     test('a spinning wedge into a receptive green can check and come back', () {
       final greenModel = model.copyWith(ground: GroundModel.green);
-      final spinner = _flight(greenModel,
-          ballSpeed: 95, launchAngle: 30, spin: 11000);
-      final runner =
-          _flight(greenModel, ballSpeed: 95, launchAngle: 30, spin: 4000);
+      final spinner = _flight(
+        greenModel,
+        ballSpeed: 95,
+        launchAngle: 30,
+        spin: 11000,
+      );
+      final runner = _flight(
+        greenModel,
+        ballSpeed: 95,
+        launchAngle: 30,
+        spin: 4000,
+      );
 
       expect(spinner.roll, lessThan(1.0));
       expect(runner.roll, greaterThan(spinner.roll + 2));
@@ -495,11 +633,11 @@ void main() {
 
     test('turf firmness orders the roll the way it should', () {
       double rollOn(GroundModel turf) => _flight(
-            model.copyWith(ground: turf),
-            ballSpeed: 160,
-            launchAngle: 12,
-            spin: 2700,
-          ).roll;
+        model.copyWith(ground: turf),
+        ballSpeed: 160,
+        launchAngle: 12,
+        spin: 2700,
+      ).roll;
 
       final rough = rollOn(GroundModel.rough);
       final green = rollOn(GroundModel.green);
@@ -512,18 +650,33 @@ void main() {
     });
 
     test('sidespin kicks the ball further offline on the bounce', () {
-      final fade = _flight(model,
-          ballSpeed: 160, launchAngle: 12, spin: 3000, spinAxis: 12);
-      final draw = _flight(model,
-          ballSpeed: 160, launchAngle: 12, spin: 3000, spinAxis: -12);
+      final fade = _flight(
+        model,
+        ballSpeed: 160,
+        launchAngle: 12,
+        spin: 3000,
+        spinAxis: 12,
+      );
+      final draw = _flight(
+        model,
+        ballSpeed: 160,
+        launchAngle: 12,
+        spin: 3000,
+        spinAxis: -12,
+      );
 
       expect(fade.restPosition.x, greaterThan(fade.offline));
       expect(draw.restPosition.x, lessThan(draw.offline));
     });
 
     test('a measured roll overrides the simulation but keeps the shape', () {
-      final flight =
-          _flight(model, ballSpeed: 160, launchAngle: 12, spin: 2700, roll: 6);
+      final flight = _flight(
+        model,
+        ballSpeed: 160,
+        launchAngle: 12,
+        spin: 2700,
+        roll: 6,
+      );
 
       expect(flight.roll, closeTo(6, 1e-6));
       expect(flight.totalDistance, closeTo(flight.carry + 6, 1e-6));
@@ -545,8 +698,11 @@ void main() {
               launchAngle: 15,
               spin: spin,
             );
-            expect(flight.groundTime, lessThan(15.0),
-                reason: '$speed mph / $spin rpm never settled');
+            expect(
+              flight.groundTime,
+              lessThan(15.0),
+              reason: '$speed mph / $spin rpm never settled',
+            );
             expect(flight.restPosition.z.isFinite, isTrue);
             expect(flight.roll.abs(), lessThan(flight.carry + 100));
           }
