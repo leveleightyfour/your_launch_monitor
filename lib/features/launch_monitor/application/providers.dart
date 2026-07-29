@@ -685,13 +685,54 @@ class LaunchMonitor extends _$LaunchMonitor {
     return hole.enabled ? hole : null;
   }
 
+  /// Spin axis to simulate the shape from, in degrees.
+  ///
+  /// The reported axis is preferred, but only when the device says it measured
+  /// one. It is the sole driver of curvature — an axis of zero is a perfectly
+  /// straight ball, every time — and an unmeasured axis parses to exactly
+  /// zero, so using it unchecked draws a dead straight tracer for a shot that
+  /// plainly curved.
+  ///
+  /// Backspin and sidespin are reported in their own right, and between them
+  /// they describe the same axis. When the device could not give one directly
+  /// but did give those, the axis is recovered from them. This is the inverse
+  /// of the decomposition the parser already does in the other direction.
+  static double _spinAxisFor(sg.BallMetrics b) {
+    if (b.isSpinAxisValid) return b.spinAxis;
+    if (b.isBackspinValid &&
+        b.isSidespinValid &&
+        (b.backspinRpm != 0 || b.sidespinRpm != 0)) {
+      return math.atan2(
+            b.sidespinRpm.toDouble(),
+            b.backspinRpm.toDouble(),
+          ) *
+          180.0 /
+          math.pi;
+    }
+    // Nothing to go on. Straight is the honest answer, not a guess.
+    return 0;
+  }
+
+  /// Total spin, falling back to the components when the total itself was not
+  /// measured. Zero spin is not a neutral default — it costs the ball its lift
+  /// and some forty metres of carry — so it is worth reconstructing.
+  static double _spinRateFor(sg.BallMetrics b) {
+    if (b.isTotalSpinValid) return b.totalSpinRpm.abs().toDouble();
+    if (b.isBackspinValid && b.isSidespinValid) {
+      final back = b.backspinRpm.toDouble();
+      final side = b.sidespinRpm.toDouble();
+      return math.sqrt(back * back + side * side);
+    }
+    return b.totalSpinRpm.abs().toDouble();
+  }
+
   ShotData _ballToShotData(sg.BallMetrics b, String? clubId) {
     return ShotData(
       clubId: clubId,
       hole: _activeHole,
       ballSpeed: b.ballSpeedMps * _mpsToMph,
-      spinRate: b.totalSpinRpm.abs().toDouble(),
-      spinAxis: b.spinAxis,
+      spinRate: _spinRateFor(b),
+      spinAxis: _spinAxisFor(b),
       launchDirection: b.horizontalAngle,
       launchAngle: b.verticalAngle,
       // Estimate club speed from a ~1.45 smash factor until club metrics land.
