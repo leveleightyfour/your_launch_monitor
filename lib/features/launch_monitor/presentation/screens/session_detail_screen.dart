@@ -145,6 +145,9 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
         shots: shots,
         selectedShot: highlighted,
         clubs: clubs,
+        // The builder edits the hole for the *next* session; from a saved
+        // one the button would silently change future state, so it hides.
+        canEditHole: false,
       ),
       _TopView.club => ClubTab(
         shots: shots,
@@ -466,6 +469,7 @@ class _SplitViewConfigurable extends StatelessWidget {
           // Half a screen is too small to spend a row on numbers the
           // neighbouring pane already shows.
           showStatBar: false,
+          canEditHole: false,
         );
       case _PaneView.club:
         return ClubTab(

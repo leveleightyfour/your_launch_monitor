@@ -150,12 +150,18 @@ class Flight3DTab extends ConsumerStatefulWidget {
   /// live in the neighbouring pane's table.
   final bool showStatBar;
 
+  /// Whether the hole-builder button appears. The builder edits the hole the
+  /// *next* shots will be played to, so a saved session hides it — the hole
+  /// on screen belongs to the shots and cannot be edited from here anyway.
+  final bool canEditHole;
+
   const Flight3DTab({
     super.key,
     required this.shots,
     this.selectedShot,
     this.clubs = const [],
     this.showStatBar = true,
+    this.canEditHole = true,
   });
 
   @override
@@ -574,14 +580,16 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
           tooltip: 'Sky',
           onTap: _pickSky,
         ),
-        const SizedBox(width: 6),
-        _RoundAction(
-          icon: Icons.golf_course,
-          active: _holeIsSet,
-          size: buttonSize,
-          tooltip: 'Hole builder',
-          onTap: _openHoleBuilder,
-        ),
+        if (widget.canEditHole) ...[
+          const SizedBox(width: 6),
+          _RoundAction(
+            icon: Icons.golf_course,
+            active: _holeIsSet,
+            size: buttonSize,
+            tooltip: 'Hole builder',
+            onTap: _openHoleBuilder,
+          ),
+        ],
         const SizedBox(width: 6),
         _RoundAction(
           icon: Icons.replay,
