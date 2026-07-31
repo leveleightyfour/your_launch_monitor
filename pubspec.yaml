@@ -49,6 +49,13 @@ dependencies:
   shorebird_code_push: ^2.0.4
   restart_app: ^1.3.2
   share_plus: ^13.2.1
+  # Desktop camera feed (Camera tab). camera_windows is listed explicitly
+  # rather than relying on endorsement, since Windows is the desktop target
+  # that matters here. There is no Linux implementation and the macOS one is
+  # not part of the federated `camera` plugin, so the tab reports itself
+  # unsupported there rather than failing at runtime.
+  camera: ^0.11.0
+  camera_windows: ^0.2.5
 
 dev_dependencies:
   flutter_test:

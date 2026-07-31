@@ -15,6 +15,7 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/device
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/error_banner.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_optimizer_panel.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_list_panel.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/camera_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/club_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/dispersion_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/flight_3d_tab.dart';
@@ -25,9 +26,36 @@ import 'package:omni_sniffer/shared/theme.dart';
 
 // ── View enums ─────────────────────────────────────────────────────────────────
 
-enum _ActiveView { split, tiles, dispersion, flight, club, table, optimizer }
+enum _ActiveView {
+  split,
+  tiles,
+  dispersion,
+  flight,
+  club,
+  table,
+  optimizer,
+  camera,
+}
 
-enum _ActivePaneView { tiles, dispersion, flight, club, table, optimizer }
+enum _ActivePaneView {
+  tiles,
+  dispersion,
+  flight,
+  club,
+  table,
+  optimizer,
+  camera,
+}
+
+/// The camera feed needs a desktop camera backend, so it is offered only
+/// there — in the nav bar, in the pane picker, and when restoring a stored
+/// pane choice (prefs travel between a desktop and a phone via the same
+/// account).
+bool _viewAvailable(_ActiveView v) =>
+    v != _ActiveView.camera || isDesktopPlatform;
+
+bool _paneAvailable(_ActivePaneView v) =>
+    v != _ActivePaneView.camera || isDesktopPlatform;
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 
@@ -76,7 +104,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
 
   static _ActivePaneView _paneFromName(String name, _ActivePaneView fallback) =>
       _ActivePaneView.values.firstWhere(
-        (v) => v.name == name,
+        (v) => v.name == name && _paneAvailable(v),
         orElse: () => fallback,
       );
 
@@ -183,6 +211,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         onRowTap: (i) => ref.read(selectedShotIndexProvider.notifier).state = i,
       ),
       _ActiveView.optimizer => const ShotOptimizerPanel(showLeftBorder: false),
+      _ActiveView.camera => const CameraTab(),
     };
 
     // The system back gesture must never skip the finish flow: with shots on
@@ -767,6 +796,7 @@ class _ActiveNavBar extends StatelessWidget {
     (_ActiveView.club, Icons.sports_golf, 'Club'),
     (_ActiveView.table, Icons.table_rows, 'Table'),
     (_ActiveView.optimizer, Icons.tune, 'Optimizer'),
+    (_ActiveView.camera, Icons.videocam, 'Camera'),
   ];
 
   /// Below this the labels start colliding, so the bar scrolls instead.
@@ -774,7 +804,7 @@ class _ActiveNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = _items.map((item) {
+    final items = _items.where((item) => _viewAvailable(item.$1)).map((item) {
       final (v, icon, label) = item;
       return _NavItem(
         icon: icon,
@@ -952,6 +982,8 @@ class _ActiveSplitView extends StatelessWidget {
         );
       case _ActivePaneView.optimizer:
         return const ShotOptimizerPanel(showLeftBorder: false);
+      case _ActivePaneView.camera:
+        return const CameraTab();
     }
   }
 
@@ -1024,6 +1056,7 @@ class _ActivePaneHeader extends StatelessWidget {
     (_ActivePaneView.club, Icons.sports_golf, 'Club'),
     (_ActivePaneView.table, Icons.table_rows, 'Table'),
     (_ActivePaneView.optimizer, Icons.tune, 'Optimizer'),
+    (_ActivePaneView.camera, Icons.videocam, 'Camera'),
   ];
 
   String get _label => _options.firstWhere((o) => o.$1 == current).$3;
@@ -1098,7 +1131,7 @@ class _ActivePaneHeader extends StatelessWidget {
               ),
             ),
             const Divider(height: 1, color: AppColors.border),
-            ..._options.map((opt) {
+            ..._options.where((o) => _paneAvailable(o.$1)).map((opt) {
               final (view, icon, label) = opt;
               final isSel = view == current;
               return ListTile(

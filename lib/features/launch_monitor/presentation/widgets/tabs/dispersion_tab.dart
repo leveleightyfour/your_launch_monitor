@@ -202,8 +202,10 @@ class _DispersionTabState extends ConsumerState<DispersionTab>
             // Available width shared by the two expanded stats.
             final statWidth =
                 (constraints.maxWidth - 32 - shotsMinWidth - 16) / 2;
-            // Mono char width ≈ fontSize × 0.6; target 6 chars ("000.0 ").
-            final fontSize = (statWidth / (6 * 0.6)).clamp(18.0, 52.0);
+            // Six characters ("000.0 R") is the widest a stat gets. The old
+            // reckoning assumed a mono advance of 0.6 em; the value face is
+            // proportional sans now, so measure it instead of guessing.
+            final fontSize = _statFontSize(statWidth);
             return Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Row(
@@ -336,6 +338,25 @@ class _DispersionTabState extends ConsumerState<DispersionTab>
 
 // ── Stat tile ─────────────────────────────────────────────────────────────────
 
+/// Widest value any of these stats renders — "123.4 R" for average offline.
+const _widestStatValue = '000.0R';
+
+/// Largest size at which [_widestStatValue] still fits [maxWidth] in the
+/// shared metric face. Advance width is linear in font size, so one
+/// measurement at a reference size scales to the answer.
+double _statFontSize(double maxWidth) {
+  const reference = 100.0;
+  final painter = TextPainter(
+    text: TextSpan(
+      text: _widestStatValue,
+      style: AppTextStyles.statValue(size: reference),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  if (painter.width <= 0) return 52;
+  return (reference * maxWidth / painter.width).clamp(18.0, 52.0);
+}
+
 class _DispStat extends StatelessWidget {
   final String label;
   final String value;
@@ -358,27 +379,20 @@ class _DispStat extends StatelessWidget {
     final column = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: AppTextStyles.sans(
-            size: 12,
-            color: AppColors.textDimmed,
-            weight: FontWeight.w400,
-          ),
-        ),
+        // Same label / value / unit faces the tiles use — these readouts sit
+        // one tab away from each other and used to render in two different
+        // typefaces.
+        Text(label.toUpperCase(), style: AppTextStyles.statLabel()),
         Row(
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
             SplitFlapText(
               text: value,
-              style: AppTextStyles.mono(size: fontSize),
+              style: AppTextStyles.statValue(size: fontSize),
             ),
             const SizedBox(width: 4),
-            Text(
-              unit,
-              style: AppTextStyles.sans(size: 14, color: AppColors.textDimmed),
-            ),
+            Text(unit, style: AppTextStyles.statUnit()),
           ],
         ),
       ],
