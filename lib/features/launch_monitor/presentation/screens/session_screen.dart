@@ -73,6 +73,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   _ActivePaneView _splitLeft = _ActivePaneView.table;
   _ActivePaneView _splitRight = _ActivePaneView.dispersion;
   _ActivePaneView _splitThird = _ActivePaneView.optimizer;
+  _ActivePaneView _splitFourth = _ActivePaneView.camera;
   bool _showShotList = false;
   ShotListMetric _shotListMetric = ShotListMetric.carry;
 
@@ -100,6 +101,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       prefs.splitThirdPane,
       _ActivePaneView.optimizer,
     );
+    _splitFourth = _paneFromName(prefs.splitFourthPane, _ActivePaneView.camera);
   }
 
   static _ActivePaneView _paneFromName(String name, _ActivePaneView fallback) =>
@@ -168,6 +170,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         leftPane: _splitLeft,
         rightPane: _splitRight,
         thirdPane: _splitThird,
+        fourthPane: _splitFourth,
+        // Quarters exist for the second camera: with one camera the fourth
+        // pane would only dilute the other three.
+        enableFourthPane: ref.watch(
+          unitPrefsProvider.select(
+            (p) => p.cameraSlots.length > 1 && !p.cameraSlots[1].isEmpty,
+          ),
+        ),
         selectedShotIndex: selectedInClub >= 0 ? selectedInClub : 0,
         onLeftChanged: (v) {
           setState(() => _splitLeft = v);
@@ -180,6 +190,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         onThirdChanged: (v) {
           setState(() => _splitThird = v);
           ref.read(unitPrefsProvider.notifier).setSplitPanes(third: v.name);
+        },
+        onFourthChanged: (v) {
+          setState(() => _splitFourth = v);
+          ref.read(unitPrefsProvider.notifier).setSplitPanes(fourth: v.name);
         },
         onShotSelected: (i) =>
             ref.read(selectedShotIndexProvider.notifier).state = i ?? 0,
@@ -920,10 +934,16 @@ class _ActiveSplitView extends StatelessWidget {
 
   /// Only rendered where there is room for it — see [supportsThirdSplitPane].
   final _ActivePaneView thirdPane;
+
+  /// Rendered only when [enableFourthPane] and the geometry allows quarters
+  /// — see [quadSplitLayout].
+  final _ActivePaneView fourthPane;
+  final bool enableFourthPane;
   final int selectedShotIndex;
   final ValueChanged<_ActivePaneView> onLeftChanged;
   final ValueChanged<_ActivePaneView> onRightChanged;
   final ValueChanged<_ActivePaneView> onThirdChanged;
+  final ValueChanged<_ActivePaneView> onFourthChanged;
   final ValueChanged<int?> onShotSelected;
 
   const _ActiveSplitView({
@@ -935,10 +955,13 @@ class _ActiveSplitView extends StatelessWidget {
     required this.leftPane,
     required this.rightPane,
     required this.thirdPane,
+    required this.fourthPane,
+    required this.enableFourthPane,
     required this.selectedShotIndex,
     required this.onLeftChanged,
     required this.onRightChanged,
     required this.onThirdChanged,
+    required this.onFourthChanged,
     required this.onShotSelected,
   });
 
@@ -1005,26 +1028,77 @@ class _ActiveSplitView extends StatelessWidget {
     if (isTablet(context)) {
       return LayoutBuilder(
         builder: (context, constraints) {
-          final third = supportsThirdSplitPane(context, constraints.maxWidth);
-          // Every pane is a flex-1 Expanded, so the panes split the row into
-          // equal shares — halves, or exact thirds once the third is in.
+          // Every pane is a flex-1 Expanded, so the panes always split the
+          // space into equal shares — halves, thirds, or quarters.
+          const divider = VerticalDivider(
+            width: 1,
+            thickness: 1,
+            color: AppColors.border,
+          );
+
+          // Quarters, but only earned: a second camera is configured and the
+          // geometry fits four readable panes. 2x2 whenever two rows fit —
+          // four across leaves every pane tall and narrow, which suits
+          // neither a camera feed nor a dispersion plot — and one strip of
+          // four only for windows too shallow to stack.
+          final quad = enableFourthPane
+              ? quadSplitLayout(
+                  context,
+                  constraints.maxWidth,
+                  constraints.maxHeight,
+                )
+              : null;
+
+          if (quad == QuadSplitLayout.grid2x2) {
+            return Column(
+              children: [
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
+                      divider,
+                      Expanded(
+                        child: _pane(rightPane, onRightChanged, 'right'),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: AppColors.border),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _pane(thirdPane, onThirdChanged, 'third'),
+                      ),
+                      divider,
+                      Expanded(
+                        child: _pane(fourthPane, onFourthChanged, 'fourth'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
+
+          final third =
+              quad == QuadSplitLayout.row ||
+              supportsThirdSplitPane(context, constraints.maxWidth);
           return Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
-              const VerticalDivider(
-                width: 1,
-                thickness: 1,
-                color: AppColors.border,
-              ),
+              divider,
               Expanded(child: _pane(rightPane, onRightChanged, 'right')),
               if (third) ...[
-                const VerticalDivider(
-                  width: 1,
-                  thickness: 1,
-                  color: AppColors.border,
-                ),
+                divider,
                 Expanded(child: _pane(thirdPane, onThirdChanged, 'third')),
+              ],
+              if (quad == QuadSplitLayout.row) ...[
+                divider,
+                Expanded(child: _pane(fourthPane, onFourthChanged, 'fourth')),
               ],
             ],
           );
