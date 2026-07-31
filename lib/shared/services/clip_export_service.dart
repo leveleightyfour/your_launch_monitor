@@ -1,10 +1,11 @@
 /// Writes a captured impact clip to disk.
 ///
-/// Tries an MJPG AVI first and falls back to a numbered frame sequence. The
-/// fallback is not defensive padding: dartcv dropped FFMPEG in 2.2.0, and
-/// whether OpenCV's own AVI writer can still produce a playable file without
-/// it is exactly the thing this code finds out. The result says which path
-/// was taken so the answer is visible rather than assumed.
+/// Works down a ladder of containers: H.264 MP4 through Windows Media
+/// Foundation, then an MJPG AVI through OpenCV's own RIFF muxer, then a
+/// numbered frame folder. The ladder exists because dartcv ships without
+/// FFMPEG, so each writer's availability is an open question per machine —
+/// MSMF is a Windows component and its H.264 encoder is ordinarily present,
+/// but nothing here assumes it. The result names the rung that worked.
 library;
 
 import 'dart:io';
@@ -15,14 +16,38 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/impact_clip.dart';
 
-/// `cv::IMREAD_COLOR` — decode to 3-channel BGR, which is what the writer
-/// expects.
+/// `cv::IMREAD_COLOR` — decode to 3-channel BGR, which is what writers expect.
 const _imreadColor = 1;
 
-/// An AVI header alone is about 2 kB. A writer that opened but had no working
-/// encoder behind it still lays that down and then silently drops every
-/// frame, so a file this small means failure however healthy the API looked.
+/// `cv::CAP_MSMF` — Media Foundation, whose sink writer muxes H.264 into MP4
+/// natively on Windows, no FFMPEG involved.
+const _capMsmf = 1400;
+
+/// A container header alone is a few kB. A writer that opened but had no
+/// working encoder behind it still lays that down and then silently drops
+/// every frame, so a file this small means failure however healthy the API
+/// looked.
 const _minPlausibleVideoBytes = 8192;
+
+/// One rung of the writer ladder.
+class _VideoAttempt {
+  final String label;
+  final String extension;
+  final String codec;
+  final int? apiPreference;
+
+  const _VideoAttempt(this.label, this.extension, this.codec,
+      [this.apiPreference]);
+}
+
+const _attempts = [
+  // H.264 in MP4 via Media Foundation. The backend is named explicitly —
+  // left to choose, OpenCV would only reach MSMF by accident.
+  _VideoAttempt('H.264 MP4', '.mp4', 'H264', _capMsmf),
+  // OpenCV's built-in RIFF muxer; needs no OS encoder at all, since the
+  // frames are already JPEGs and MJPG is just JPEGs in an AVI.
+  _VideoAttempt('MJPG AVI', '.avi', 'MJPG'),
+];
 
 enum ClipExportFormat { video, frames }
 
@@ -30,13 +55,17 @@ enum ClipExportFormat { video, frames }
 class ClipExportResult {
   final ClipExportFormat format;
 
-  /// The `.avi` file, or the directory holding the frame sequence.
+  /// Which video rung succeeded — 'H.264 MP4' or 'MJPG AVI'. Null for the
+  /// frame-folder fallback.
+  final String? videoLabel;
+
+  /// The video file, or the directory holding the frame sequence.
   final String path;
 
   final int bytes;
   final int frameCount;
 
-  /// Why the video attempt was abandoned, when it was.
+  /// Why the video rungs were abandoned, when they all were.
   final String? fallbackReason;
 
   const ClipExportResult({
@@ -44,6 +73,7 @@ class ClipExportResult {
     required this.path,
     required this.bytes,
     required this.frameCount,
+    this.videoLabel,
     this.fallbackReason,
   });
 
@@ -73,20 +103,25 @@ class ClipExportService {
     await root.create(recursive: true);
     final stem = _stem(baseName, clip);
 
-    final videoPath = '${root.path}/$stem.avi';
-    final reason = await _tryWriteVideo(clip, videoPath);
-    if (reason == null) {
-      final bytes = await File(videoPath).length();
-      debugPrint('[export] MJPG AVI → $videoPath ($bytes bytes)');
-      return ClipExportResult(
-        format: ClipExportFormat.video,
-        path: videoPath,
-        bytes: bytes,
-        frameCount: clip.frameCount,
-      );
+    final reasons = <String>[];
+    for (final attempt in _attempts) {
+      final path = '${root.path}/$stem${attempt.extension}';
+      final reason = await _tryWriteVideo(clip, attempt, path);
+      if (reason == null) {
+        final bytes = await File(path).length();
+        debugPrint('[export] ${attempt.label} → $path ($bytes bytes)');
+        return ClipExportResult(
+          format: ClipExportFormat.video,
+          videoLabel: attempt.label,
+          path: path,
+          bytes: bytes,
+          frameCount: clip.frameCount,
+        );
+      }
+      debugPrint('[export] ${attempt.label} unavailable — $reason');
+      reasons.add('${attempt.label}: $reason');
     }
 
-    debugPrint('[export] MJPG unavailable — $reason; writing frames instead');
     final framesDir = Directory('${root.path}/$stem');
     final bytes = await _writeFrames(clip, framesDir);
     debugPrint('[export] frames → ${framesDir.path} ($bytes bytes)');
@@ -95,12 +130,16 @@ class ClipExportService {
       path: framesDir.path,
       bytes: bytes,
       frameCount: clip.frameCount,
-      fallbackReason: reason,
+      fallbackReason: reasons.join('; '),
     );
   }
 
   /// Returns null when a playable file was written, or the reason it wasn't.
-  static Future<String?> _tryWriteVideo(ImpactClip clip, String path) async {
+  static Future<String?> _tryWriteVideo(
+    ImpactClip clip,
+    _VideoAttempt attempt,
+    String path,
+  ) async {
     // Remove any earlier attempt: a stale file would otherwise pass the size
     // check below and report success for a writer that wrote nothing.
     final file = File(path);
@@ -111,15 +150,27 @@ class ClipExportService {
       final probe = cv.imdecode(clip.frames.first.jpeg, _imreadColor);
       final size = (probe.cols, probe.rows);
       probe.dispose();
-      if (size.$1 <= 0 || size.$2 <= 0) return 'the first frame would not decode';
+      if (size.$1 <= 0 || size.$2 <= 0) {
+        return 'the first frame would not decode';
+      }
 
       // The clip's measured rate, not the camera's nominal one — DirectShow
-      // reports 0 fps here, and a wrong value in the header plays the clip
-      // back at the wrong speed.
+      // reports 0 fps at capture, and a wrong value in the header plays the
+      // clip back at the wrong speed.
       final fps = clip.effectiveFps > 1 ? clip.effectiveFps : 30.0;
 
-      writer = cv.VideoWriter.fromFile(path, 'MJPG', fps, size);
-      if (!writer.isOpened) return 'OpenCV would not open an MJPG writer';
+      writer = attempt.apiPreference == null
+          ? cv.VideoWriter.fromFile(path, attempt.codec, fps, size)
+          : cv.VideoWriter.fromFile(
+              path,
+              attempt.codec,
+              fps,
+              size,
+              apiPreference: attempt.apiPreference,
+            );
+      if (!writer.isOpened) {
+        return 'OpenCV would not open a ${attempt.codec} writer';
+      }
 
       for (final frame in clip.frames) {
         final mat = cv.imdecode(frame.jpeg, _imreadColor);

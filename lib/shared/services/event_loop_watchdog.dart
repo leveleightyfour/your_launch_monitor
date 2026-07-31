@@ -72,12 +72,19 @@ class EventLoopWatchdog {
   }
 
   void stop() {
+    // Nothing to report when start() never armed — either it was never
+    // called, or this is a profile/release build where kDebugMode gates the
+    // whole watchdog off. Printing here anyway was how a release build
+    // produced "stopped" lines with no "started", which read as a crash.
+    final ran = _timer != null;
     _timer?.cancel();
     _timer = null;
     _since = null;
-    debugPrint(
-      '[watchdog:$tag] stopped · $_stalls stalls · '
-      'worst ${_worst.inMilliseconds}ms',
-    );
+    if (ran) {
+      debugPrint(
+        '[watchdog:$tag] stopped · $_stalls stalls · '
+        'worst ${_worst.inMilliseconds}ms',
+      );
+    }
   }
 }
