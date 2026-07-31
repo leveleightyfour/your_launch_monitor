@@ -250,7 +250,15 @@ class _CameraBody extends ConsumerWidget {
         return _Message(
           icon: Icons.error_outline,
           title: 'Camera failed to start',
-          detail: feed.error ?? 'The device did not respond.',
+          detail: feed.selected == null
+              ? (feed.error ?? 'The device did not respond.')
+              : '${feed.selected!.name}\n'
+                    '${feed.error ?? 'The device did not respond.'}',
+          // Naming the two things that actually cause this on Windows beats
+          // a bare error code the golfer can do nothing with.
+          hint:
+              'Usually either another app is holding the camera, or desktop '
+              'apps are blocked under Windows camera privacy settings.',
           action: (
             'Try again',
             () => ref.read(cameraFeedProvider.notifier).refreshDevices(),
@@ -317,6 +325,10 @@ class _Message extends StatelessWidget {
   final String title;
   final String detail;
 
+  /// Optional third line, dimmer than [detail] — what to try next when the
+  /// detail is a platform error the golfer can't act on directly.
+  final String? hint;
+
   /// Optional (label, callback) pair rendered as a button under the text.
   final (String, VoidCallback)? action;
 
@@ -324,6 +336,7 @@ class _Message extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.detail,
+    this.hint,
     this.action,
   });
 
@@ -346,8 +359,22 @@ class _Message extends StatelessWidget {
             Text(
               detail,
               textAlign: TextAlign.center,
-              style: AppTextStyles.sans(size: 11, color: AppColors.textDimmed),
+              style: AppTextStyles.sans(
+                size: 12,
+                color: AppColors.textDimmed,
+              ).copyWith(height: 1.4),
             ),
+            if (hint != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                hint!,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.sans(
+                  size: 11,
+                  color: AppColors.textDimmed,
+                ).copyWith(height: 1.4),
+              ),
+            ],
             if (action != null) ...[
               const SizedBox(height: 16),
               OutlinedButton(

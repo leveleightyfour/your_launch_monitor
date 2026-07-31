@@ -71,21 +71,32 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.tune, size: 32, color: AppColors.textDimmed),
-          const SizedBox(height: 12),
-          Text(
-            'Shot Optimizer',
-            style: AppTextStyles.sans(size: 13, color: AppColors.textMuted),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Hit shots to see diagnostics',
-            style: AppTextStyles.sans(size: 11, color: AppColors.textDimmed),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.tune, size: 36, color: AppColors.textDimmed),
+            const SizedBox(height: 14),
+            Text(
+              'Shot Optimizer',
+              style: AppTextStyles.sans(
+                size: 15,
+                weight: FontWeight.w600,
+                color: AppColors.textMuted,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Hit a shot to see what it cost you and what to work on.',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.sans(
+                size: 12,
+                color: AppColors.textDimmed,
+              ).copyWith(height: 1.4),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -111,10 +122,9 @@ class _OptimizerContent extends StatelessWidget {
       children: [
         _SummarySection(analysis: analysis, prefs: prefs),
         const Divider(height: 1, color: AppColors.border),
-        if (analysis.diagnostics.isNotEmpty) ...[
-          _DiagnosticsSection(diagnostics: analysis.diagnostics, prefs: prefs),
-          const Divider(height: 1, color: AppColors.border),
-        ],
+        // What to do comes before the evidence for it: the panel exists to
+        // end in an action, and the diagnostics are the working that
+        // justifies it.
         if (analysis.recommendations.isNotEmpty) ...[
           _RecommendationsSection(
             recommendations: analysis.recommendations,
@@ -122,10 +132,148 @@ class _OptimizerContent extends StatelessWidget {
           ),
           const Divider(height: 1, color: AppColors.border),
         ],
+        if (analysis.diagnostics.isNotEmpty) ...[
+          _DiagnosticsSection(diagnostics: analysis.diagnostics, prefs: prefs),
+          const Divider(height: 1, color: AppColors.border),
+        ],
         if (sessionSummary != null)
           _SessionSummarySection(summary: sessionSummary!, prefs: prefs),
         const SizedBox(height: 16),
       ],
+    );
+  }
+}
+
+// ── Shared pieces ────────────────────────────────────────────────────────────
+
+/// Section heading, in the same caps label the tiles and dispersion header
+/// use. [trailing] carries a count so a section announces its own size.
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  final String? trailing;
+
+  const _SectionHeader({required this.label, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(label.toUpperCase(), style: AppTextStyles.statLabel()),
+        if (trailing != null) ...[
+          const SizedBox(width: 6),
+          Text(
+            trailing!,
+            style: AppTextStyles.statLabel(color: AppColors.textDimmed),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Label above, number below, unit trailing — the grammar the tiles and the
+/// dispersion header already use, so a readout means the same thing wherever
+/// it appears. The number scales down rather than overflowing when the panel
+/// is docked narrow.
+class _StatReadout extends StatelessWidget {
+  final String label;
+  final String value;
+  final String unit;
+  final Color? valueColor;
+
+  const _StatReadout({
+    required this.label,
+    required this.value,
+    this.unit = '',
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTextStyles.statLabel(),
+        ),
+        const SizedBox(height: 3),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  style: AppTextStyles.statValue(
+                    size: 20,
+                    color: valueColor ?? Colors.white,
+                  ),
+                ),
+              ),
+            ),
+            if (unit.isNotEmpty) ...[
+              const SizedBox(width: 3),
+              Text(unit, style: AppTextStyles.statUnit()),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Readouts in one row where they fit, two-by-two where they don't. Four
+/// numbers crammed across a docked 380px rail is how they ended up at 12pt
+/// in the first place, which is unreadable from the mat.
+class _StatGrid extends StatelessWidget {
+  final List<_StatReadout> stats;
+
+  const _StatGrid({required this.stats});
+
+  /// Below this a readout starts clipping its label or shrinking its digits.
+  static const _minCellWidth = 104.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= _minCellWidth * stats.length) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < stats.length; i++) ...[
+                if (i > 0) const SizedBox(width: 12),
+                Expanded(child: stats[i]),
+              ],
+            ],
+          );
+        }
+        return Column(
+          children: [
+            for (var i = 0; i < stats.length; i += 2) ...[
+              if (i > 0) const SizedBox(height: 14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: stats[i]),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: i + 1 < stats.length
+                        ? stats[i + 1]
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
@@ -143,92 +291,115 @@ class _SummarySection extends StatelessWidget {
     final critical = analysis.criticalIssues.length;
     final outOfRange = analysis.outOfRangeMetrics.length;
     final shot = analysis.shot;
+    final gap = analysis.carryGap;
 
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              _StatusBadge(critical: critical, outOfRange: outOfRange),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  analysis.summary,
-                  style: AppTextStyles.sans(
-                    size: 11,
-                    color: AppColors.textMuted,
-                  ),
-                ),
+          _StatusBadge(critical: critical, outOfRange: outOfRange),
+          const SizedBox(height: 10),
+          Text(
+            analysis.summary,
+            style: AppTextStyles.sans(
+              size: 13,
+              color: AppColors.textMuted,
+            ).copyWith(height: 1.45),
+          ),
+          if (gap != null && gap > 1.0 && analysis.optimalCarry != null) ...[
+            const SizedBox(height: 12),
+            _CarryGapCallout(
+              gapYards: gap,
+              optimalCarryYards: analysis.optimalCarry!,
+              prefs: prefs,
+            ),
+          ],
+          const SizedBox(height: 16),
+          _StatGrid(
+            stats: [
+              _StatReadout(
+                label: 'Carry',
+                value: prefs.dist(shot.carry).toStringAsFixed(1),
+                unit: prefs.distLabel,
+              ),
+              _StatReadout(
+                label: 'Smash',
+                value: shot.smashFactor.toStringAsFixed(2),
+              ),
+              _StatReadout(
+                label: 'Launch',
+                value: shot.launchAngle.toStringAsFixed(1),
+                unit: '°',
+              ),
+              _StatReadout(
+                label: 'Spin',
+                value: '${shot.spinRate.toInt()}',
+                unit: 'rpm',
               ),
             ],
           ),
-          if (analysis.carryGap != null && analysis.carryGap! > 1.0) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF59E0B).withAlpha(15),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: const Color(0xFFF59E0B).withAlpha(50),
-                ),
-              ),
-              child: Row(
+        ],
+      ),
+    );
+  }
+}
+
+/// The distance still on the table. Leads with the gain rather than
+/// restating the carry, which the readout directly below already shows.
+class _CarryGapCallout extends StatelessWidget {
+  final double gapYards;
+  final double optimalCarryYards;
+  final UnitPrefs prefs;
+
+  const _CarryGapCallout({
+    required this.gapYards,
+    required this.optimalCarryYards,
+    required this.prefs,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final gain = prefs.dist(gapYards).toStringAsFixed(0);
+    final optimal = prefs.dist(optimalCarryYards).toStringAsFixed(0);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.severityWarning.withAlpha(20),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.severityWarning.withAlpha(70)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.trending_up,
+            size: 16,
+            color: AppColors.severityWarning,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
                 children: [
-                  Text(
-                    'Carry: ${prefs.dist(shot.carry).toStringAsFixed(0)} ${prefs.distLabel}',
-                    style: AppTextStyles.mono(size: 11, color: Colors.white),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(
-                    Icons.arrow_forward,
-                    size: 12,
-                    color: Color(0xFFF59E0B),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Optimal: ${prefs.dist(analysis.optimalCarry!).toStringAsFixed(0)} ${prefs.distLabel}',
-                    style: AppTextStyles.mono(
-                      size: 11,
-                      color: const Color(0xFFF59E0B),
+                  TextSpan(
+                    text: '+$gain ${prefs.distLabel}',
+                    style: AppTextStyles.sans(
+                      size: 14,
+                      weight: FontWeight.w700,
+                      color: AppColors.severityWarning,
                     ),
                   ),
-                  const Spacer(),
-                  Text(
-                    '+${prefs.dist(analysis.carryGap!).toStringAsFixed(0)} ${prefs.distLabel}',
+                  TextSpan(
+                    text: '  on offer — optimal carry is '
+                        '$optimal ${prefs.distLabel}',
                     style: AppTextStyles.sans(
-                      size: 11,
-                      weight: FontWeight.w600,
-                      color: AppColors.accent,
+                      size: 12,
+                      color: AppColors.textMuted,
                     ),
                   ),
                 ],
               ),
             ),
-          ],
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _MiniStat(
-                label: 'Carry',
-                value:
-                    '${prefs.dist(shot.carry).toStringAsFixed(1)} ${prefs.distLabel}',
-              ),
-              const SizedBox(width: 16),
-              _MiniStat(
-                label: 'Smash',
-                value: shot.smashFactor.toStringAsFixed(2),
-              ),
-              const SizedBox(width: 16),
-              _MiniStat(
-                label: 'Launch',
-                value: '${shot.launchAngle.toStringAsFixed(1)}°',
-              ),
-              const SizedBox(width: 16),
-              _MiniStat(label: 'Spin', value: '${shot.spinRate.toInt()} rpm'),
-            ],
           ),
         ],
       ),
@@ -246,235 +417,45 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final Color color;
     final String label;
+    final IconData icon;
     if (critical > 0) {
-      color = const Color(0xFFEF4444);
-      label = '$critical critical';
+      color = AppColors.severityCritical;
+      icon = Icons.error_outline;
+      label = '$critical critical ${critical == 1 ? 'issue' : 'issues'}';
     } else if (outOfRange > 0) {
-      color = const Color(0xFFF59E0B);
+      color = AppColors.severityWarning;
+      icon = Icons.warning_amber_rounded;
       label = '$outOfRange flagged';
     } else {
-      color = AppColors.accent;
+      color = context.accent;
+      icon = Icons.check_circle_outline;
       label = 'Optimal';
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: color.withAlpha(25),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: color.withAlpha(80)),
       ),
-      child: Text(
-        label,
-        style: AppTextStyles.sans(
-          size: 10,
-          weight: FontWeight.w600,
-          color: color,
-        ),
-      ),
-    );
-  }
-}
-
-class _MiniStat extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _MiniStat({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
           Text(
             label,
-            style: AppTextStyles.sans(size: 9, color: AppColors.textDimmed),
-          ),
-          Text(value, style: AppTextStyles.mono(size: 12, color: Colors.white)),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Diagnostics section ──────────────────────────────────────────────────────
-
-class _DiagnosticsSection extends StatelessWidget {
-  final List<Diagnostic> diagnostics;
-  final UnitPrefs prefs;
-
-  const _DiagnosticsSection({required this.diagnostics, required this.prefs});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'DIAGNOSTICS',
             style: AppTextStyles.sans(
-              size: 9,
-              weight: FontWeight.w600,
-              color: AppColors.textDimmed,
+              size: 12,
+              weight: FontWeight.w700,
+              color: color,
             ),
           ),
-          const SizedBox(height: 8),
-          for (final diag in diagnostics)
-            _DiagnosticTile(diagnostic: diag, prefs: prefs),
         ],
       ),
     );
   }
-}
-
-class _DiagnosticTile extends StatelessWidget {
-  final Diagnostic diagnostic;
-  final UnitPrefs prefs;
-
-  const _DiagnosticTile({required this.diagnostic, required this.prefs});
-
-  Color get _severityColor => switch (diagnostic.severity) {
-    Severity.critical => const Color(0xFFEF4444),
-    Severity.high => const Color(0xFFF59E0B),
-    _ => const Color(0xFF60A5FA),
-  };
-
-  IconData get _icon => switch (diagnostic.severity) {
-    Severity.critical => Icons.error_outline,
-    Severity.high => Icons.warning_amber_rounded,
-    _ => Icons.info_outline,
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    // Compute how far out of range the metric is for the bar.
-    final range = diagnostic.maxOptimal - diagnostic.minOptimal;
-    final mid = (diagnostic.minOptimal + diagnostic.maxOptimal) / 2;
-    final deviation = (diagnostic.measured - mid).abs();
-    final barFraction = (deviation / (range * 1.5)).clamp(0.0, 1.0);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border(left: BorderSide(color: _severityColor, width: 2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(_icon, size: 13, color: _severityColor),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  _humanizeMetric(diagnostic.metric),
-                  style: AppTextStyles.sans(size: 12, weight: FontWeight.w600),
-                ),
-              ),
-              Text(
-                diagnostic.severity.name.toUpperCase(),
-                style: AppTextStyles.sans(
-                  size: 9,
-                  weight: FontWeight.w600,
-                  color: _severityColor,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Text(
-                'Measured: ${_formatValue(diagnostic.measured, diagnostic.metric)}',
-                style: AppTextStyles.mono(size: 11, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Optimal: ${_formatValue(diagnostic.minOptimal, diagnostic.metric)}'
-                ' – ${_formatValue(diagnostic.maxOptimal, diagnostic.metric)}',
-                style: AppTextStyles.sans(size: 10, color: AppColors.textMuted),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          // Deviation bar
-          LayoutBuilder(
-            builder: (context, constraints) {
-              return Stack(
-                children: [
-                  Container(
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: AppColors.border2,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  Container(
-                    height: 3,
-                    width: constraints.maxWidth * barFraction,
-                    decoration: BoxDecoration(
-                      color: _severityColor,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-          if (diagnostic.estimatedYardsLost != null &&
-              diagnostic.estimatedYardsLost! > 1.0) ...[
-            const SizedBox(height: 4),
-            Text(
-              '~${prefs.dist(diagnostic.estimatedYardsLost!).toStringAsFixed(0)} ${prefs.distLabel} lost',
-              style: AppTextStyles.sans(
-                size: 10,
-                weight: FontWeight.w600,
-                color: const Color(0xFFF59E0B),
-              ),
-            ),
-          ],
-          if (diagnostic.possibleRootCauses.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              'Possible: ${diagnostic.possibleRootCauses.take(2).map(_humanizeCause).join(', ')}',
-              style: AppTextStyles.sans(size: 10, color: AppColors.textDimmed),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  static String _humanizeMetric(String metric) => switch (metric) {
-    'smashFactor' => 'Smash Factor',
-    'launchAngle' => 'Launch Angle',
-    'spinRate' => 'Spin Rate',
-    'spinLoftMismatch' => 'Spin Loft Mismatch',
-    'carryDistance' => 'Carry Distance',
-    'pathFaceAngleAlignment' => 'Path-Face Alignment',
-    'attackAngle' => 'Attack Angle',
-    'impactLocation' => 'Impact Location',
-    _ => metric,
-  };
-
-  static String _formatValue(double value, String metric) => switch (metric) {
-    'smashFactor' => value.toStringAsFixed(2),
-    'spinRate' || 'spinLoftMismatch' => '${value.toInt()} rpm',
-    'launchAngle' || 'attackAngle' => '${value.toStringAsFixed(1)}°',
-    'carryDistance' => '${value.toStringAsFixed(0)} yds',
-    'pathFaceAngleAlignment' => '${value.toStringAsFixed(1)}°',
-    'impactLocation' => '${value.toStringAsFixed(2)}"',
-    _ => value.toStringAsFixed(1),
-  };
-
-  static String _humanizeCause(String cause) => cause.replaceAll('_', ' ');
 }
 
 // ── Recommendations section ──────────────────────────────────────────────────
@@ -490,21 +471,20 @@ class _RecommendationsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final shown = recommendations.take(3).toList();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'RECOMMENDATIONS',
-            style: AppTextStyles.sans(
-              size: 9,
-              weight: FontWeight.w600,
-              color: AppColors.textDimmed,
-            ),
+          _SectionHeader(
+            label: 'Work on',
+            trailing: recommendations.length > shown.length
+                ? '${shown.length} of ${recommendations.length}'
+                : null,
           ),
-          const SizedBox(height: 8),
-          for (final rec in recommendations.take(3))
+          const SizedBox(height: 10),
+          for (final rec in shown)
             _RecommendationTile(recommendation: rec, prefs: prefs),
         ],
       ),
@@ -523,9 +503,10 @@ class _RecommendationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final gain = recommendation.expectedGainYards;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(8),
@@ -535,50 +516,263 @@ class _RecommendationTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 18,
-                height: 18,
+                width: 22,
+                height: 22,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: AppColors.accent.withAlpha(25),
-                  borderRadius: BorderRadius.circular(4),
+                  color: context.accentSubtle,
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
                   '${recommendation.priority}',
-                  style: AppTextStyles.mono(size: 10, color: AppColors.accent),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  recommendation.action.replaceAll('_', ' '),
                   style: AppTextStyles.sans(
                     size: 12,
-                    weight: FontWeight.w600,
-                    color: AppColors.accent,
+                    weight: FontWeight.w700,
+                    color: context.accent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Text(
+                    _sentenceCase(recommendation.action),
+                    style: AppTextStyles.sans(
+                      size: 14,
+                      weight: FontWeight.w700,
+                      color: context.accent,
+                    ),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text(
             recommendation.description,
-            style: AppTextStyles.sans(size: 10, color: AppColors.textMuted),
+            style: AppTextStyles.sans(
+              size: 12,
+              color: AppColors.textMuted,
+            ).copyWith(height: 1.45),
           ),
-          if (recommendation.expectedGainYards != null &&
-              recommendation.expectedGainYards! > 1.0) ...[
-            const SizedBox(height: 4),
+          if (gain != null && gain > 1.0) ...[
+            const SizedBox(height: 8),
             Text(
-              'Estimated gain: +${prefs.dist(recommendation.expectedGainYards!).toStringAsFixed(0)} ${prefs.distLabel}',
+              'Estimated gain '
+              '+${prefs.dist(gain).toStringAsFixed(0)} ${prefs.distLabel}',
               style: AppTextStyles.sans(
-                size: 10,
-                weight: FontWeight.w600,
-                color: AppColors.accent,
+                size: 12,
+                weight: FontWeight.w700,
+                color: context.accent,
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Diagnostics section ──────────────────────────────────────────────────────
+
+class _DiagnosticsSection extends StatelessWidget {
+  final List<Diagnostic> diagnostics;
+  final UnitPrefs prefs;
+
+  const _DiagnosticsSection({required this.diagnostics, required this.prefs});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionHeader(
+            label: 'Diagnostics',
+            trailing: '${diagnostics.length}',
+          ),
+          const SizedBox(height: 10),
+          for (final diag in diagnostics)
+            _DiagnosticTile(diagnostic: diag, prefs: prefs),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiagnosticTile extends StatelessWidget {
+  final Diagnostic diagnostic;
+  final UnitPrefs prefs;
+
+  const _DiagnosticTile({required this.diagnostic, required this.prefs});
+
+  Color get _severityColor => switch (diagnostic.severity) {
+    Severity.critical => AppColors.severityCritical,
+    Severity.high => AppColors.severityWarning,
+    _ => AppColors.severityInfo,
+  };
+
+  IconData get _icon => switch (diagnostic.severity) {
+    Severity.critical => Icons.error_outline,
+    Severity.high => Icons.warning_amber_rounded,
+    _ => Icons.info_outline,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    // How far out of range the metric sits, for the deviation bar.
+    final range = diagnostic.maxOptimal - diagnostic.minOptimal;
+    final mid = (diagnostic.minOptimal + diagnostic.maxOptimal) / 2;
+    final deviation = (diagnostic.measured - mid).abs();
+    final barFraction = (deviation / (range * 1.5)).clamp(0.0, 1.0);
+    final lost = diagnostic.estimatedYardsLost;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        // Severity tints the whole card's edge rather than a heavy bar down
+        // one side, and is repeated in the icon and the word so it never
+        // rests on colour alone.
+        border: Border.all(color: _severityColor.withAlpha(80)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(_icon, size: 15, color: _severityColor),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  _humanizeMetric(diagnostic.metric),
+                  style: AppTextStyles.sans(size: 14, weight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                diagnostic.severity.name.toUpperCase(),
+                style: AppTextStyles.statLabel(color: _severityColor),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 20,
+            runSpacing: 8,
+            children: [
+              _InlineFigure(
+                label: 'Measured',
+                value: _formatValue(diagnostic.measured, diagnostic.metric),
+                valueColor: _severityColor,
+              ),
+              _InlineFigure(
+                label: 'Optimal',
+                value:
+                    '${_formatValue(diagnostic.minOptimal, diagnostic.metric)}'
+                    '–${_formatValue(diagnostic.maxOptimal, diagnostic.metric)}',
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _DeviationBar(fraction: barFraction, color: _severityColor),
+          if (lost != null && lost > 1.0) ...[
+            const SizedBox(height: 10),
+            Text(
+              '~${prefs.dist(lost).toStringAsFixed(0)} ${prefs.distLabel} lost',
+              style: AppTextStyles.sans(
+                size: 12,
+                weight: FontWeight.w700,
+                color: AppColors.severityWarning,
+              ),
+            ),
+          ],
+          if (diagnostic.possibleRootCauses.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Possibly: '
+              '${diagnostic.possibleRootCauses.take(2).map(_sentenceCase).join(' · ')}',
+              style: AppTextStyles.sans(
+                size: 12,
+                color: AppColors.textDimmed,
+              ).copyWith(height: 1.4),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatValue(double value, String metric) => switch (metric) {
+    'smashFactor' => value.toStringAsFixed(2),
+    'spinRate' || 'spinLoftMismatch' => '${value.toInt()} rpm',
+    'launchAngle' || 'attackAngle' => '${value.toStringAsFixed(1)}°',
+    // Held in yards like everything in the domain layer. This used to print
+    // the raw number with a hardcoded "yds", so a golfer working in metres
+    // read one figure here in a different unit from the rest of the panel.
+    'carryDistance' =>
+      '${prefs.dist(value).toStringAsFixed(0)} ${prefs.distLabel}',
+    'pathFaceAngleAlignment' => '${value.toStringAsFixed(1)}°',
+    'impactLocation' => '${value.toStringAsFixed(2)}"',
+    _ => value.toStringAsFixed(1),
+  };
+}
+
+/// Caps label with its figure beside it, for the measured / optimal pair.
+class _InlineFigure extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _InlineFigure({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label.toUpperCase(), style: AppTextStyles.statLabel()),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: AppTextStyles.statValue(
+            size: 15,
+            color: valueColor ?? Colors.white,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DeviationBar extends StatelessWidget {
+  final double fraction;
+  final Color color;
+
+  const _DeviationBar({required this.fraction, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(2),
+      child: Stack(
+        children: [
+          Container(height: 4, color: AppColors.border2),
+          FractionallySizedBox(
+            widthFactor: fraction,
+            child: Container(height: 4, color: color),
+          ),
         ],
       ),
     );
@@ -596,44 +790,37 @@ class _SessionSummarySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'SESSION SUMMARY',
-            style: AppTextStyles.sans(
-              size: 9,
-              weight: FontWeight.w600,
-              color: AppColors.textDimmed,
-            ),
-          ),
-          const SizedBox(height: 8),
+          const _SectionHeader(label: 'Session so far'),
+          const SizedBox(height: 10),
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: AppColors.surface,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: AppColors.border2),
             ),
-            child: Row(
-              children: [
-                _SessionStat(label: 'Shots', value: '${summary.totalShots}'),
-                _SessionStat(
-                  label: 'Avg Carry',
-                  value:
-                      '${prefs.dist(summary.avgCarry).toStringAsFixed(1)} ${prefs.distLabel}',
+            child: _StatGrid(
+              stats: [
+                _StatReadout(label: 'Shots', value: '${summary.totalShots}'),
+                _StatReadout(
+                  label: 'Avg carry',
+                  value: prefs.dist(summary.avgCarry).toStringAsFixed(1),
+                  unit: prefs.distLabel,
                 ),
-                _SessionStat(
-                  label: 'Avg Smash',
+                _StatReadout(
+                  label: 'Avg smash',
                   value: summary.avgSmash.toStringAsFixed(2),
                 ),
-                _SessionStat(
+                _StatReadout(
                   label: 'Critical',
                   value: '${summary.totalCritical}',
                   valueColor: summary.totalCritical > 0
-                      ? const Color(0xFFEF4444)
-                      : AppColors.accent,
+                      ? AppColors.severityCritical
+                      : context.accent,
                 ),
               ],
             ),
@@ -641,7 +828,10 @@ class _SessionSummarySection extends StatelessWidget {
           if (summary.topIssueMetric != null) ...[
             const SizedBox(height: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
               decoration: BoxDecoration(
                 color: AppColors.surface,
                 borderRadius: BorderRadius.circular(10),
@@ -651,29 +841,33 @@ class _SessionSummarySection extends StatelessWidget {
                 children: [
                   const Icon(
                     Icons.insights,
-                    size: 13,
-                    color: Color(0xFFF59E0B),
+                    size: 15,
+                    color: AppColors.severityWarning,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Top issue: ${_DiagnosticTile._humanizeMetric(summary.topIssueMetric!)}'
-                      ' (${summary.topIssueCount}× this session)',
+                      'Recurring: '
+                      '${_humanizeMetric(summary.topIssueMetric!)}'
+                      ' — ${summary.topIssueCount}× this session',
                       style: AppTextStyles.sans(
-                        size: 10,
+                        size: 12,
                         color: AppColors.textMuted,
-                      ),
+                      ).copyWith(height: 1.4),
                     ),
                   ),
-                  if (summary.totalYardsLost > 1)
+                  if (summary.totalYardsLost > 1) ...[
+                    const SizedBox(width: 8),
                     Text(
-                      '~${prefs.dist(summary.totalYardsLost).toStringAsFixed(0)} ${prefs.distLabel} lost',
+                      '~${prefs.dist(summary.totalYardsLost).toStringAsFixed(0)}'
+                      ' ${prefs.distLabel}',
                       style: AppTextStyles.sans(
-                        size: 10,
-                        weight: FontWeight.w600,
-                        color: const Color(0xFFF59E0B),
+                        size: 12,
+                        weight: FontWeight.w700,
+                        color: AppColors.severityWarning,
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
@@ -684,36 +878,25 @@ class _SessionSummarySection extends StatelessWidget {
   }
 }
 
-class _SessionStat extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color? valueColor;
+// ── Copy helpers ─────────────────────────────────────────────────────────────
 
-  const _SessionStat({
-    required this.label,
-    required this.value,
-    this.valueColor,
-  });
+String _humanizeMetric(String metric) => switch (metric) {
+  'smashFactor' => 'Smash factor',
+  'launchAngle' => 'Launch angle',
+  'spinRate' => 'Spin rate',
+  'spinLoftMismatch' => 'Spin loft mismatch',
+  'carryDistance' => 'Carry distance',
+  'pathFaceAngleAlignment' => 'Path-face alignment',
+  'attackAngle' => 'Attack angle',
+  'impactLocation' => 'Impact location',
+  _ => _sentenceCase(metric),
+};
 
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(
-            label,
-            style: AppTextStyles.sans(size: 9, color: AppColors.textDimmed),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: AppTextStyles.mono(
-              size: 12,
-              color: valueColor ?? Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+/// `ball_contact_off_center` → `Ball contact off center`. These strings come
+/// out of the domain layer as identifiers; rendering them raw put lowercase
+/// snake-case fragments straight into the UI.
+String _sentenceCase(String raw) {
+  final words = raw.replaceAll('_', ' ').trim();
+  if (words.isEmpty) return words;
+  return words[0].toUpperCase() + words.substring(1);
 }
