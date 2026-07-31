@@ -131,13 +131,23 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
     return;
   }
 
-  // FOURCC before size: DirectShow settles the pixel format first, and a
-  // large frame requested in an uncompressed format is granted as a
-  // slideshow rather than refused.
+  // The format matters more than the size. Uncompressed YUY2 at 1280x720x30
+  // needs ~55MB/s against USB 2.0's ~35-40, so a camera left uncompressed at
+  // 720p gets capped by the driver at 10-15fps — it doesn't refuse, it
+  // crawls. MJPG fits with room to spare. The catch is that DirectShow can
+  // ignore a FOURCC request silently, and changing the frame size can reset
+  // the format, so the request is made before the size, checked after it,
+  // and repeated if it didn't stick. What was actually granted goes back in
+  // the opened message, so a format that refuses to take is visible in the
+  // log rather than deduced from the frame rate.
   if (config.requestWidth > 0 && config.requestHeight > 0) {
     capture.set(propFourcc, fourccMjpg.toDouble());
     capture.set(propFrameWidth, config.requestWidth.toDouble());
     capture.set(propFrameHeight, config.requestHeight.toDouble());
+    capture.set(propFps, 30);
+    if (capture.get(propFourcc).toInt() != fourccMjpg) {
+      capture.set(propFourcc, fourccMjpg.toDouble());
+    }
   }
 
   toMain.send({
@@ -145,6 +155,7 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
     'width': capture.get(propFrameWidth).round(),
     'height': capture.get(propFrameHeight).round(),
     'fps': capture.get(propFps),
+    'fourcc': capture.get(propFourcc).toInt(),
   });
 
   final sincePreview = Stopwatch()..start();

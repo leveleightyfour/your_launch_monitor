@@ -425,10 +425,11 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
         final width = message['width'] as int;
         final height = message['height'] as int;
         final fps = message['fps'] as double;
+        final fourcc = message['fourcc'] as int? ?? 0;
         debugPrint(
           '[camera] opened "${device.name}" index ${device.index} — '
           'requested ${requested.label}, got ${width}x$height '
-          '@ ${fps.toStringAsFixed(1)}fps',
+          '@ ${fps.toStringAsFixed(1)}fps in ${_fourccName(fourcc)}',
         );
         _watchdog.start();
         ref.read(impactClipProvider.notifier).setArmed(true);
@@ -543,6 +544,20 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
       devices: state.devices,
     );
     ref.read(unitPrefsProvider.notifier).setCameraDeviceName(null);
+  }
+
+  /// `1196444237` → `MJPG`. Falls back to the raw number for a value that
+  /// doesn't decode as four printable characters.
+  static String _fourccName(int fourcc) {
+    if (fourcc <= 0) return 'unknown format';
+    final chars = [
+      fourcc & 0xFF,
+      (fourcc >> 8) & 0xFF,
+      (fourcc >> 16) & 0xFF,
+      (fourcc >> 24) & 0xFF,
+    ];
+    if (chars.any((c) => c < 0x20 || c > 0x7E)) return 'format #$fourcc';
+    return String.fromCharCodes(chars);
   }
 
   void _fail(CameraDevice device, String error, int generation) {
