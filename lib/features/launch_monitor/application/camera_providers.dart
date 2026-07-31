@@ -452,6 +452,21 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
       } finally {
         frame.dispose();
       }
+
+      // Hand the event loop a turn, every iteration, unconditionally.
+      //
+      // `await` on its own does not guarantee one: a future that is already
+      // complete — which readAsync is whenever the driver has a frame queued
+      // — resumes through the *microtask* queue, and microtasks are drained
+      // to exhaustion before any timer, gesture or frame callback runs. The
+      // loop then spins on microtasks with the UI locked out entirely.
+      //
+      // Until now `_publish` hid this: decodeImageFromPixels completes on a
+      // real event-loop callback, so painting the preview was accidentally
+      // the thing keeping the app responsive. Pausing the preview during clip
+      // review removed that, and the tab froze solid. A zero-duration delay
+      // is a Timer, which is an event-loop task, so this yield is real.
+      await Future<void>.delayed(Duration.zero);
     }
   }
 

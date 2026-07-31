@@ -724,9 +724,6 @@ class _ClipReviewState extends State<_ClipReview>
   /// explicit disposal.
   ui.Image? _shown;
 
-  /// Held one generation so a frame is never freed while still being painted.
-  ui.Image? _retired;
-
   /// Index waiting to be decoded. Overwritten rather than queued: if decoding
   /// falls behind the loop, the right behaviour is to skip to the newest
   /// frame, not to work through a backlog and drift further behind.
@@ -751,7 +748,6 @@ class _ClipReviewState extends State<_ClipReview>
   void dispose() {
     _ticker.dispose();
     _shown?.dispose();
-    _retired?.dispose();
     super.dispose();
   }
 
@@ -797,8 +793,13 @@ class _ClipReviewState extends State<_ClipReview>
       }
       final previous = _shown;
       setState(() => _shown = image);
-      _retired?.dispose();
-      _retired = previous;
+      // Freed after the frame that replaced it has actually been painted.
+      // Counting generations was not enough: two decodes can land inside one
+      // rendered frame, and then the image being disposed is still the one on
+      // screen.
+      if (previous != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
+      }
     }
     _decoding = false;
   }
