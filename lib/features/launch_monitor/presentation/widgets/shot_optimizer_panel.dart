@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/shot_optimizer_providers.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_optimizer.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
@@ -13,12 +15,34 @@ class ShotOptimizerPanel extends ConsumerWidget {
   /// panel fills the screen as its own tab.
   final bool showLeftBorder;
 
-  const ShotOptimizerPanel({super.key, this.showLeftBorder = true});
+  /// The shots to analyse. Leave null on the live session — the panel then
+  /// follows the launch monitor and the globally selected shot. A saved
+  /// session passes its own shots, which the launch monitor knows nothing
+  /// about, along with [selectedShotIndex] into that list.
+  final List<ShotData>? shots;
+  final int selectedShotIndex;
+
+  const ShotOptimizerPanel({
+    super.key,
+    this.showLeftBorder = true,
+    this.shots,
+    this.selectedShotIndex = 0,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final analysis = ref.watch(currentShotAnalysisProvider);
-    final sessionSummary = ref.watch(sessionOptSummaryProvider);
+    final explicit = shots;
+    final ShotAnalysis? analysis;
+    final SessionOptSummary? sessionSummary;
+    if (explicit == null) {
+      analysis = ref.watch(currentShotAnalysisProvider);
+      sessionSummary = ref.watch(sessionOptSummaryProvider);
+    } else {
+      final optimizer = ref.read(shotOptimizerProvider);
+      final clubs = ref.watch(clubsProvider);
+      analysis = analyzeShotAt(optimizer, explicit, selectedShotIndex, clubs);
+      sessionSummary = summariseShots(optimizer, explicit, clubs);
+    }
     final prefs = ref.watch(unitPrefsProvider);
 
     return Container(

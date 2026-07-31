@@ -8,6 +8,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_list_panel.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_optimizer_panel.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/club_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/dispersion_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/flight_3d_tab.dart';
@@ -21,7 +22,7 @@ import 'package:omni_sniffer/shared/theme.dart';
 enum _TopView { split, tiles, dispersion, flight, club, table }
 
 // Options available inside a split pane
-enum _PaneView { tiles, dispersion, flight, club, table }
+enum _PaneView { tiles, dispersion, flight, club, table, optimizer }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
   // Split pane configuration — persists across view switches
   _PaneView _splitLeft = _PaneView.table;
   _PaneView _splitRight = _PaneView.dispersion;
-  _PaneView _splitThird = _PaneView.flight;
+  _PaneView _splitThird = _PaneView.optimizer;
 
   @override
   void initState() {
@@ -52,9 +53,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
     final prefs = ref.read(unitPrefsProvider);
     _splitLeft = _paneFromName(prefs.splitLeftPane, _PaneView.table);
     _splitRight = _paneFromName(prefs.splitRightPane, _PaneView.dispersion);
-    // The live screen's third pane defaults to the optimizer, which this
-    // screen has no member for — a saved session falls back to 3D flight.
-    _splitThird = _paneFromName(prefs.splitThirdPane, _PaneView.flight);
+    _splitThird = _paneFromName(prefs.splitThirdPane, _PaneView.optimizer);
   }
 
   static _PaneView _paneFromName(String name, _PaneView fallback) => _PaneView
@@ -499,6 +498,15 @@ class _SplitViewConfigurable extends StatelessWidget {
           selectedIndex: selectedShotIndex,
           onRowTap: (i) => onShotSelected(selectedShotIndex == i ? null : i),
         );
+      case _PaneView.optimizer:
+        // Fed this session's shots explicitly — the optimizer's own providers
+        // follow the live launch monitor, which has nothing to do with a
+        // session being reviewed after the fact.
+        return ShotOptimizerPanel(
+          showLeftBorder: false,
+          shots: shots,
+          selectedShotIndex: selectedShotIndex ?? 0,
+        );
     }
   }
 
@@ -570,6 +578,7 @@ class _PaneHeader extends StatelessWidget {
     (_PaneView.flight, Icons.view_in_ar, '3D Flight'),
     (_PaneView.club, Icons.sports_golf, 'Club'),
     (_PaneView.table, Icons.table_rows, 'Table'),
+    (_PaneView.optimizer, Icons.tune, 'Optimizer'),
   ];
 
   String get _label => _options.firstWhere((o) => o.$1 == current).$3;

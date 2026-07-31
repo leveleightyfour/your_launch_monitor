@@ -185,6 +185,36 @@ class AppTextStyles {
     Color color = Colors.white,
   }) => GoogleFonts.dmSans(fontSize: size, fontWeight: weight, color: color);
 
+  // --- shot-metric readouts ---
+  //
+  // The label / value / unit trio every metric readout is built from. They
+  // live here rather than in one tab so the tiles, the dispersion header and
+  // anything added later can't drift apart typographically.
+
+  /// The small caps label above a metric's value.
+  static TextStyle statLabel({Color color = AppColors.textMuted}) =>
+      sans(
+        size: 11,
+        weight: FontWeight.w700,
+        color: color,
+      ).copyWith(letterSpacing: 1.2);
+
+  /// A metric's big number.
+  ///
+  /// Heavy sans, deliberately not mono: DM Mono tops out at w500, so a mono
+  /// readout silently falls back to medium and reads far thinner than the
+  /// design intends. Tabular figures keep the split-flap animation from
+  /// wobbling the layout as digits roll.
+  static TextStyle statValue({double size = 52, Color color = Colors.white}) =>
+      sans(size: size, weight: FontWeight.w800, color: color).copyWith(
+        fontFeatures: const [FontFeature.tabularFigures()],
+        height: 1.0,
+      );
+
+  /// The unit trailing a metric's value.
+  static TextStyle statUnit({Color color = AppColors.textDimmed}) =>
+      sans(size: 11, color: color).copyWith(fontStyle: FontStyle.italic);
+
   AppTextStyles._();
 }
 

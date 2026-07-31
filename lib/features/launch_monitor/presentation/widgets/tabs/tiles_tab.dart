@@ -488,11 +488,7 @@ class _MetricTile extends StatelessWidget {
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.sans(
-                  size: 11,
-                  weight: FontWeight.w700,
-                  color: AppColors.textMuted,
-                ).copyWith(letterSpacing: 1.2),
+                style: AppTextStyles.statLabel(),
               ),
               const SizedBox(height: 2),
               Expanded(
@@ -524,10 +520,7 @@ class _MetricTile extends StatelessWidget {
                 Text(
                   unit,
                   textAlign: TextAlign.center,
-                  style: AppTextStyles.sans(
-                    size: 11,
-                    color: AppColors.textDimmed,
-                  ).copyWith(fontStyle: FontStyle.italic),
+                  style: AppTextStyles.statUnit(),
                 ),
               if (!compact && footer.isNotEmpty) ...[
                 const SizedBox(height: 4),
@@ -565,12 +558,9 @@ class _MetricTile extends StatelessWidget {
 
 /// The tile's big number.
 ///
-/// Digits render full size in a heavy sans — DM Mono tops out at w500, so the
-/// old `w600` request was silently falling back to medium, which is most of
-/// why these numbers read thinner than the design they came from. Any trailing
-/// suffix sits beside the digits at half size on the shared baseline. Tabular
-/// figures keep the split-flap animation from wobbling the layout as digits
-/// roll.
+/// Digits render full size in [AppTextStyles.statValue] — the shared metric
+/// face, heavy sans rather than mono. Any trailing suffix sits beside them at
+/// half size on the shared baseline.
 ///
 /// [size] is the digits' font size. The metric tiles pass one value computed
 /// from their shared geometry so every tile's digits match.
@@ -580,10 +570,7 @@ class _TileValue extends StatelessWidget {
 
   const _TileValue({required this.text, this.size = 108});
 
-  static TextStyle _style(double size) => AppTextStyles.sans(
-    size: size,
-    weight: FontWeight.w800,
-  ).copyWith(fontFeatures: const [FontFeature.tabularFigures()], height: 1.0);
+  static TextStyle _style(double size) => AppTextStyles.statValue(size: size);
 
   @override
   Widget build(BuildContext context) {

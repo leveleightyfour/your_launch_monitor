@@ -3,33 +3,52 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/providers.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_optimizer.dart';
 
 // ── Optimizer singleton ──────────────────────────────────────────────────────
 
 final shotOptimizerProvider = Provider((_) => ShotOptimizer());
 
+// ── Analysis over an explicit shot list ──────────────────────────────────────
+//
+// The providers below read the *live* session. These two functions take the
+// shots as an argument instead, so a saved session — which the launch monitor
+// provider knows nothing about — can be analysed with exactly the same code.
+
+/// Analyses shot [selectedIndex] of [shots], or null when there is nothing to
+/// analyse. Out-of-range indices clamp rather than throw.
+ShotAnalysis? analyzeShotAt(
+  ShotOptimizer optimizer,
+  List<ShotData> shots,
+  int selectedIndex,
+  List<Club> clubs,
+) {
+  if (shots.isEmpty) return null;
+  final shot = shots[selectedIndex.clamp(0, shots.length - 1)];
+
+  // Resolve club type from the shot's clubId.
+  final club = shot.clubId == null
+      ? null
+      : clubs.where((c) => c.id == shot.clubId).firstOrNull;
+
+  return optimizer.analyze(
+    shot,
+    club?.type ?? ClubType.iron,
+    clubId: shot.clubId,
+  );
+}
+
 // ── Current shot analysis ────────────────────────────────────────────────────
 
 /// Derives a [ShotAnalysis] from the currently selected shot.
 /// Recomputes automatically whenever the shot or active club changes.
 final currentShotAnalysisProvider = Provider<ShotAnalysis?>((ref) {
-  final shots = ref.watch(launchMonitorProvider.select((s) => s.shots));
-  if (shots.isEmpty) return null;
-
-  final selectedIdx = ref.watch(selectedShotIndexProvider);
-  final safeIdx = selectedIdx.clamp(0, shots.length - 1);
-  final shot = shots[safeIdx];
-
-  // Resolve club type from the shot's clubId.
-  final clubs = ref.watch(clubsProvider);
-  final club = shot.clubId == null
-      ? null
-      : clubs.where((c) => c.id == shot.clubId).firstOrNull;
-  final clubType = club?.type ?? ClubType.iron;
-
-  return ref.read(shotOptimizerProvider).analyze(
-    shot, clubType, clubId: shot.clubId,
+  return analyzeShotAt(
+    ref.read(shotOptimizerProvider),
+    ref.watch(launchMonitorProvider.select((s) => s.shots)),
+    ref.watch(selectedShotIndexProvider),
+    ref.watch(clubsProvider),
   );
 });
 
@@ -72,11 +91,22 @@ class SessionOptSummary {
 }
 
 final sessionOptSummaryProvider = Provider<SessionOptSummary?>((ref) {
-  final shots = ref.watch(launchMonitorProvider.select((s) => s.shots));
-  if (shots.isEmpty) return null;
+  return summariseShots(
+    ref.read(shotOptimizerProvider),
+    ref.watch(launchMonitorProvider.select((s) => s.shots)),
+    ref.watch(clubsProvider),
+  );
+});
 
-  final clubs = ref.watch(clubsProvider);
-  final optimizer = ref.read(shotOptimizerProvider);
+/// Rolls [shots] up into a [SessionOptSummary], or null when empty. Takes the
+/// shots explicitly so a saved session can be summarised the same way as the
+/// live one.
+SessionOptSummary? summariseShots(
+  ShotOptimizer optimizer,
+  List<ShotData> shots,
+  List<Club> clubs,
+) {
+  if (shots.isEmpty) return null;
 
   double totalCarry = 0;
   double totalSmash = 0;
@@ -114,4 +144,4 @@ final sessionOptSummaryProvider = Provider<SessionOptSummary?>((ref) {
     topIssueCount: topIssue?.value ?? 0,
     totalYardsLost: totalYardsLost,
   );
-});
+}

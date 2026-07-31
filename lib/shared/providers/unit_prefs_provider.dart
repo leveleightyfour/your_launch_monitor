@@ -77,6 +77,11 @@ class UnitPrefs {
   final String splitRightPane;
   final String splitThirdPane;
 
+  /// Platform name of the camera the desktop Camera tab last streamed, so it
+  /// reopens on the same one. Empty means "none chosen" — the tab then waits
+  /// for a pick rather than grabbing whatever camera enumerates first.
+  final String cameraDeviceName;
+
   const UnitPrefs({
     this.distance = DistanceUnit.meters,
     this.speed = SpeedUnit.mph,
@@ -87,6 +92,7 @@ class UnitPrefs {
     this.splitLeftPane = 'table',
     this.splitRightPane = 'dispersion',
     this.splitThirdPane = 'optimizer',
+    this.cameraDeviceName = '',
   });
 
   UnitPrefs copyWith({
@@ -99,6 +105,7 @@ class UnitPrefs {
     String? splitLeftPane,
     String? splitRightPane,
     String? splitThirdPane,
+    String? cameraDeviceName,
   }) => UnitPrefs(
     distance: distance ?? this.distance,
     speed: speed ?? this.speed,
@@ -109,6 +116,7 @@ class UnitPrefs {
     splitLeftPane: splitLeftPane ?? this.splitLeftPane,
     splitRightPane: splitRightPane ?? this.splitRightPane,
     splitThirdPane: splitThirdPane ?? this.splitThirdPane,
+    cameraDeviceName: cameraDeviceName ?? this.cameraDeviceName,
   );
 
   /// Display label for distance values.
@@ -138,6 +146,7 @@ class UnitPrefs {
     'splitLeftPane': splitLeftPane,
     'splitRightPane': splitRightPane,
     'splitThirdPane': splitThirdPane,
+    'cameraDeviceName': cameraDeviceName,
   };
 
   factory UnitPrefs.fromJson(Map<String, dynamic> j) => UnitPrefs(
@@ -162,6 +171,7 @@ class UnitPrefs {
     splitLeftPane: j['splitLeftPane'] as String? ?? 'table',
     splitRightPane: j['splitRightPane'] as String? ?? 'dispersion',
     splitThirdPane: j['splitThirdPane'] as String? ?? 'optimizer',
+    cameraDeviceName: j['cameraDeviceName'] as String? ?? '',
   );
 }
 
@@ -216,6 +226,13 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
       splitRightPane: right,
       splitThirdPane: third,
     );
+    _save();
+  }
+
+  /// Remembers the Camera tab's device by platform name. Pass null to forget
+  /// it, so the tab stops reopening a camera the golfer closed.
+  void setCameraDeviceName(String? name) {
+    state = state.copyWith(cameraDeviceName: name ?? '');
     _save();
   }
 
