@@ -193,6 +193,47 @@ class _CameraTabState extends ConsumerState<CameraTab> {
   }
 }
 
+/// One camera slot as a standalone view, for a split-view pane.
+///
+/// Just the toolbar and the picture — capture status and clip review stay on
+/// the full Camera tab, because in a quarter-width pane those controls would
+/// crowd out the video this pane exists to show. With two cameras in
+/// adjacent panes, each pane is one angle.
+class CameraSlotView extends ConsumerStatefulWidget {
+  final int slot;
+
+  const CameraSlotView({super.key, required this.slot});
+
+  @override
+  ConsumerState<CameraSlotView> createState() => _CameraSlotViewState();
+}
+
+class _CameraSlotViewState extends ConsumerState<CameraSlotView> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final feed = ref.read(cameraFeedProvider(widget.slot));
+      if (feed.status == CameraFeedStatus.idle && feed.devices.isEmpty) {
+        ref.read(cameraFeedProvider(widget.slot).notifier).refreshDevices();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final feed = ref.watch(cameraFeedProvider(widget.slot));
+    return _FeedPane(
+      slot: widget.slot,
+      feed: feed,
+      caption: widget.slot < kCameraSlotLabels.length
+          ? kCameraSlotLabels[widget.slot]
+          : null,
+    );
+  }
+}
+
 /// One camera slot: its toolbar and its picture.
 class _FeedPane extends StatelessWidget {
   final int slot;

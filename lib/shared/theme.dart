@@ -333,12 +333,12 @@ const _minPaneHeight = 280.0;
 /// How a four-pane split should be arranged in the given space, or null when
 /// four panes don't fit and the split should stay at three.
 ///
-/// The 2×2 grid is preferred whenever there is height for two readable rows:
-/// four panes in one strip leaves each one tall and narrow, which suits
-/// neither a 16:9 camera feed nor a dispersion plot, and that stays true even
-/// on an ultra-wide. The single strip is kept only for windows too short to
-/// stack — an ultra-wide dragged shallow — and wide enough to give every
-/// column its floor.
+/// Ultra-wide keeps the single strip of four: its quarters come out tall and
+/// narrow, which is exactly the shape rotated portrait swing video wants —
+/// two camera quarters side by side read like a pair of phone screens. On
+/// ordinary 16:9 desktops the 2×2 grid is preferred instead, since a strip
+/// there would squeeze every pane, and the strip survives only as the
+/// fallback for a window too shallow to stack two rows.
 enum QuadSplitLayout { grid2x2, row }
 
 QuadSplitLayout? quadSplitLayout(
@@ -346,11 +346,17 @@ QuadSplitLayout? quadSplitLayout(
   double availableWidth,
   double availableHeight,
 ) {
-  if (!isDesktopPlatform && !isUltraWide(context)) return null;
-  if (availableWidth >= _minPaneWidth * 2 &&
-      availableHeight >= _minPaneHeight * 2) {
-    return QuadSplitLayout.grid2x2;
+  final fitsRow = availableWidth >= _minPaneWidth * 4;
+  final fitsGrid =
+      availableWidth >= _minPaneWidth * 2 &&
+      availableHeight >= _minPaneHeight * 2;
+  if (isUltraWide(context)) {
+    if (fitsRow) return QuadSplitLayout.row;
+    if (fitsGrid) return QuadSplitLayout.grid2x2;
+    return null;
   }
-  if (availableWidth >= _minPaneWidth * 4) return QuadSplitLayout.row;
+  if (!isDesktopPlatform) return null;
+  if (fitsGrid) return QuadSplitLayout.grid2x2;
+  if (fitsRow) return QuadSplitLayout.row;
   return null;
 }

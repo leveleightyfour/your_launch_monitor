@@ -118,7 +118,7 @@ class UnitPrefs {
     this.splitLeftPane = 'table',
     this.splitRightPane = 'dispersion',
     this.splitThirdPane = 'optimizer',
-    this.splitFourthPane = 'camera',
+    this.splitFourthPane = 'cameraFo',
     this.cameraSlots = const [CameraSlotPref(), CameraSlotPref()],
   });
 
@@ -201,7 +201,7 @@ class UnitPrefs {
     splitLeftPane: j['splitLeftPane'] as String? ?? 'table',
     splitRightPane: j['splitRightPane'] as String? ?? 'dispersion',
     splitThirdPane: j['splitThirdPane'] as String? ?? 'optimizer',
-    splitFourthPane: j['splitFourthPane'] as String? ?? 'camera',
+    splitFourthPane: j['splitFourthPane'] as String? ?? 'cameraFo',
     cameraSlots: _slotsFromJson(j),
   );
 

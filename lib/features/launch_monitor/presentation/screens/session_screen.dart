@@ -45,6 +45,8 @@ enum _ActivePaneView {
   table,
   optimizer,
   camera,
+  cameraDtl,
+  cameraFo,
 }
 
 /// The camera feed needs a desktop camera backend, so it is offered only
@@ -54,8 +56,12 @@ enum _ActivePaneView {
 bool _viewAvailable(_ActiveView v) =>
     v != _ActiveView.camera || isDesktopPlatform;
 
-bool _paneAvailable(_ActivePaneView v) =>
-    v != _ActivePaneView.camera || isDesktopPlatform;
+bool _paneAvailable(_ActivePaneView v) => switch (v) {
+  _ActivePaneView.camera ||
+  _ActivePaneView.cameraDtl ||
+  _ActivePaneView.cameraFo => isDesktopPlatform,
+  _ => true,
+};
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 
@@ -101,7 +107,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       prefs.splitThirdPane,
       _ActivePaneView.optimizer,
     );
-    _splitFourth = _paneFromName(prefs.splitFourthPane, _ActivePaneView.camera);
+    _splitFourth = _paneFromName(
+      prefs.splitFourthPane,
+      _ActivePaneView.cameraFo,
+    );
   }
 
   static _ActivePaneView _paneFromName(String name, _ActivePaneView fallback) =>
@@ -140,6 +149,27 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final shotsForClub = filterClub == null
         ? allShots
         : allShots.where((s) => s.clubId == filterClub.id).toList();
+
+    // The moment a second camera is configured, hand the split's right half
+    // to the cameras — one quarter per angle — leaving the left half to the
+    // data panes. Only on the transition: any pane choice made after that
+    // is the golfer's and stays.
+    ref.listen(
+      unitPrefsProvider.select(
+        (p) => p.cameraSlots.length > 1 && !p.cameraSlots[1].isEmpty,
+      ),
+      (previous, next) {
+        if (previous == false && next == true) {
+          setState(() {
+            _splitThird = _ActivePaneView.cameraDtl;
+            _splitFourth = _ActivePaneView.cameraFo;
+          });
+          ref
+              .read(unitPrefsProvider.notifier)
+              .setSplitPanes(third: 'cameraDtl', fourth: 'cameraFo');
+        }
+      },
+    );
 
     // Auto-advance selection to the newest shot when a new shot arrives.
     ref.listen(launchMonitorProvider.select((s) => s.shots.length), (
@@ -1007,6 +1037,10 @@ class _ActiveSplitView extends StatelessWidget {
         return const ShotOptimizerPanel(showLeftBorder: false);
       case _ActivePaneView.camera:
         return const CameraTab();
+      case _ActivePaneView.cameraDtl:
+        return const CameraSlotView(slot: 0);
+      case _ActivePaneView.cameraFo:
+        return const CameraSlotView(slot: 1);
     }
   }
 
@@ -1131,6 +1165,10 @@ class _ActivePaneHeader extends StatelessWidget {
     (_ActivePaneView.table, Icons.table_rows, 'Table'),
     (_ActivePaneView.optimizer, Icons.tune, 'Optimizer'),
     (_ActivePaneView.camera, Icons.videocam, 'Camera'),
+    // Single angles, so two cameras can hold a quarter each in the
+    // four-pane split instead of nesting both feeds inside one pane.
+    (_ActivePaneView.cameraDtl, Icons.videocam_outlined, 'DTL Camera'),
+    (_ActivePaneView.cameraFo, Icons.video_camera_front, 'FO Camera'),
   ];
 
   String get _label => _options.firstWhere((o) => o.$1 == current).$3;
