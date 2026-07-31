@@ -270,12 +270,18 @@ bool get isDesktopPlatform =>
 /// columns legibly, so three of them need at least three times as much.
 const _minPaneWidth = 360.0;
 
-/// Returns true when the split view should offer a third pane: the app is on
-/// a desktop window or an ultra-wide display, *and* [availableWidth] — the
-/// room the split itself has, which on ultra-wide excludes the pinned shot
-/// list — divides three ways with each pane still readable. A desktop window
-/// dragged narrow drops back to the two-pane split.
+/// Returns true when the split view should show three equal panes instead of
+/// two.
+///
+/// An ultra-wide display always does: the 21:9-and-wider test already proves
+/// the window is long enough, and two panes across that much glass leaves each
+/// one absurdly letterboxed.
+///
+/// A desktop window is any shape the user drags it to, so it has to earn the
+/// third pane on [availableWidth] — the room the split itself gets, which on
+/// ultra-wide excludes the pinned shot list. Dragged below three readable
+/// panes, it folds back to two.
 bool supportsThirdSplitPane(BuildContext context, double availableWidth) {
-  if (!isDesktopPlatform && !isUltraWide(context)) return false;
-  return availableWidth >= _minPaneWidth * 3;
+  if (isUltraWide(context)) return true;
+  return isDesktopPlatform && availableWidth >= _minPaneWidth * 3;
 }

@@ -974,6 +974,8 @@ class _ActiveSplitView extends StatelessWidget {
       return LayoutBuilder(
         builder: (context, constraints) {
           final third = supportsThirdSplitPane(context, constraints.maxWidth);
+          // Every pane is a flex-1 Expanded, so the panes split the row into
+          // equal shares — halves, or exact thirds once the third is in.
           return Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

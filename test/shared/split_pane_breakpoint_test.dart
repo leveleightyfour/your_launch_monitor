@@ -53,18 +53,17 @@ void main() {
       expect(await _supports(tester, const Size(1366, 1024)), isFalse);
     });
 
-    testWidgets('ultra-wide but with too little room for the split', (
-      tester,
-    ) async {
-      // The pinned shot list eats into what the split actually gets; three
-      // panes under 360dp each are not readable.
+    testWidgets('a narrow ultra-wide still gets three panes', (tester) async {
+      // Ultra-wide is three equal panes unconditionally — the aspect ratio
+      // already proves the window is long, so the pinned shot list eating
+      // into the split's width does not demote it back to two.
       expect(
         await _supports(
           tester,
-          const Size(1280, 620),
-          availableWidth: 1000,
+          const Size(1140, 600),
+          availableWidth: 860,
         ),
-        isFalse,
+        isTrue,
       );
     });
   });
