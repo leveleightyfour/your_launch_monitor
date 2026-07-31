@@ -51,6 +51,13 @@ const fourccMjpg = 1196444237;
 /// `cv::COLOR_BGR2RGBA` — OpenCV decodes to BGR; Flutter uploads RGBA.
 const colorBgr2Rgba = 2;
 
+/// `cv::ROTATE_*` codes, indexed by clockwise quarter turns minus one.
+const _rotateCodes = [
+  0, // ROTATE_90_CLOCKWISE
+  1, // ROTATE_180
+  2, // ROTATE_90_COUNTERCLOCKWISE
+];
+
 // ── Spawn configuration ──────────────────────────────────────────────────────
 
 /// Everything the worker needs, all of it sendable across an isolate spawn.
@@ -66,6 +73,10 @@ class CameraWorkerConfig {
   /// Shortest gap between preview buffers sent to the UI.
   final int previewIntervalMs;
 
+  /// Clockwise quarter turns applied to every frame before it leaves the
+  /// worker, so preview, ring buffer and exports all agree on orientation.
+  final int rotationQuarterTurns;
+
   const CameraWorkerConfig({
     required this.toMain,
     required this.deviceIndex,
@@ -73,6 +84,7 @@ class CameraWorkerConfig {
     required this.requestWidth,
     required this.requestHeight,
     required this.previewIntervalMs,
+    this.rotationQuarterTurns = 0,
   });
 }
 
@@ -98,6 +110,7 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
 
   var stop = false;
   var previewPaused = false;
+  var rotation = config.rotationQuarterTurns % 4;
   commands.listen((message) {
     if (message is! Map) return;
     switch (message['cmd']) {
@@ -105,6 +118,8 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
         stop = true;
       case 'previewPaused':
         previewPaused = message['value'] == true;
+      case 'rotation':
+        rotation = ((message['value'] as int?) ?? 0) % 4;
     }
   });
 
@@ -205,11 +220,21 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
     }
     consecutiveFailures = 0;
 
+    // Rotation happens here, once, at the source: every consumer — the ring
+    // buffer, the preview, review, every export — then agrees on orientation
+    // for free, instead of each applying (or forgetting) its own transform.
+    cv.Mat oriented = frame;
+    cv.Mat? rotated;
+    if (rotation != 0) {
+      rotated = cv.rotate(frame, _rotateCodes[rotation - 1]);
+      oriented = rotated;
+    }
+
     try {
       step
         ..reset()
         ..start();
-      final (encoded, jpeg) = cv.imencode('.jpg', frame);
+      final (encoded, jpeg) = cv.imencode('.jpg', oriented);
       encodeUs += step.elapsedMicroseconds;
       if (encoded) {
         toMain.send({
@@ -227,7 +252,7 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
         step
           ..reset()
           ..start();
-        final rgba = cv.cvtColor(frame, colorBgr2Rgba);
+        final rgba = cv.cvtColor(oriented, colorBgr2Rgba);
         // Mat.data is a view onto native memory; it has to be copied out
         // before the Mat is disposed, and a copy is required to cross the
         // isolate boundary anyway.
@@ -244,6 +269,7 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
         });
       }
     } finally {
+      rotated?.dispose();
       frame.dispose();
     }
 

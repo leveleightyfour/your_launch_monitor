@@ -532,6 +532,19 @@ class _CameraBar extends ConsumerWidget {
           ),
           if (feed.status == CameraFeedStatus.streaming) ...[
             _BarButton(
+              icon: Icons.rotate_90_degrees_cw,
+              label: 'Rotate view 90°',
+              onTap: () {
+                final slots = ref.read(unitPrefsProvider).cameraSlots;
+                final current = slot < slots.length
+                    ? slots[slot].rotationQuarterTurns
+                    : 0;
+                ref
+                    .read(cameraFeedProvider(slot).notifier)
+                    .setRotation(current + 1);
+              },
+            ),
+            _BarButton(
               icon: Icons.aspect_ratio,
               label: 'Capture resolution',
               onTap: () => _showModePicker(context, ref, slot),

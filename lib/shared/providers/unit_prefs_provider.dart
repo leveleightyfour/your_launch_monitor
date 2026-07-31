@@ -57,7 +57,17 @@ class CameraSlotPref {
   final int width;
   final int height;
 
-  const CameraSlotPref({this.deviceName = '', this.width = 0, this.height = 0});
+  /// Quarter turns clockwise applied to every frame (0-3). Lets a webcam
+  /// mounted sideways for portrait framing come out upright everywhere —
+  /// preview, clips and exports alike.
+  final int rotationQuarterTurns;
+
+  const CameraSlotPref({
+    this.deviceName = '',
+    this.width = 0,
+    this.height = 0,
+    this.rotationQuarterTurns = 0,
+  });
 
   bool get isEmpty => deviceName.isEmpty;
 
@@ -65,12 +75,14 @@ class CameraSlotPref {
     'deviceName': deviceName,
     'width': width,
     'height': height,
+    'rotation': rotationQuarterTurns,
   };
 
   factory CameraSlotPref.fromJson(Map<String, dynamic> j) => CameraSlotPref(
     deviceName: j['deviceName'] as String? ?? '',
     width: j['width'] as int? ?? 0,
     height: j['height'] as int? ?? 0,
+    rotationQuarterTurns: (j['rotation'] as int? ?? 0) % 4,
   );
 }
 
@@ -298,7 +310,13 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
   /// Updates one camera slot, keeping whatever isn't passed. A null
   /// [deviceName] clears the slot so the tab stops reopening a camera the
   /// golfer closed.
-  void setCameraSlot(int slot, {String? deviceName, int? width, int? height}) {
+  void setCameraSlot(
+    int slot, {
+    String? deviceName,
+    int? width,
+    int? height,
+    int? rotationQuarterTurns,
+  }) {
     if (slot < 0) return;
     final slots = [...state.cameraSlots];
     while (slots.length <= slot) {
@@ -309,6 +327,8 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
       deviceName: deviceName ?? current.deviceName,
       width: width ?? current.width,
       height: height ?? current.height,
+      rotationQuarterTurns:
+          (rotationQuarterTurns ?? current.rotationQuarterTurns) % 4,
     );
     state = state.copyWith(cameraSlots: List.unmodifiable(slots));
     _save();
