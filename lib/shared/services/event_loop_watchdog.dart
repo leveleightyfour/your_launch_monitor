@@ -21,11 +21,23 @@ class EventLoopWatchdog {
   /// hundred-millisecond hitches that read as lag rather than as a freeze.
   static const _threshold = Duration(milliseconds: 120);
 
+  /// Ticks between heartbeats — 5 seconds at the 100ms interval.
+  ///
+  /// The heartbeat is what makes silence in the log interpretable. Without
+  /// it, "no watchdog lines" is ambiguous three ways: the loop is healthy,
+  /// the loop is *totally* starved (a starved loop can't run the timer that
+  /// would report the starvation — lateness is only measured when the timer
+  /// finally fires), or log output is being lost. With it: regular beats
+  /// mean healthy, beats that stop mean starved or dead, beats that never
+  /// appear mean the console isn't receiving prints.
+  static const _beatEvery = 50;
+
   final String tag;
 
   Timer? _timer;
   Stopwatch? _since;
   int _stalls = 0;
+  int _ticks = 0;
   Duration _worst = Duration.zero;
 
   EventLoopWatchdog(this.tag);
@@ -35,12 +47,20 @@ class EventLoopWatchdog {
   void start() {
     if (_timer != null || !kDebugMode) return;
     _stalls = 0;
+    _ticks = 0;
     _worst = Duration.zero;
+    debugPrint('[watchdog:$tag] started');
     final since = Stopwatch()..start();
     _since = since;
     _timer = Timer.periodic(_interval, (_) {
       final late = since.elapsed - _interval;
       since.reset();
+      if (++_ticks % _beatEvery == 0) {
+        debugPrint(
+          '[watchdog:$tag] alive · $_stalls stalls · '
+          'worst ${_worst.inMilliseconds}ms',
+        );
+      }
       if (late <= _threshold) return;
       _stalls++;
       if (late > _worst) _worst = late;
@@ -55,11 +75,9 @@ class EventLoopWatchdog {
     _timer?.cancel();
     _timer = null;
     _since = null;
-    if (_stalls > 0) {
-      debugPrint(
-        '[watchdog:$tag] stopped after $_stalls stalls, '
-        'worst ${_worst.inMilliseconds}ms',
-      );
-    }
+    debugPrint(
+      '[watchdog:$tag] stopped · $_stalls stalls · '
+      'worst ${_worst.inMilliseconds}ms',
+    );
   }
 }
