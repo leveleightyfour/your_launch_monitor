@@ -1,26 +1,86 @@
-/// Live camera feed for the desktop Camera tab.
+/// Live camera feed for the desktop Camera tab, captured through OpenCV.
 ///
-/// The feed is held here rather than in the tab's widget state on purpose:
-/// the camera has to survive tab switches. Today that only avoids a visible
-/// re-open every time the golfer flips between Camera and Dispersion; it
-/// matters more for what comes next.
+/// **Why not the `camera` plugin.** `camera_windows` drives Media Foundation,
+/// and on a plain UVC webcam its media-type search comes up empty and fails
+/// with "Failed to initialize video preview" at every resolution preset —
+/// flutter/flutter#140014, open and unresolved. It also reverted frame
+/// streaming in 0.2.6, so it could never expose the frames the capture below
+/// is built toward. OpenCV's VideoCapture takes the DirectShow path instead
+/// and hands us decoded frames in Dart.
 ///
-/// Planned: capture the three seconds *before* the launch monitor reports a
-/// shot and the three seconds after. The pre-roll half can't be recorded on
-/// demand — by the time the BLE packet lands, the impact is already in the
-/// past — so it has to come out of a buffer that is always filling while the
-/// session is live. Note that `camera_windows` implements neither
-/// `startImageStream` nor concurrent recordings, so that buffer will have to
-/// be built from continuously rolling `startVideoRecording` segments that get
-/// trimmed on a shot, not from a frame-level ring buffer.
+/// `camera`'s `availableCameras()` is still used, for device *names* only —
+/// OpenCV addresses cameras by bare integer index and has no enumeration API.
+///
+/// **Planned:** capture the three seconds before the launch monitor reports a
+/// shot and the three seconds after. The pre-roll can't be recorded on demand
+/// — by the time the BLE packet lands the impact is already past — so it has
+/// to come out of a buffer that is always filling while the session is live.
+/// Frames arrive here one at a time, which is exactly the shape a ring buffer
+/// needs; that was the deciding reason for this backend.
 library;
 
-import 'package:camera/camera.dart';
+import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:camera/camera.dart' show availableCameras;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:opencv_dart/opencv_dart.dart' as cv;
 
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
+
+// ── OpenCV constants ─────────────────────────────────────────────────────────
+//
+// Given by value rather than by binding name. These are fixed in OpenCV's own
+// headers (videoio.hpp, imgproc.hpp) and so are stable across binding
+// versions and renames, which the Dart-side names are not.
+
+/// `cv::CAP_ANY` — let OpenCV choose the backend.
+const _capAny = 0;
+
+/// `cv::CAP_DSHOW` — DirectShow. Named explicitly on Windows because the
+/// default would pick Media Foundation, which is the stack that fails.
+const _capDshow = 700;
+
+const _propFrameWidth = 3; // cv::CAP_PROP_FRAME_WIDTH
+const _propFrameHeight = 4; // cv::CAP_PROP_FRAME_HEIGHT
+
+/// `cv::COLOR_BGR2RGBA` — OpenCV decodes to BGR; Flutter uploads RGBA.
+const _colorBgr2Rgba = 2;
+
+/// How many device indices to look past the number the OS named, in case
+/// OpenCV's enumeration order runs longer than Media Foundation's.
+const _probeOvershoot = 2;
+
+int get _backend =>
+    defaultTargetPlatform == TargetPlatform.windows ? _capDshow : _capAny;
+
+// ── Devices ──────────────────────────────────────────────────────────────────
+
+@immutable
+class CameraDevice {
+  /// The index OpenCV opens this camera by.
+  final int index;
+
+  /// The OS's name for it, or `Camera <index>` when enumeration gave nothing.
+  final String name;
+
+  /// Native frame size reported when probed. Zero when the driver declined
+  /// to say before a frame was pulled.
+  final int width;
+  final int height;
+
+  const CameraDevice({
+    required this.index,
+    required this.name,
+    this.width = 0,
+    this.height = 0,
+  });
+
+  /// `1920×1080`, or empty when the probe learned nothing.
+  String get resolutionLabel => width > 0 && height > 0 ? '$width×$height' : '';
+}
 
 // ── Feed state ───────────────────────────────────────────────────────────────
 
@@ -28,39 +88,33 @@ enum CameraFeedStatus {
   /// Nothing attempted yet — the tab hasn't been opened.
   idle,
 
-  /// Enumerating attached cameras.
+  /// Probing device indices.
   listing,
 
-  /// No camera plugin for this platform (mobile, Linux, macOS).
-  unsupported,
-
-  /// The platform answered, but nothing is plugged in.
+  /// The probe ran and found nothing to open.
   noDevices,
 
   /// A device was picked and is being opened.
   opening,
 
-  /// Frames are flowing; [CameraFeedState.controller] is safe to preview.
+  /// Frames are flowing; [CameraFeedState.frames] is publishing them.
   streaming,
 
-  /// Enumeration or open failed; see [CameraFeedState.error].
+  /// Probing or opening failed; see [CameraFeedState.error].
   failed,
 }
 
 @immutable
 class CameraFeedState {
   final CameraFeedStatus status;
+  final List<CameraDevice> devices;
+  final CameraDevice? selected;
 
-  /// Every camera the platform reported, in enumeration order.
-  final List<CameraDescription> devices;
-
-  /// The device being shown, or the one that failed to open.
-  final CameraDescription? selected;
-
-  /// Non-null only while [status] is [CameraFeedStatus.streaming] — at any
-  /// other point it is either absent or mid-teardown, and previewing it
-  /// throws.
-  final CameraController? controller;
+  /// The live frame, replaced in place as each one decodes. Deliberately a
+  /// listenable rather than part of this state: at 30fps, rebuilding every
+  /// provider watcher per frame would repaint the whole tab thirty times a
+  /// second to change one picture.
+  final ValueListenable<ui.Image?>? frames;
 
   final String? error;
 
@@ -68,7 +122,7 @@ class CameraFeedState {
     this.status = CameraFeedStatus.idle,
     this.devices = const [],
     this.selected,
-    this.controller,
+    this.frames,
     this.error,
   });
 
@@ -84,152 +138,126 @@ final cameraFeedProvider =
     );
 
 class CameraFeedNotifier extends Notifier<CameraFeedState> {
-  CameraController? _controller;
+  cv.VideoCapture? _capture;
   bool _disposed = false;
 
-  /// Guards against a slow open finishing after the user has moved on and
-  /// picked a different camera — the stale open must not claim the preview.
+  final ValueNotifier<ui.Image?> _frame = ValueNotifier<ui.Image?>(null);
+
+  /// The frame two generations back. A frame is only disposed once another
+  /// has replaced the one after it, so the image the widget tree is currently
+  /// painting is never freed under it.
+  ui.Image? _retired;
+
+  /// Guards against a slow open finishing after the user picked a different
+  /// camera — the stale open must not claim the preview.
   int _openGeneration = 0;
 
   @override
   CameraFeedState build() {
     ref.onDispose(() {
       _disposed = true;
-      // Fire-and-forget: Riverpod's teardown is synchronous, and a released
-      // camera device is the only thing that matters here.
-      final controller = _controller;
-      _controller = null;
-      controller?.dispose();
+      _openGeneration++;
+      final capture = _capture;
+      _capture = null;
+      capture?.release();
+      capture?.dispose();
+      _frame.value?.dispose();
+      _retired?.dispose();
+      _frame.dispose();
     });
     return const CameraFeedState();
   }
 
-  /// Presets tried in order until one opens.
+  /// Finds attached cameras. OpenCV has no enumeration call, so this asks the
+  /// OS for names and then confirms each index by opening it — the only way
+  /// to know an index actually yields a camera.
   ///
-  /// On Windows a preset is not a target size, it is a *ceiling*: the plugin
-  /// scans the camera's native modes and takes the largest whose height is
-  /// at or below the preset's cap (low 240, medium 480, high 720, veryHigh
-  /// 1080, ultraHigh 2160, max unlimited), skipping anything under 15 fps.
-  /// A camera whose smallest mode is taller than the cap matches nothing and
-  /// fails with "Failed to initialize video preview".
-  ///
-  /// So the ladder climbs. 720p first, because impact happens in a couple of
-  /// milliseconds and frame rate is worth more than pixels — but a camera
-  /// that offers nothing that small needs the cap *raised*, not lowered.
-  /// Stepping down would only tighten a ceiling that already matched
-  /// nothing, which is exactly how a 1080p-only camera failed three times
-  /// over.
-  static const _resolutionLadder = [
-    ResolutionPreset.high,
-    ResolutionPreset.veryHigh,
-    ResolutionPreset.ultraHigh,
-    ResolutionPreset.max,
-  ];
-
-  /// Both halves of a [CameraException]. The code alone ("camera_error") says
-  /// nothing; the description carries the platform's actual complaint.
-  static String _describe(Object error) {
-    if (error is! CameraException) return error.toString();
-    final detail = error.description;
-    return detail == null || detail.isEmpty
-        ? error.code
-        : '${error.code} — $detail';
-  }
-
-  /// Enumerates attached cameras. When [autoOpen] is set and the camera
-  /// remembered in preferences is among them, it reopens without the golfer
-  /// having to pick it again.
-  ///
-  /// Safe to call while a camera is live: a rescan looks for newly plugged-in
-  /// devices, so it leaves a working feed alone unless that very device has
-  /// gone away.
+  /// Safe to call while streaming: it leaves a working feed alone.
   Future<void> refreshDevices({bool autoOpen = true}) async {
     if (_disposed) return;
-    final streaming = _controller;
+    if (_capture != null) return; // Already streaming; nothing to re-probe.
 
-    // Only show the busy state when there is no picture to interrupt.
-    if (streaming == null) {
-      state = CameraFeedState(
-        status: CameraFeedStatus.listing,
-        devices: state.devices,
-        selected: state.selected,
-      );
-    }
+    state = CameraFeedState(
+      status: CameraFeedStatus.listing,
+      devices: state.devices,
+      selected: state.selected,
+    );
 
-    final List<CameraDescription> devices;
+    // Names are a nicety — an unnamed camera is still perfectly openable.
+    List<String> names = const [];
     try {
-      devices = await availableCameras();
-    } on MissingPluginException {
-      // No federated implementation for this platform.
-      await _failWith(
-        const CameraFeedState(status: CameraFeedStatus.unsupported),
-      );
-      return;
-    } on UnimplementedError {
-      await _failWith(
-        const CameraFeedState(status: CameraFeedStatus.unsupported),
-      );
-      return;
-    } on CameraException catch (e) {
-      await _failWith(
-        CameraFeedState(
-          status: CameraFeedStatus.failed,
-          error: e.description ?? e.code,
-        ),
+      names = (await availableCameras()).map((d) => d.name).toList();
+    } catch (error) {
+      debugPrint('[camera] name enumeration unavailable: $error');
+    }
+    if (_disposed) return;
+
+    final List<CameraDevice> found;
+    try {
+      found = await _probe(names);
+    } catch (error) {
+      if (_disposed) return;
+      state = CameraFeedState(
+        status: CameraFeedStatus.failed,
+        error: '$error',
       );
       return;
     }
     if (_disposed) return;
 
-    final selected = state.selected;
-    final stillAttached =
-        selected != null && devices.any((d) => d.name == selected.name);
-
-    // The live camera survived the rescan — keep it, just refresh the list.
-    if (streaming != null && stillAttached) {
-      state = CameraFeedState(
-        status: CameraFeedStatus.streaming,
-        devices: devices,
-        selected: selected,
-        controller: streaming,
-      );
-      return;
-    }
-    // It didn't: the device was unplugged out from under us.
-    if (streaming != null) {
-      _openGeneration++;
-      await _releaseController();
-      if (_disposed) return;
-    }
-
-    if (devices.isEmpty) {
+    if (found.isEmpty) {
       state = const CameraFeedState(status: CameraFeedStatus.noDevices);
       return;
     }
 
-    state = CameraFeedState(status: CameraFeedStatus.idle, devices: devices);
+    state = CameraFeedState(status: CameraFeedStatus.idle, devices: found);
 
     if (!autoOpen) return;
     final remembered = ref.read(unitPrefsProvider).cameraDeviceName;
-    final match = devices.where((d) => d.name == remembered).firstOrNull;
-    if (match != null) await select(match);
+    for (final device in found) {
+      if (device.name == remembered) {
+        await select(device);
+        return;
+      }
+    }
   }
 
-  /// Releases any open camera and lands on [failure]. Enumeration failing
-  /// means we can no longer trust the device we are holding.
-  Future<void> _failWith(CameraFeedState failure) async {
-    _openGeneration++;
-    await _releaseController();
-    if (_disposed) return;
-    state = failure;
+  /// Opens each candidate index just long enough to learn whether a camera
+  /// answers on it, and at what size.
+  Future<List<CameraDevice>> _probe(List<String> names) async {
+    final found = <CameraDevice>[];
+    final limit = names.length + _probeOvershoot;
+    for (var index = 0; index < limit; index++) {
+      final capture = cv.VideoCapture.fromDevice(index, apiPreference: _backend);
+      if (!capture.isOpened) {
+        capture.dispose();
+        continue;
+      }
+      final width = capture.get(_propFrameWidth).round();
+      final height = capture.get(_propFrameHeight).round();
+      capture.release();
+      capture.dispose();
+
+      found.add(
+        CameraDevice(
+          index: index,
+          name: index < names.length ? names[index] : 'Camera $index',
+          width: width,
+          height: height,
+        ),
+      );
+      debugPrint('[camera] probe $index: ${found.last.name} '
+          '${found.last.resolutionLabel}');
+    }
+    return found;
   }
 
-  /// Opens [device] and starts the preview, replacing whatever was open.
-  Future<void> select(CameraDescription device) async {
+  /// Opens [device] and starts pumping frames, replacing whatever was open.
+  Future<void> select(CameraDevice device) async {
     if (_disposed) return;
     final generation = ++_openGeneration;
 
-    await _releaseController();
+    _releaseCapture();
     if (_disposed || generation != _openGeneration) return;
 
     state = CameraFeedState(
@@ -238,71 +266,121 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
       selected: device,
     );
 
-    Object? lastError;
-    for (final preset in _resolutionLadder) {
-      final controller = CameraController(
-        device,
-        preset,
-        // Swing video is analysed frame by frame; a microphone track would
-        // only add a permission prompt and bytes.
-        enableAudio: false,
-      );
-
-      try {
-        await controller.initialize();
-      } catch (error) {
-        // Every failure is logged, not just the last one: which presets a
-        // camera refuses is the diagnosis when it won't open at all.
-        lastError = error;
-        debugPrint(
-          '[camera] "${device.name}" at ${preset.name} failed: '
-          '${_describe(error)}',
-        );
-        await controller.dispose();
-        continue;
-      }
-
-      // A newer select() landed while this one was opening, or the provider
-      // went away: drop this camera rather than leaving it held open.
-      if (_disposed || generation != _openGeneration) {
-        await controller.dispose();
-        return;
-      }
-
-      final size = controller.value.previewSize;
-      final dims = size == null
-          ? ''
-          : ' at ${size.width.toInt()}x${size.height.toInt()}';
-      debugPrint(
-        '[camera] opened "${device.name}" on ${preset.name}$dims',
-      );
-
-      _controller = controller;
-      state = CameraFeedState(
-        status: CameraFeedStatus.streaming,
-        devices: state.devices,
-        selected: device,
-        controller: controller,
-      );
-      ref.read(unitPrefsProvider.notifier).setCameraDeviceName(device.name);
+    final cv.VideoCapture capture;
+    try {
+      capture = cv.VideoCapture.fromDevice(device.index, apiPreference: _backend);
+    } catch (error) {
+      _fail(device, '$error', generation);
       return;
     }
 
-    // Every preset refused.
-    if (_disposed || generation != _openGeneration) return;
+    if (!capture.isOpened) {
+      capture.dispose();
+      _fail(
+        device,
+        'The device is attached but refused to open. Another app may be '
+        'holding it.',
+        generation,
+      );
+      return;
+    }
+
+    if (_disposed || generation != _openGeneration) {
+      capture.release();
+      capture.dispose();
+      return;
+    }
+
+    debugPrint('[camera] opened "${device.name}" on index ${device.index}');
+    _capture = capture;
     state = CameraFeedState(
-      status: CameraFeedStatus.failed,
+      status: CameraFeedStatus.streaming,
       devices: state.devices,
       selected: device,
-      error: lastError == null ? null : _describe(lastError),
+      frames: _frame,
     );
+    ref.read(unitPrefsProvider.notifier).setCameraDeviceName(device.name);
+
+    unawaited(_pump(capture, device, generation));
   }
 
-  /// Closes the camera, releasing it back to the OS, and forgets the choice
-  /// so the tab doesn't silently reopen it next time.
+  /// Reads frames until the camera is replaced or closed. `readAsync` hands
+  /// the blocking grab to the native side, so this loop never stalls the UI
+  /// isolate despite having no explicit throttle — the camera's own frame
+  /// rate paces it.
+  Future<void> _pump(
+    cv.VideoCapture capture,
+    CameraDevice device,
+    int generation,
+  ) async {
+    var consecutiveFailures = 0;
+    while (!_disposed &&
+        generation == _openGeneration &&
+        identical(_capture, capture)) {
+      final (ok, frame) = await capture.readAsync();
+      if (_disposed || generation != _openGeneration) {
+        frame.dispose();
+        return;
+      }
+      if (!ok || frame.isEmpty) {
+        frame.dispose();
+        // A dropped frame now and then is normal; a run of them means the
+        // camera has gone away, most often unplugged mid-session.
+        if (++consecutiveFailures >= 30) {
+          _fail(device, 'The camera stopped sending frames.', generation);
+          _releaseCapture();
+          return;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        continue;
+      }
+      consecutiveFailures = 0;
+
+      try {
+        await _publish(frame);
+      } finally {
+        frame.dispose();
+      }
+    }
+  }
+
+  /// Turns one BGR frame into a `ui.Image` and hands it to the widget tree.
+  Future<void> _publish(cv.Mat bgr) async {
+    // Mat.data is a view onto native memory, not a copy, so the conversion
+    // result has to outlive the upload — hence the dispose after the await.
+    final rgba = cv.cvtColor(bgr, _colorBgr2Rgba);
+    try {
+      final image = await _decodeRgba(rgba.data, rgba.cols, rgba.rows);
+      if (_disposed) {
+        image.dispose();
+        return;
+      }
+      final previous = _frame.value;
+      _frame.value = image;
+      _retired?.dispose();
+      _retired = previous;
+    } finally {
+      rgba.dispose();
+    }
+  }
+
+  static Future<ui.Image> _decodeRgba(Uint8List pixels, int w, int h) {
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromPixels(
+      pixels,
+      w,
+      h,
+      ui.PixelFormat.rgba8888,
+      completer.complete,
+    );
+    return completer.future;
+  }
+
+  /// Closes the camera and forgets the choice, so the tab doesn't silently
+  /// reopen it next time.
   Future<void> stop() async {
     _openGeneration++;
-    await _releaseController();
+    _releaseCapture();
     if (_disposed) return;
     state = CameraFeedState(
       status: CameraFeedStatus.idle,
@@ -311,19 +389,23 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
     ref.read(unitPrefsProvider.notifier).setCameraDeviceName(null);
   }
 
-  Future<void> _releaseController() async {
-    final controller = _controller;
-    if (controller == null) return;
-    _controller = null;
-    // Drop the controller out of state before disposing it — a frame that
-    // previews a disposed controller throws.
-    if (!_disposed) {
-      state = CameraFeedState(
-        status: state.status,
-        devices: state.devices,
-        selected: state.selected,
-      );
-    }
-    await controller.dispose();
+  void _fail(CameraDevice device, String error, int generation) {
+    if (_disposed || generation != _openGeneration) return;
+    state = CameraFeedState(
+      status: CameraFeedStatus.failed,
+      devices: state.devices,
+      selected: device,
+      error: error,
+    );
+  }
+
+  void _releaseCapture() {
+    final capture = _capture;
+    _capture = null;
+    capture?.release();
+    capture?.dispose();
+    _frame.value = null;
+    _retired?.dispose();
+    _retired = null;
   }
 }

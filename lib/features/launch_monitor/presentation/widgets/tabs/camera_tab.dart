@@ -1,4 +1,6 @@
-import 'package:camera/camera.dart';
+import 'dart:ui' as ui;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -88,7 +90,9 @@ class _CameraBar extends ConsumerWidget {
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        feed.selected?.name ?? 'Select camera',
+                        feed.selected == null
+                            ? 'Select camera'
+                            : _deviceLabel(feed.selected!),
                         overflow: TextOverflow.ellipsis,
                         style: AppTextStyles.sans(
                           size: 13,
@@ -119,7 +123,11 @@ class _CameraBar extends ConsumerWidget {
           _BarButton(
             icon: Icons.refresh,
             label: 'Rescan for cameras',
-            onTap: feed.isBusy ? null : () => notifier.refreshDevices(),
+            // Probing reopens every index, which would fight the live
+            // capture, so a rescan means stopping first.
+            onTap: feed.isBusy || feed.status == CameraFeedStatus.streaming
+                ? null
+                : () => notifier.refreshDevices(),
           ),
         ],
       ),
@@ -157,7 +165,7 @@ class _CameraBar extends ConsumerWidget {
                 color: isSel ? context.accent : AppColors.textMuted,
               ),
               title: Text(
-                device.name,
+                _deviceLabel(device),
                 style: AppTextStyles.sans(
                   size: 14,
                   weight: isSel ? FontWeight.w600 : FontWeight.w400,
@@ -228,14 +236,6 @@ class _CameraBody extends ConsumerWidget {
         return const _Busy(message: 'Looking for cameras…');
       case CameraFeedStatus.opening:
         return const _Busy(message: 'Opening camera…');
-      case CameraFeedStatus.unsupported:
-        return const _Message(
-          icon: Icons.videocam_off,
-          title: 'Camera not available here',
-          detail:
-              'The camera feed is wired up for Windows desktop. This platform '
-              'has no camera backend built in.',
-        );
       case CameraFeedStatus.noDevices:
         return _Message(
           icon: Icons.usb_off,
@@ -267,44 +267,68 @@ class _CameraBody extends ConsumerWidget {
           detail: 'Pick a camera above to stream it into the window.',
         );
       case CameraFeedStatus.streaming:
-        final controller = feed.controller;
-        // Belt and braces: streaming without a controller shouldn't happen,
-        // but previewing a null/disposed one would take the whole tab down.
-        if (controller == null || !controller.value.isInitialized) {
-          return const _Busy(message: 'Opening camera…');
-        }
-        return ColoredBox(
-          color: Colors.black,
-          child: Center(
-            child: AspectRatio(
-              aspectRatio: controller.value.aspectRatio,
-              child: CameraPreview(controller),
-            ),
-          ),
-        );
+        final frames = feed.frames;
+        // Belt and braces: streaming without a frame source shouldn't
+        // happen, and rendering null would take the whole tab down.
+        if (frames == null) return const _Busy(message: 'Opening camera…');
+        return _LiveView(frames: frames);
     }
   }
 }
 
-/// What to try next, chosen from the platform's own error text — a bare
-/// "camera_error" is useless to the golfer, and the wrong advice is worse
-/// than none. Matching on the message is loose by nature; it only picks
-/// which sentence to show, never what the code does.
+/// Device name plus its native size, so two identical webcams are still
+/// tellable apart and it is obvious what the feed is actually running at.
+String _deviceLabel(CameraDevice device) {
+  final resolution = device.resolutionLabel;
+  return resolution.isEmpty ? device.name : '${device.name}  ·  $resolution';
+}
+
+/// What to try next. A bare driver error is useless to the golfer, and the
+/// wrong advice is worse than none, so the sentence is picked from the error
+/// text. Matching on a message is loose by nature; it chooses which hint to
+/// show, never what the code does.
 String _failureHint(String? error) {
   final text = (error ?? '').toLowerCase();
-  if (text.contains('preview') || text.contains('media type')) {
-    // The open ladder ends at an unlimited height cap, so size is no longer
-    // a possible cause here — what's left is the plugin's 15 fps floor.
-    return 'Windows found no usable video mode on this camera. The Windows '
-        'camera plugin skips any mode below 15 fps, which rules out a camera '
-        'that only offers slow high-resolution modes.';
+  if (text.contains('holding') || text.contains('refused to open')) {
+    return 'Close anything else using the camera — Teams, Zoom, OBS or the '
+        'Windows Camera app will each hold it exclusively.';
   }
-  if (text.contains('denied') || text.contains('access')) {
-    return 'Windows is refusing access. Turn on Camera access, and "Let '
-        'desktop apps access your camera", under camera privacy settings.';
+  if (text.contains('stopped sending')) {
+    return 'The camera went quiet mid-session. If it was unplugged, plug it '
+        'back in and rescan.';
   }
-  return 'Usually either another app is holding the camera, or desktop apps '
-      'are blocked under Windows camera privacy settings.';
+  return 'Check the camera still appears in the Windows Camera app, and that '
+      'no other app is holding it.';
+}
+
+/// The live feed. Listens to frames directly rather than going through the
+/// provider, so a new frame repaints this image and nothing else — the tab's
+/// chrome does not rebuild thirty times a second.
+class _LiveView extends StatelessWidget {
+  final ValueListenable<ui.Image?> frames;
+
+  const _LiveView({required this.frames});
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black,
+      child: ValueListenableBuilder<ui.Image?>(
+        valueListenable: frames,
+        builder: (context, image, _) {
+          if (image == null) {
+            return const _Busy(message: 'Waiting for the first frame…');
+          }
+          return Center(
+            child: AspectRatio(
+              aspectRatio: image.width / image.height,
+              child: RawImage(image: image, fit: BoxFit.contain),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _Busy extends StatelessWidget {
