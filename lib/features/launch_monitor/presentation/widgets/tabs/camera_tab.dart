@@ -26,64 +26,198 @@ class CameraTab extends ConsumerStatefulWidget {
 }
 
 class _CameraTabState extends ConsumerState<CameraTab> {
+  /// The shot being scrubbed, or null while the live feeds are showing.
+  ShotClips? _reviewing;
+
+  /// Which angle of [_reviewing] is on screen.
+  int _reviewSlot = 0;
+
+  /// The second pane is open — either the golfer added it this session or
+  /// slot 1 has a remembered camera from a previous one.
+  bool _secondPaneOpen = false;
+
   @override
   void initState() {
     super.initState();
+    _secondPaneOpen = ref
+        .read(unitPrefsProvider)
+        .cameraSlots[1]
+        .deviceName
+        .isNotEmpty;
     // Enumerating touches provider state, which isn't allowed while this
     // widget is mounting.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (ref.read(cameraFeedProvider).status == CameraFeedStatus.idle &&
-          ref.read(cameraFeedProvider).devices.isEmpty) {
-        ref.read(cameraFeedProvider.notifier).refreshDevices();
+      for (var slot = 0; slot < kCameraSlotCount; slot++) {
+        if (slot > 0 && !_secondPaneOpen) continue;
+        final feed = ref.read(cameraFeedProvider(slot));
+        if (feed.status == CameraFeedStatus.idle && feed.devices.isEmpty) {
+          ref.read(cameraFeedProvider(slot).notifier).refreshDevices();
+        }
       }
     });
   }
 
-  /// The clip being scrubbed, or null while the live feed is showing.
-  ImpactClip? _reviewing;
+  void _setAllPreviewsPaused(bool paused) {
+    for (var slot = 0; slot < kCameraSlotCount; slot++) {
+      ref.read(cameraFeedProvider(slot).notifier).setPreviewPaused(paused);
+    }
+  }
 
   @override
   void dispose() {
-    // The provider outlives this widget, so a paused preview would stay
+    // The providers outlive this widget, so a paused preview would stay
     // paused for the next visit to the tab.
-    if (_reviewing != null) {
-      ref.read(cameraFeedProvider.notifier).setPreviewPaused(false);
-    }
+    if (_reviewing != null) _setAllPreviewsPaused(false);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final feed = ref.watch(cameraFeedProvider);
     final capture = ref.watch(impactClipProvider);
     final reviewing = _reviewing;
+    final reviewClip = reviewing == null
+        ? null
+        : reviewing.angles[_reviewSlot] ?? reviewing.primary;
 
     return Column(
       children: [
-        _CameraBar(feed: feed),
         Expanded(
-          child: reviewing == null
-              ? _CameraBody(feed: feed)
-              : _ClipReview(clip: reviewing),
+          child: reviewClip == null ? _buildFeeds(context) : _buildReview(reviewing!, reviewClip),
         ),
         if (capture.armed || capture.clips.isNotEmpty)
           _CaptureBar(
             capture: capture,
             reviewing: reviewing,
-            onReview: (clip) {
-              // Logged at the tap, before any widget builds: if this appears
-              // and "[review] opening" does not, the fault is in the switch
-              // to the review widget rather than anywhere inside it.
-              debugPrint('[review] tapped, shot ${clip.shotIndex + 1}');
-              ref.read(cameraFeedProvider.notifier).setPreviewPaused(true);
-              setState(() => _reviewing = clip);
+            reviewSlot: _reviewSlot,
+            onAngle: (slot) => setState(() => _reviewSlot = slot),
+            onReview: (shot) {
+              debugPrint('[review] tapped, shot ${shot.shotIndex + 1}');
+              _setAllPreviewsPaused(true);
+              setState(() {
+                _reviewing = shot;
+                _reviewSlot = shot.slots.first;
+              });
             },
             onBackToLive: () {
-              ref.read(cameraFeedProvider.notifier).setPreviewPaused(false);
+              _setAllPreviewsPaused(false);
               setState(() => _reviewing = null);
             },
           ),
+      ],
+    );
+  }
+
+  Widget _buildReview(ShotClips shot, ImpactClip clip) {
+    final slotName = _reviewSlot < kCameraSlotShortLabels.length
+        ? kCameraSlotShortLabels[_reviewSlot].toLowerCase()
+        : 'cam$_reviewSlot';
+    return _ClipReview(
+      // Keyed per shot and angle so switching angles resets the playhead to
+      // that clip's own trigger frame.
+      key: ValueKey('review-${shot.shotIndex}-$_reviewSlot'),
+      clip: clip,
+      exportBaseName: shot.angleCount > 1 ? 'impact-$slotName' : 'impact',
+    );
+  }
+
+  Widget _buildFeeds(BuildContext context) {
+    final feedA = ref.watch(cameraFeedProvider(0));
+    final panes = <Widget>[
+      Expanded(
+        child: _FeedPane(
+          slot: 0,
+          feed: feedA,
+          caption: _secondPaneOpen ? kCameraSlotLabels[0] : null,
+          trailing: _secondPaneOpen
+              ? null
+              : _BarButton(
+                  icon: Icons.video_call,
+                  label: 'Add second camera',
+                  onTap: () {
+                    setState(() => _secondPaneOpen = true);
+                    ref.read(cameraFeedProvider(1).notifier).refreshDevices();
+                  },
+                ),
+        ),
+      ),
+    ];
+    if (_secondPaneOpen) {
+      final feedB = ref.watch(cameraFeedProvider(1));
+      panes.add(
+        Expanded(
+          child: _FeedPane(
+            slot: 1,
+            feed: feedB,
+            caption: kCameraSlotLabels[1],
+            trailing: _BarButton(
+              icon: Icons.close,
+              label: 'Remove second camera',
+              onTap: () {
+                ref.read(cameraFeedProvider(1).notifier).stop();
+                setState(() => _secondPaneOpen = false);
+              },
+            ),
+          ),
+        ),
+      );
+    }
+    if (panes.length == 1) return panes.first;
+    // Side by side where there is width for two pictures; stacked where
+    // there isn't — a portrait window gives each angle the full width.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 640) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              panes[0],
+              const VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: AppColors.border,
+              ),
+              panes[1],
+            ],
+          );
+        }
+        return Column(
+          children: [
+            panes[0],
+            const Divider(height: 1, color: AppColors.border),
+            panes[1],
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// One camera slot: its toolbar and its picture.
+class _FeedPane extends StatelessWidget {
+  final int slot;
+  final CameraFeedState feed;
+
+  /// Angle name shown in the bar once a second pane exists — with one
+  /// camera the label would be noise.
+  final String? caption;
+
+  /// Extra control on the bar's right (add/remove second camera).
+  final Widget? trailing;
+
+  const _FeedPane({
+    required this.slot,
+    required this.feed,
+    this.caption,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _CameraBar(slot: slot, feed: feed, caption: caption, trailing: trailing),
+        Expanded(child: _CameraBody(slot: slot, feed: feed)),
       ],
     );
   }
@@ -93,13 +227,17 @@ class _CameraTabState extends ConsumerState<CameraTab> {
 
 class _CaptureBar extends StatelessWidget {
   final ImpactClipState capture;
-  final ImpactClip? reviewing;
-  final ValueChanged<ImpactClip> onReview;
+  final ShotClips? reviewing;
+  final int reviewSlot;
+  final ValueChanged<int> onAngle;
+  final ValueChanged<ShotClips> onReview;
   final VoidCallback onBackToLive;
 
   const _CaptureBar({
     required this.capture,
     required this.reviewing,
+    required this.reviewSlot,
+    required this.onAngle,
     required this.onReview,
     required this.onBackToLive,
   });
@@ -135,18 +273,33 @@ class _CaptureBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          // Reviewing a multi-angle shot: chips switch the angle in place.
+          if (reviewing != null && reviewing!.angleCount > 1) ...[
+            for (final slot in reviewing!.slots) ...[
+              _SpeedChip(
+                label: slot < kCameraSlotShortLabels.length
+                    ? kCameraSlotShortLabels[slot]
+                    : 'C$slot',
+                active: slot == reviewSlot,
+                onTap: () => onAngle(slot),
+              ),
+              const SizedBox(width: 5),
+            ],
+            const SizedBox(width: 5),
+          ],
           if (latest != null) ...[
-            Flexible(
-              child: Text(
-                _clipSummary(latest),
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.right,
-                style: AppTextStyles.sans(
-                  size: 12,
-                  color: AppColors.textDimmed,
+            if (reviewing == null)
+              Flexible(
+                child: Text(
+                  _clipSummary(latest),
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                  style: AppTextStyles.sans(
+                    size: 12,
+                    color: AppColors.textDimmed,
+                  ),
                 ),
               ),
-            ),
             const SizedBox(width: 10),
             _PillButton(
               label: reviewing == null ? 'Review' : 'Back to live',
@@ -160,9 +313,12 @@ class _CaptureBar extends StatelessWidget {
     );
   }
 
-  static String _clipSummary(ImpactClip clip) =>
-      'Shot ${clip.shotIndex + 1} · ${clip.frameCount} frames · '
-      '${clip.effectiveFps.toStringAsFixed(0)} fps';
+  static String _clipSummary(ShotClips shot) {
+    final clip = shot.primary;
+    final angles = shot.angleCount > 1 ? ' · ${shot.angleCount} angles' : '';
+    return 'Shot ${shot.shotIndex + 1}$angles · ${clip.frameCount} frames · '
+        '${clip.effectiveFps.toStringAsFixed(0)} fps';
+  }
 }
 
 /// Low chip for the loop speeds, in the hole builder's palette grammar:
@@ -257,13 +413,21 @@ class _PillButton extends StatelessWidget {
 // ── Toolbar: device picker, refresh, stop ────────────────────────────────────
 
 class _CameraBar extends ConsumerWidget {
+  final int slot;
   final CameraFeedState feed;
+  final String? caption;
+  final Widget? trailing;
 
-  const _CameraBar({required this.feed});
+  const _CameraBar({
+    required this.slot,
+    required this.feed,
+    this.caption,
+    this.trailing,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final notifier = ref.read(cameraFeedProvider.notifier);
+    final notifier = ref.read(cameraFeedProvider(slot).notifier);
     final canPick = feed.devices.isNotEmpty && !feed.isBusy;
 
     return Container(
@@ -274,6 +438,10 @@ class _CameraBar extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
+          if (caption != null) ...[
+            Text(caption!.toUpperCase(), style: AppTextStyles.statLabel()),
+            const SizedBox(width: 8),
+          ],
           Expanded(
             child: Semantics(
               button: true,
@@ -325,7 +493,7 @@ class _CameraBar extends ConsumerWidget {
             _BarButton(
               icon: Icons.aspect_ratio,
               label: 'Capture resolution',
-              onTap: () => _showModePicker(context, ref),
+              onTap: () => _showModePicker(context, ref, slot),
             ),
             _BarButton(
               icon: Icons.stop_circle_outlined,
@@ -342,6 +510,7 @@ class _CameraBar extends ConsumerWidget {
                 ? null
                 : () => notifier.refreshDevices(),
           ),
+          if (trailing != null) trailing!,
         ],
       ),
     );
@@ -391,7 +560,7 @@ class _CameraBar extends ConsumerWidget {
               tileColor: Colors.transparent,
               onTap: () {
                 Navigator.of(sheetCtx).pop();
-                ref.read(cameraFeedProvider.notifier).select(device);
+                ref.read(cameraFeedProvider(slot).notifier).select(device);
               },
             );
           }),
@@ -402,9 +571,10 @@ class _CameraBar extends ConsumerWidget {
   }
 }
 
-void _showModePicker(BuildContext context, WidgetRef ref) {
-  final prefs = ref.read(unitPrefsProvider);
-  final current = CaptureMode(prefs.cameraWidth, prefs.cameraHeight);
+void _showModePicker(BuildContext context, WidgetRef ref, int slot) {
+  final slots = ref.read(unitPrefsProvider).cameraSlots;
+  final pref = slot < slots.length ? slots[slot] : const CameraSlotPref();
+  final current = CaptureMode(pref.width, pref.height);
   showModalBottomSheet<void>(
     context: context,
     backgroundColor: AppColors.surface,
@@ -459,7 +629,7 @@ void _showModePicker(BuildContext context, WidgetRef ref) {
             tileColor: Colors.transparent,
             onTap: () {
               Navigator.of(sheetCtx).pop();
-              ref.read(cameraFeedProvider.notifier).setMode(mode);
+              ref.read(cameraFeedProvider(slot).notifier).setMode(mode);
             },
           );
         }),
@@ -505,9 +675,10 @@ class _BarButton extends StatelessWidget {
 // ── Body: preview, or the reason there isn't one ─────────────────────────────
 
 class _CameraBody extends ConsumerWidget {
+  final int slot;
   final CameraFeedState feed;
 
-  const _CameraBody({required this.feed});
+  const _CameraBody({required this.slot, required this.feed});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -523,7 +694,7 @@ class _CameraBody extends ConsumerWidget {
           detail: 'Plug in a USB camera, then rescan.',
           action: (
             'Rescan',
-            () => ref.read(cameraFeedProvider.notifier).refreshDevices(),
+            () => ref.read(cameraFeedProvider(slot).notifier).refreshDevices(),
           ),
         );
       case CameraFeedStatus.failed:
@@ -537,7 +708,7 @@ class _CameraBody extends ConsumerWidget {
           hint: _failureHint(feed.error),
           action: (
             'Try again',
-            () => ref.read(cameraFeedProvider.notifier).refreshDevices(),
+            () => ref.read(cameraFeedProvider(slot).notifier).refreshDevices(),
           ),
         );
       case CameraFeedStatus.idle:
@@ -738,7 +909,11 @@ class _Message extends StatelessWidget {
 class _ClipReview extends StatefulWidget {
   final ImpactClip clip;
 
-  const _ClipReview({required this.clip});
+  /// File-name stem for exports — carries the angle when the shot has more
+  /// than one, so two angles of the same swing never overwrite each other.
+  final String exportBaseName;
+
+  const _ClipReview({super.key, required this.clip, this.exportBaseName = 'impact'});
 
   @override
   State<_ClipReview> createState() => _ClipReviewState();
@@ -1010,7 +1185,7 @@ class _ClipReviewState extends State<_ClipReview>
     try {
       final result = await ClipExportService.export(
         clip: widget.clip,
-        baseName: 'impact',
+        baseName: widget.exportBaseName,
         speed: speed,
       );
       if (!mounted) return;
@@ -1173,14 +1348,6 @@ class _ClipReviewState extends State<_ClipReview>
                     ),
                     const SizedBox(width: 5),
                   ],
-                  _BarButton(
-                    icon: Icons.my_location,
-                    label: 'Jump to the shot packet',
-                    onTap: () {
-                      _pause();
-                      _setIndex(clip.triggerIndex);
-                    },
-                  ),
                   _BarButton(
                     icon: Icons.save_alt,
                     label: _exporting ? 'Exporting…' : 'Export clip',

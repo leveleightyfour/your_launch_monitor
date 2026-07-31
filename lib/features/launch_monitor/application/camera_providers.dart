@@ -47,6 +47,22 @@ const _previewInterval = Duration(milliseconds: 66);
 int get _backend =>
     defaultTargetPlatform == TargetPlatform.windows ? capDshow : capAny;
 
+// ── Camera slots ─────────────────────────────────────────────────────────────
+
+/// How many cameras the tab can run at once.
+const kCameraSlotCount = 2;
+
+/// Golf's names for the two angles: slot 0 films from behind the ball down
+/// the target line, slot 1 faces the golfer.
+const kCameraSlotLabels = ['Down the line', 'Face on'];
+const kCameraSlotShortLabels = ['DTL', 'FO'];
+
+/// Device indices with a live worker on them right now, shared across slots.
+/// The probe must not open these — opening a busy camera fails, which would
+/// silently drop the other slot's device from the list — and a slot's picker
+/// uses it to warn that a device is already spoken for.
+final Map<int, CameraDevice> _liveByIndex = {};
+
 // ── Capture mode ─────────────────────────────────────────────────────────────
 
 /// A frame size to ask the camera for.
@@ -188,11 +204,11 @@ class _WorkerLink {
 // ── Notifier ─────────────────────────────────────────────────────────────────
 
 final cameraFeedProvider =
-    NotifierProvider<CameraFeedNotifier, CameraFeedState>(
+    NotifierProvider.family<CameraFeedNotifier, CameraFeedState, int>(
       CameraFeedNotifier.new,
     );
 
-class CameraFeedNotifier extends Notifier<CameraFeedState> {
+class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
   _WorkerLink? _link;
   bool _disposed = false;
   bool _previewPaused = false;
@@ -211,10 +227,16 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
   /// camera — the stale worker must not claim the feed.
   int _openGeneration = 0;
 
-  final _watchdog = EventLoopWatchdog('ui');
+  /// Device index this slot is currently streaming, for the shared registry.
+  int? _liveIndex;
+
+  late final _watchdog = EventLoopWatchdog('ui-cam$slot');
+
+  /// Which camera slot this instance drives.
+  int get slot => arg;
 
   @override
-  CameraFeedState build() {
+  CameraFeedState build(int arg) {
     ref.onDispose(() {
       _disposed = true;
       _openGeneration++;
@@ -271,13 +293,19 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
     state = CameraFeedState(status: CameraFeedStatus.idle, devices: found);
 
     if (!autoOpen) return;
-    final remembered = ref.read(unitPrefsProvider).cameraDeviceName;
+    final remembered = _slotPref().deviceName;
+    if (remembered.isEmpty) return;
     for (final device in found) {
       if (device.name == remembered) {
         await select(device);
         return;
       }
     }
+  }
+
+  CameraSlotPref _slotPref() {
+    final slots = ref.read(unitPrefsProvider).cameraSlots;
+    return slot < slots.length ? slots[slot] : const CameraSlotPref();
   }
 
   /// Opens each candidate index just long enough to learn whether a camera
@@ -287,6 +315,15 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
     final found = <CameraDevice>[];
     final limit = names.length + _probeOvershoot;
     for (var index = 0; index < limit; index++) {
+      // A device another slot is streaming can't be opened to probe — and
+      // failing to open it would silently drop it from the list, vanishing
+      // the very camera that is working. Report what the live feed knows.
+      final live = _liveByIndex[index];
+      if (live != null) {
+        found.add(live);
+        debugPrint('[camera] probe $index: ${live.name} (live on a slot)');
+        continue;
+      }
       final capture = cv.VideoCapture.fromDevice(
         index,
         apiPreference: _backend,
@@ -319,8 +356,8 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
   }
 
   CaptureMode _preferredMode() {
-    final prefs = ref.read(unitPrefsProvider);
-    return CaptureMode(prefs.cameraWidth, prefs.cameraHeight);
+    final pref = _slotPref();
+    return CaptureMode(pref.width, pref.height);
   }
 
   /// Requests a different capture mode, reopening the live camera on it.
@@ -328,7 +365,7 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
     if (_disposed) return;
     ref
         .read(unitPrefsProvider.notifier)
-        .setCameraMode(mode.width, mode.height);
+        .setCameraSlot(slot, width: mode.width, height: mode.height);
     final device = state.selected;
     if (device == null || _link == null) return;
     await select(device);
@@ -432,27 +469,33 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
           '@ ${fps.toStringAsFixed(1)}fps in ${_fourccName(fourcc)}',
         );
         _watchdog.start();
-        ref.read(impactClipProvider.notifier).setArmed(true);
+        ref.read(impactClipProvider.notifier).setArmed(slot, true);
+        // Carry the granted size so the UI shows the truth rather than the
+        // probe's guess or the request.
+        final granted = CameraDevice(
+          index: device.index,
+          name: device.name,
+          width: width,
+          height: height,
+        );
+        _liveByIndex[device.index] = granted;
+        _liveIndex = device.index;
         state = CameraFeedState(
           status: CameraFeedStatus.streaming,
           devices: state.devices,
-          // Carry the granted size so the UI shows the truth rather than
-          // the probe's guess or the request.
-          selected: CameraDevice(
-            index: device.index,
-            name: device.name,
-            width: width,
-            height: height,
-          ),
+          selected: granted,
           frames: _frame,
         );
-        ref.read(unitPrefsProvider.notifier).setCameraDeviceName(device.name);
+        ref
+            .read(unitPrefsProvider.notifier)
+            .setCameraSlot(slot, deviceName: device.name);
 
       case 'frame':
         if (stale) return;
         ref
             .read(impactClipProvider.notifier)
             .offer(
+              slot,
               message['jpeg'] as Uint8List,
               DateTime.fromMicrosecondsSinceEpoch(message['us'] as int),
             );
@@ -474,7 +517,7 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
         final empties = message['emptyReads'] as int? ?? 0;
         double perLoop(Object? us) => (us as int) / loops / 1000;
         debugPrint(
-          '[pump] ${(loops / seconds).toStringAsFixed(1)}/s in worker · '
+          '[pump:$slot] ${(loops / seconds).toStringAsFixed(1)}/s in worker · '
           'read ${perLoop(message['readUs']).toStringAsFixed(1)}ms · '
           'encode ${perLoop(message['encodeUs']).toStringAsFixed(1)}ms · '
           'preview ${((message['previewUs'] as int) / 1000).toStringAsFixed(1)}ms/s · '
@@ -543,7 +586,7 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
       status: CameraFeedStatus.idle,
       devices: state.devices,
     );
-    ref.read(unitPrefsProvider.notifier).setCameraDeviceName(null);
+    ref.read(unitPrefsProvider.notifier).setCameraSlot(slot, deviceName: '');
   }
 
   /// `1196444237` → `MJPG`. Falls back to the raw number for a value that
@@ -575,11 +618,14 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
     _link = null;
     link?.shutdown();
     _watchdog.stop();
+    final index = _liveIndex;
+    _liveIndex = null;
+    if (index != null) _liveByIndex.remove(index);
     _frame.value = null;
     _retired?.dispose();
     _retired = null;
     // No feed, nothing to buffer — and the half-filled ring is stale the
     // moment the camera stops.
-    if (!_disposed) ref.read(impactClipProvider.notifier).setArmed(false);
+    if (!_disposed) ref.read(impactClipProvider.notifier).setArmed(slot, false);
   }
 }

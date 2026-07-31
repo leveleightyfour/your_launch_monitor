@@ -48,6 +48,32 @@ enum SkyScene {
   final String label;
 }
 
+/// One camera slot's remembered configuration. Slot 0 is the primary angle,
+/// slot 1 the second camera; an empty [deviceName] means the slot is vacant.
+class CameraSlotPref {
+  final String deviceName;
+
+  /// Requested capture size. Zero means the camera's default mode.
+  final int width;
+  final int height;
+
+  const CameraSlotPref({this.deviceName = '', this.width = 0, this.height = 0});
+
+  bool get isEmpty => deviceName.isEmpty;
+
+  Map<String, dynamic> toJson() => {
+    'deviceName': deviceName,
+    'width': width,
+    'height': height,
+  };
+
+  factory CameraSlotPref.fromJson(Map<String, dynamic> j) => CameraSlotPref(
+    deviceName: j['deviceName'] as String? ?? '',
+    width: j['width'] as int? ?? 0,
+    height: j['height'] as int? ?? 0,
+  );
+}
+
 class UnitPrefs {
   final DistanceUnit distance;
   final SpeedUnit speed;
@@ -77,16 +103,9 @@ class UnitPrefs {
   final String splitRightPane;
   final String splitThirdPane;
 
-  /// Platform name of the camera the desktop Camera tab last streamed, so it
-  /// reopens on the same one. Empty means "none chosen" — the tab then waits
-  /// for a pick rather than grabbing whatever camera enumerates first.
-  final String cameraDeviceName;
-
-  /// Capture mode requested of the camera. Zero means "whatever the camera
-  /// opens on", which for most UVC devices is 640x480 regardless of what the
-  /// sensor can do.
-  final int cameraWidth;
-  final int cameraHeight;
+  /// The Camera tab's two slots — device and capture mode per angle, so a
+  /// down-the-line and a face-on camera each reopen on their own settings.
+  final List<CameraSlotPref> cameraSlots;
 
   const UnitPrefs({
     this.distance = DistanceUnit.meters,
@@ -98,9 +117,7 @@ class UnitPrefs {
     this.splitLeftPane = 'table',
     this.splitRightPane = 'dispersion',
     this.splitThirdPane = 'optimizer',
-    this.cameraDeviceName = '',
-    this.cameraWidth = 0,
-    this.cameraHeight = 0,
+    this.cameraSlots = const [CameraSlotPref(), CameraSlotPref()],
   });
 
   UnitPrefs copyWith({
@@ -113,9 +130,7 @@ class UnitPrefs {
     String? splitLeftPane,
     String? splitRightPane,
     String? splitThirdPane,
-    String? cameraDeviceName,
-    int? cameraWidth,
-    int? cameraHeight,
+    List<CameraSlotPref>? cameraSlots,
   }) => UnitPrefs(
     distance: distance ?? this.distance,
     speed: speed ?? this.speed,
@@ -126,9 +141,7 @@ class UnitPrefs {
     splitLeftPane: splitLeftPane ?? this.splitLeftPane,
     splitRightPane: splitRightPane ?? this.splitRightPane,
     splitThirdPane: splitThirdPane ?? this.splitThirdPane,
-    cameraDeviceName: cameraDeviceName ?? this.cameraDeviceName,
-    cameraWidth: cameraWidth ?? this.cameraWidth,
-    cameraHeight: cameraHeight ?? this.cameraHeight,
+    cameraSlots: cameraSlots ?? this.cameraSlots,
   );
 
   /// Display label for distance values.
@@ -158,9 +171,7 @@ class UnitPrefs {
     'splitLeftPane': splitLeftPane,
     'splitRightPane': splitRightPane,
     'splitThirdPane': splitThirdPane,
-    'cameraDeviceName': cameraDeviceName,
-    'cameraWidth': cameraWidth,
-    'cameraHeight': cameraHeight,
+    'cameraSlots': cameraSlots.map((slot) => slot.toJson()).toList(),
   };
 
   factory UnitPrefs.fromJson(Map<String, dynamic> j) => UnitPrefs(
@@ -185,10 +196,37 @@ class UnitPrefs {
     splitLeftPane: j['splitLeftPane'] as String? ?? 'table',
     splitRightPane: j['splitRightPane'] as String? ?? 'dispersion',
     splitThirdPane: j['splitThirdPane'] as String? ?? 'optimizer',
-    cameraDeviceName: j['cameraDeviceName'] as String? ?? '',
-    cameraWidth: j['cameraWidth'] as int? ?? 0,
-    cameraHeight: j['cameraHeight'] as int? ?? 0,
+    cameraSlots: _slotsFromJson(j),
   );
+
+  /// Reads the slot list, padding to two entries; a prefs file written
+  /// before slots existed migrates its single camera into slot 0.
+  static List<CameraSlotPref> _slotsFromJson(Map<String, dynamic> j) {
+    final raw = j['cameraSlots'];
+    final slots = <CameraSlotPref>[];
+    if (raw is List) {
+      for (final entry in raw) {
+        if (entry is Map<String, dynamic>) {
+          slots.add(CameraSlotPref.fromJson(entry));
+        }
+      }
+    } else {
+      final legacy = j['cameraDeviceName'] as String? ?? '';
+      if (legacy.isNotEmpty) {
+        slots.add(
+          CameraSlotPref(
+            deviceName: legacy,
+            width: j['cameraWidth'] as int? ?? 0,
+            height: j['cameraHeight'] as int? ?? 0,
+          ),
+        );
+      }
+    }
+    while (slots.length < 2) {
+      slots.add(const CameraSlotPref());
+    }
+    return List.unmodifiable(slots);
+  }
 }
 
 // ── Provider ──────────────────────────────────────────────────────────────────
@@ -245,16 +283,22 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
     _save();
   }
 
-  /// Remembers the Camera tab's device by platform name. Pass null to forget
-  /// it, so the tab stops reopening a camera the golfer closed.
-  void setCameraDeviceName(String? name) {
-    state = state.copyWith(cameraDeviceName: name ?? '');
-    _save();
-  }
-
-  /// Requested capture mode. Pass zeroes to go back to the camera default.
-  void setCameraMode(int width, int height) {
-    state = state.copyWith(cameraWidth: width, cameraHeight: height);
+  /// Updates one camera slot, keeping whatever isn't passed. A null
+  /// [deviceName] clears the slot so the tab stops reopening a camera the
+  /// golfer closed.
+  void setCameraSlot(int slot, {String? deviceName, int? width, int? height}) {
+    if (slot < 0) return;
+    final slots = [...state.cameraSlots];
+    while (slots.length <= slot) {
+      slots.add(const CameraSlotPref());
+    }
+    final current = slots[slot];
+    slots[slot] = CameraSlotPref(
+      deviceName: deviceName ?? current.deviceName,
+      width: width ?? current.width,
+      height: height ?? current.height,
+    );
+    state = state.copyWith(cameraSlots: List.unmodifiable(slots));
     _save();
   }
 
