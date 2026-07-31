@@ -925,9 +925,11 @@ class _ClipReviewState extends State<_ClipReview>
           duration: const Duration(seconds: 8),
           content: Text(
             result.format == ClipExportFormat.video
-                ? 'Exported MJPG video · ${result.sizeLabel}\n${result.path}'
-                : 'MJPG unavailable (${result.fallbackReason}). '
-                      'Exported ${result.frameCount} frames · '
+                ? 'Exported ${result.videoLabel} · ${result.sizeLabel}'
+                      '\n${result.path}'
+                : 'No video writer available '
+                      '(${result.fallbackReason}). Exported '
+                      '${result.frameCount} frames · '
                       '${result.sizeLabel}\n${result.path}',
           ),
         ),
