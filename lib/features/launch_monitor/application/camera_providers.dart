@@ -66,6 +66,16 @@ const _colorBgr2Rgba = 2;
 /// OpenCV's enumeration order runs longer than Media Foundation's.
 const _probeOvershoot = 2;
 
+/// Shortest gap between preview repaints.
+///
+/// Every published frame costs a colour conversion and a texture upload —
+/// measured at 4-10ms, against a 33ms budget already carrying a 5ms JPEG
+/// encode for the ring buffer. Painting the preview at the full capture rate
+/// spent a third of the isolate on a picture nobody can perceive at 30fps
+/// versus 15. Capture is untouched: every frame still reaches the buffer, and
+/// the clip is what the frame rate actually matters for.
+const _previewInterval = Duration(milliseconds: 66);
+
 int get _backend =>
     defaultTargetPlatform == TargetPlatform.windows ? _capDshow : _capAny;
 
@@ -432,7 +442,9 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
     var readUs = 0;
     var encodeUs = 0;
     var publishUs = 0;
+    var published = 0;
     final step = Stopwatch();
+    final sincePreview = Stopwatch()..start();
 
     while (!_disposed &&
         generation == _openGeneration &&
@@ -474,12 +486,18 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
         // waste, and it was competing with clip playback for the same
         // isolate. Buffering carries on regardless, so a shot hit while
         // reviewing is still caught.
-        if (!_previewPaused) {
+        final due =
+            sincePreview.elapsed >= _previewInterval || !sincePreview.isRunning;
+        if (!_previewPaused && due) {
+          sincePreview
+            ..reset()
+            ..start();
           step
             ..reset()
             ..start();
           await _publish(frame);
           publishUs += step.elapsedMicroseconds;
+          published++;
         }
       } finally {
         frame.dispose();
@@ -493,7 +511,8 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
           '[pump] ${(loops / seconds).toStringAsFixed(1)}/s · '
           'read ${perLoop(readUs).toStringAsFixed(1)}ms · '
           'encode ${perLoop(encodeUs).toStringAsFixed(1)}ms · '
-          'publish ${perLoop(publishUs).toStringAsFixed(1)}ms · '
+          'publish ${(publishUs / 1000).toStringAsFixed(1)}ms over '
+          '${(published / seconds).toStringAsFixed(1)}/s · '
           'preview ${_previewPaused ? 'paused' : 'live'}',
         );
         report.reset();
@@ -501,6 +520,7 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
         readUs = 0;
         encodeUs = 0;
         publishUs = 0;
+        published = 0;
       }
 
       // Hand the event loop a turn, every iteration, unconditionally.

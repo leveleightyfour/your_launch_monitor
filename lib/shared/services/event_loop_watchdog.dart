@@ -17,8 +17,9 @@ class EventLoopWatchdog {
   static const _interval = Duration(milliseconds: 100);
 
   /// Lateness worth reporting. Frame scheduling and GC routinely cost tens of
-  /// milliseconds; a quarter second means something is holding the loop.
-  static const _threshold = Duration(milliseconds: 250);
+  /// milliseconds, so this sits above that — but low enough to catch the
+  /// hundred-millisecond hitches that read as lag rather than as a freeze.
+  static const _threshold = Duration(milliseconds: 120);
 
   final String tag;
 
