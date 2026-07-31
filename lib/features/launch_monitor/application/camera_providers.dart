@@ -195,7 +195,10 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
     final List<CameraDevice> found;
     try {
       found = await _probe(names);
-    } catch (error) {
+    } catch (error, stack) {
+      // Logged as well as surfaced: a failure on the very first probe means
+      // no per-index line ever prints, which reads as total silence.
+      debugPrint('[camera] probe failed: $error\n$stack');
       if (_disposed) return;
       state = CameraFeedState(
         status: CameraFeedStatus.failed,

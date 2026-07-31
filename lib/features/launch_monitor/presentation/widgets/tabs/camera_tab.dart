@@ -289,6 +289,14 @@ String _deviceLabel(CameraDevice device) {
 /// show, never what the code does.
 String _failureHint(String? error) {
   final text = (error ?? '').toLowerCase();
+  if (text.contains('native function') || text.contains('symbol')) {
+    // Build-time, not runtime: dartcv leaves videoio out of the native
+    // library unless pubspec asks for it, and the Dart bindings compile
+    // either way.
+    return 'The OpenCV build is missing its videoio module. Check the '
+        'hooks/user_defines block in pubspec.yaml lists videoio, then '
+        'rebuild.';
+  }
   if (text.contains('holding') || text.contains('refused to open')) {
     return 'Close anything else using the camera — Teams, Zoom, OBS or the '
         'Windows Camera app will each hold it exclusively.';
