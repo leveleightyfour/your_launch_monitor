@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/camera_providers.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/impact_clip_provider.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/impact_clip.dart';
+import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 /// Desktop-only tab that streams an attached camera into the window.
@@ -145,12 +146,25 @@ class _PillButton extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const _PillButton({required this.label, required this.onTap});
+  /// Drawn in the accent by default. Muted marks the off state of a group
+  /// where one member is chosen at a time.
+  final bool muted;
+
+  /// Announced as a selected control when it belongs to such a group.
+  final bool? selected;
+
+  const _PillButton({
+    required this.label,
+    required this.onTap,
+    this.muted = false,
+    this.selected,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
+      selected: selected,
       label: label,
       child: GestureDetector(
         onTap: onTap,
@@ -159,9 +173,11 @@ class _PillButton extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: 32),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: context.accentSubtle,
+            color: muted ? AppColors.card : context.accentSubtle,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: context.accentBorder),
+            border: Border.all(
+              color: muted ? AppColors.border2 : context.accentBorder,
+            ),
           ),
           child: Center(
             child: Text(
@@ -169,7 +185,7 @@ class _PillButton extends StatelessWidget {
               style: AppTextStyles.sans(
                 size: 12,
                 weight: FontWeight.w700,
-                color: context.accent,
+                color: muted ? AppColors.textMuted : context.accent,
               ),
             ),
           ),
@@ -246,12 +262,18 @@ class _CameraBar extends ConsumerWidget {
               ),
             ),
           ),
-          if (feed.status == CameraFeedStatus.streaming)
+          if (feed.status == CameraFeedStatus.streaming) ...[
+            _BarButton(
+              icon: Icons.aspect_ratio,
+              label: 'Capture resolution',
+              onTap: () => _showModePicker(context, ref),
+            ),
             _BarButton(
               icon: Icons.stop_circle_outlined,
               label: 'Stop camera',
               onTap: () => notifier.stop(),
             ),
+          ],
           _BarButton(
             icon: Icons.refresh,
             label: 'Rescan for cameras',
@@ -319,6 +341,73 @@ class _CameraBar extends ConsumerWidget {
       ),
     );
   }
+}
+
+void _showModePicker(BuildContext context, WidgetRef ref) {
+  final prefs = ref.read(unitPrefsProvider);
+  final current = CaptureMode(prefs.cameraWidth, prefs.cameraHeight);
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (sheetCtx) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Row(
+            children: [
+              Text(
+                'Capture Resolution',
+                style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: Text(
+            'A camera that cannot manage the size you pick gives its nearest '
+            'mode instead. Larger frames cost frame rate and memory per clip.',
+            style: AppTextStyles.sans(
+              size: 11,
+              color: AppColors.textDimmed,
+            ).copyWith(height: 1.35),
+          ),
+        ),
+        const Divider(height: 1, color: AppColors.border),
+        ...CaptureMode.candidates.map((mode) {
+          final isSel = mode == current;
+          return ListTile(
+            leading: Icon(
+              mode.isAuto ? Icons.auto_awesome : Icons.aspect_ratio,
+              size: 18,
+              color: isSel ? context.accent : AppColors.textMuted,
+            ),
+            title: Text(
+              mode.label,
+              style: AppTextStyles.sans(
+                size: 14,
+                weight: isSel ? FontWeight.w600 : FontWeight.w400,
+                color: isSel ? context.accent : Colors.white,
+              ),
+            ),
+            trailing: isSel
+                ? Icon(Icons.check, color: context.accent, size: 18)
+                : null,
+            tileColor: Colors.transparent,
+            onTap: () {
+              Navigator.of(sheetCtx).pop();
+              ref.read(cameraFeedProvider.notifier).setMode(mode);
+            },
+          );
+        }),
+        const SizedBox(height: 8),
+      ],
+    ),
+  );
 }
 
 class _BarButton extends StatelessWidget {
@@ -596,8 +685,31 @@ class _ClipReview extends StatefulWidget {
   State<_ClipReview> createState() => _ClipReviewState();
 }
 
-class _ClipReviewState extends State<_ClipReview> {
+class _ClipReviewState extends State<_ClipReview>
+    with SingleTickerProviderStateMixin {
+  /// Loop rates offered. Quarter speed is the slowest worth having at 30fps —
+  /// below that the gaps between frames read as a slideshow rather than
+  /// slow motion, and stepping is the better tool.
+  static const _speeds = [1.0, 0.5, 0.25];
+
   late int _index = widget.clip.triggerIndex;
+
+  /// Playback rate, or null when paused.
+  double? _speed;
+
+  late final _ticker = createTicker(_onTick);
+
+  /// Where in the clip playback resumed from. The ticker's own elapsed time
+  /// restarts at zero each time it starts, so the offset it is measured
+  /// against has to be remembered separately — otherwise changing speed
+  /// would fling the playhead back to wherever the last run began.
+  Duration _clipAnchor = Duration.zero;
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(_ClipReview oldWidget) {
@@ -605,15 +717,56 @@ class _ClipReviewState extends State<_ClipReview> {
     // A newer shot replaced the clip under us; start at its own marker
     // rather than holding a frame number that meant something else.
     if (!identical(oldWidget.clip, widget.clip)) {
-      _index = widget.clip.triggerIndex;
+      _pause();
+      setState(() => _index = widget.clip.triggerIndex);
     }
   }
 
+  /// Starts looping at [speed], or stops if that speed is already running.
+  void _toggleLoop(double speed) {
+    if (_speed == speed) {
+      _pause();
+      return;
+    }
+    _ticker.stop();
+    setState(() {
+      _speed = speed;
+      _clipAnchor = widget.clip.offsetFromStart(_index);
+    });
+    _ticker.start();
+  }
+
+  void _pause() {
+    _ticker.stop();
+    if (_speed != null) setState(() => _speed = null);
+  }
+
+  void _onTick(Duration elapsed) {
+    final speed = _speed;
+    final span = widget.clip.duration;
+    if (speed == null || span <= Duration.zero) return;
+
+    // Seek by time, not by frame count: the camera's spacing is never quite
+    // even, so advancing a fixed number of frames per tick would drift off
+    // real time across six seconds.
+    final played = (elapsed.inMicroseconds * speed).round();
+    final offset = Duration(
+      microseconds:
+          (_clipAnchor.inMicroseconds + played) % span.inMicroseconds,
+    );
+    final next = widget.clip.indexAtOffset(offset);
+    if (next != _index) setState(() => _index = next);
+  }
+
   void _step(int delta) {
+    _pause();
     setState(
       () => _index = (_index + delta).clamp(0, widget.clip.frameCount - 1),
     );
   }
+
+  static String _speedLabel(double speed) =>
+      speed == 1.0 ? '1×' : '${speed.toString().replaceFirst('0.', '.')}×';
 
   @override
   Widget build(BuildContext context) {
@@ -680,7 +833,10 @@ class _ClipReviewState extends State<_ClipReview> {
                             ? clip.frameCount - 1
                             : null,
                         label: 'Frame ${index + 1}',
-                        onChanged: (v) => setState(() => _index = v.round()),
+                        onChanged: (v) {
+                          _pause();
+                          setState(() => _index = v.round());
+                        },
                       ),
                     ),
                   ),
@@ -712,12 +868,36 @@ class _ClipReviewState extends State<_ClipReview> {
                   const Spacer(),
                   _PillButton(
                     label: 'Jump to packet',
-                    onTap: () =>
-                        setState(() => _index = clip.triggerIndex),
+                    onTap: () {
+                      _pause();
+                      setState(() => _index = clip.triggerIndex);
+                    },
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Text('LOOP', style: AppTextStyles.statLabel()),
+                  const SizedBox(width: 10),
+                  for (final speed in _speeds) ...[
+                    _PillButton(
+                      label: _speedLabel(speed),
+                      muted: _speed != speed,
+                      selected: _speed == speed,
+                      onTap: () => _toggleLoop(speed),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  if (_speed != null)
+                    _PillButton(
+                      label: 'Stop',
+                      muted: true,
+                      onTap: _pause,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Text(
                 'Zero is when the launch monitor reported the shot, not the '
                 'strike — impact is a little earlier, by however long the '

@@ -47,6 +47,16 @@ const _capDshow = 700;
 const _propFrameWidth = 3; // cv::CAP_PROP_FRAME_WIDTH
 const _propFrameHeight = 4; // cv::CAP_PROP_FRAME_HEIGHT
 const _propFps = 5; // cv::CAP_PROP_FPS
+const _propFourcc = 6; // cv::CAP_PROP_FOURCC
+
+/// MJPG as a FOURCC integer: 'M' | 'J'<<8 | 'P'<<16 | 'G'<<24.
+///
+/// Asking for this matters more than the resolution does. Uncompressed YUY2
+/// saturates USB long before 1080p, so a camera asked for a large frame in
+/// its default format hands back a slideshow — a few frames a second — rather
+/// than refusing. Requesting MJPG first is what makes the size request
+/// achievable.
+const _fourccMjpg = 1196444237;
 
 /// `cv::COLOR_BGR2RGBA` — OpenCV decodes to BGR; Flutter uploads RGBA.
 const _colorBgr2Rgba = 2;
@@ -57,6 +67,42 @@ const _probeOvershoot = 2;
 
 int get _backend =>
     defaultTargetPlatform == TargetPlatform.windows ? _capDshow : _capAny;
+
+// ── Capture mode ─────────────────────────────────────────────────────────────
+
+/// A frame size to ask the camera for.
+@immutable
+class CaptureMode {
+  final int width;
+  final int height;
+
+  const CaptureMode(this.width, this.height);
+
+  /// Take whatever the camera opens on. For most UVC devices that is 640x480,
+  /// whatever the sensor is capable of.
+  static const auto = CaptureMode(0, 0);
+
+  bool get isAuto => width <= 0 || height <= 0;
+
+  String get label => isAuto ? 'Camera default' : '$width×$height';
+
+  /// Offered in the picker. A camera that cannot do the requested size snaps
+  /// to its nearest supported mode rather than failing, so an over-ambitious
+  /// choice costs nothing but a smaller frame than asked for.
+  static const candidates = [
+    auto,
+    CaptureMode(640, 480),
+    CaptureMode(1280, 720),
+    CaptureMode(1920, 1080),
+  ];
+
+  @override
+  bool operator ==(Object other) =>
+      other is CaptureMode && other.width == width && other.height == height;
+
+  @override
+  int get hashCode => Object.hash(width, height);
+}
 
 // ── Devices ──────────────────────────────────────────────────────────────────
 
@@ -257,6 +303,22 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
     return found;
   }
 
+  CaptureMode _preferredMode() {
+    final prefs = ref.read(unitPrefsProvider);
+    return CaptureMode(prefs.cameraWidth, prefs.cameraHeight);
+  }
+
+  /// Requests a different capture mode, reopening the live camera on it.
+  Future<void> setMode(CaptureMode mode) async {
+    if (_disposed) return;
+    ref
+        .read(unitPrefsProvider.notifier)
+        .setCameraMode(mode.width, mode.height);
+    final device = state.selected;
+    if (device == null || _capture == null) return;
+    await select(device);
+  }
+
   /// Opens [device] and starts pumping frames, replacing whatever was open.
   Future<void> select(CameraDevice device) async {
     if (_disposed) return;
@@ -296,17 +358,37 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
       return;
     }
 
-    // What the driver actually gave us, which is not what the camera can do:
-    // VideoCapture opens a device on its *default* mode, and for most UVC
-    // cameras that is 640x480 no matter what the sensor is capable of.
-    // Requesting a mode is a prerequisite for the high-speed work, and until
-    // then this line is the only place the real capture size is visible.
+    // VideoCapture opens a device on its *default* mode, not its best one,
+    // so a mode has to be asked for explicitly.
+    final requested = _preferredMode();
+    if (!requested.isAuto) {
+      // FOURCC before size: DirectShow settles the pixel format first, and a
+      // large frame requested in an uncompressed format is granted as a
+      // slideshow rather than refused.
+      capture.set(_propFourcc, _fourccMjpg.toDouble());
+      capture.set(_propFrameWidth, requested.width.toDouble());
+      capture.set(_propFrameHeight, requested.height.toDouble());
+    }
+
+    // What the driver actually granted, which may be the nearest mode it has
+    // rather than the one asked for. Note DirectShow reports 0 for fps; the
+    // rate a clip actually achieves is the number worth trusting.
     final width = capture.get(_propFrameWidth).round();
     final height = capture.get(_propFrameHeight).round();
     final fps = capture.get(_propFps);
     debugPrint(
       '[camera] opened "${device.name}" index ${device.index} — '
-      '${width}x$height @ ${fps.toStringAsFixed(1)}fps',
+      'requested ${requested.label}, got ${width}x$height '
+      '@ ${fps.toStringAsFixed(1)}fps',
+    );
+
+    // Carry the granted size on the device so the UI shows the truth rather
+    // than the probe's guess or the request.
+    device = CameraDevice(
+      index: device.index,
+      name: device.name,
+      width: width,
+      height: height,
     );
 
     _capture = capture;
