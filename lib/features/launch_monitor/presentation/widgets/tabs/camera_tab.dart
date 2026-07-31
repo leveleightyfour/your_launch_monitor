@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -42,6 +43,16 @@ class _CameraTabState extends ConsumerState<CameraTab> {
   ImpactClip? _reviewing;
 
   @override
+  void dispose() {
+    // The provider outlives this widget, so a paused preview would stay
+    // paused for the next visit to the tab.
+    if (_reviewing != null) {
+      ref.read(cameraFeedProvider.notifier).setPreviewPaused(false);
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final feed = ref.watch(cameraFeedProvider);
     final capture = ref.watch(impactClipProvider);
@@ -59,8 +70,14 @@ class _CameraTabState extends ConsumerState<CameraTab> {
           _CaptureBar(
             capture: capture,
             reviewing: reviewing,
-            onReview: (clip) => setState(() => _reviewing = clip),
-            onBackToLive: () => setState(() => _reviewing = null),
+            onReview: (clip) {
+              ref.read(cameraFeedProvider.notifier).setPreviewPaused(true);
+              setState(() => _reviewing = clip);
+            },
+            onBackToLive: () {
+              ref.read(cameraFeedProvider.notifier).setPreviewPaused(false);
+              setState(() => _reviewing = null);
+            },
           ),
       ],
     );
@@ -698,6 +715,24 @@ class _ClipReviewState extends State<_ClipReview>
   /// Playback rate, or null when paused.
   double? _speed;
 
+  /// The decoded frame on screen.
+  ///
+  /// Decoded here rather than with `Image.memory`, which was what wedged the
+  /// UI: every rebuild built a fresh MemoryImage, so playback pushed thirty
+  /// distinct decodes a second through Flutter's image cache and evicted the
+  /// cache continuously. Owning the decode means one at a time, no cache, and
+  /// explicit disposal.
+  ui.Image? _shown;
+
+  /// Held one generation so a frame is never freed while still being painted.
+  ui.Image? _retired;
+
+  /// Index waiting to be decoded. Overwritten rather than queued: if decoding
+  /// falls behind the loop, the right behaviour is to skip to the newest
+  /// frame, not to work through a backlog and drift further behind.
+  int? _pending;
+  bool _decoding = false;
+
   late final _ticker = createTicker(_onTick);
 
   /// Where in the clip playback resumed from. The ticker's own elapsed time
@@ -707,8 +742,16 @@ class _ClipReviewState extends State<_ClipReview>
   Duration _clipAnchor = Duration.zero;
 
   @override
+  void initState() {
+    super.initState();
+    _requestFrame(_index);
+  }
+
+  @override
   void dispose() {
     _ticker.dispose();
+    _shown?.dispose();
+    _retired?.dispose();
     super.dispose();
   }
 
@@ -719,7 +762,54 @@ class _ClipReviewState extends State<_ClipReview>
     // rather than holding a frame number that meant something else.
     if (!identical(oldWidget.clip, widget.clip)) {
       _pause();
-      setState(() => _index = widget.clip.triggerIndex);
+      _setIndex(widget.clip.triggerIndex);
+    }
+  }
+
+  /// Moves the playhead and asks for that frame.
+  void _setIndex(int next) {
+    final clamped = next.clamp(0, widget.clip.frameCount - 1);
+    if (clamped != _index) setState(() => _index = clamped);
+    _requestFrame(clamped);
+  }
+
+  void _requestFrame(int index) {
+    _pending = index;
+    if (_decoding) return;
+    _decoding = true;
+    unawaited(_drainDecodes());
+  }
+
+  Future<void> _drainDecodes() async {
+    while (mounted && _pending != null) {
+      final target = _pending!;
+      _pending = null;
+      final ui.Image image;
+      try {
+        image = await _decodeJpeg(widget.clip.frames[target].jpeg);
+      } catch (error) {
+        debugPrint('[clip] frame $target would not decode: $error');
+        continue;
+      }
+      if (!mounted) {
+        image.dispose();
+        break;
+      }
+      final previous = _shown;
+      setState(() => _shown = image);
+      _retired?.dispose();
+      _retired = previous;
+    }
+    _decoding = false;
+  }
+
+  static Future<ui.Image> _decodeJpeg(Uint8List bytes) async {
+    final codec = await ui.instantiateImageCodec(bytes);
+    try {
+      final frame = await codec.getNextFrame();
+      return frame.image;
+    } finally {
+      codec.dispose();
     }
   }
 
@@ -735,6 +825,7 @@ class _ClipReviewState extends State<_ClipReview>
       _clipAnchor = widget.clip.offsetFromStart(_index);
     });
     _ticker.start();
+    _requestFrame(_index);
   }
 
   void _pause() {
@@ -756,14 +847,12 @@ class _ClipReviewState extends State<_ClipReview>
           (_clipAnchor.inMicroseconds + played) % span.inMicroseconds,
     );
     final next = widget.clip.indexAtOffset(offset);
-    if (next != _index) setState(() => _index = next);
+    if (next != _index) _setIndex(next);
   }
 
   void _step(int delta) {
     _pause();
-    setState(
-      () => _index = (_index + delta).clamp(0, widget.clip.frameCount - 1),
-    );
+    _setIndex(_index + delta);
   }
 
   static String _speedLabel(double speed) =>
@@ -815,6 +904,7 @@ class _ClipReviewState extends State<_ClipReview>
 
     final index = _index.clamp(0, clip.frameCount - 1);
     final atTrigger = index == clip.triggerIndex;
+    final shown = _shown;
 
     return Column(
       children: [
@@ -822,13 +912,14 @@ class _ClipReviewState extends State<_ClipReview>
           child: ColoredBox(
             color: Colors.black,
             child: Center(
-              // gaplessPlayback keeps the previous frame on screen while the
-              // next decodes, so scrubbing doesn't strobe through white.
-              child: Image.memory(
-                clip.frames[index].jpeg,
-                gaplessPlayback: true,
-                fit: BoxFit.contain,
-              ),
+              // The previous frame stays up until the next one has decoded,
+              // so scrubbing never strobes through black.
+              child: shown == null
+                  ? const SizedBox.shrink()
+                  : AspectRatio(
+                      aspectRatio: shown.width / shown.height,
+                      child: RawImage(image: shown, fit: BoxFit.contain),
+                    ),
             ),
           ),
         ),
@@ -869,7 +960,7 @@ class _ClipReviewState extends State<_ClipReview>
                         label: 'Frame ${index + 1}',
                         onChanged: (v) {
                           _pause();
-                          setState(() => _index = v.round());
+                          _setIndex(v.round());
                         },
                       ),
                     ),
@@ -927,7 +1018,7 @@ class _ClipReviewState extends State<_ClipReview>
                     label: 'Jump to packet',
                     onTap: () {
                       _pause();
-                      setState(() => _index = clip.triggerIndex);
+                      _setIndex(clip.triggerIndex);
                     },
                   ),
                   _PillButton(
