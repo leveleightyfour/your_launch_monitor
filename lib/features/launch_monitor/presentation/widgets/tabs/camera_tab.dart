@@ -72,6 +72,10 @@ class _CameraTabState extends ConsumerState<CameraTab> {
             capture: capture,
             reviewing: reviewing,
             onReview: (clip) {
+              // Logged at the tap, before any widget builds: if this appears
+              // and "[review] opening" does not, the fault is in the switch
+              // to the review widget rather than anywhere inside it.
+              debugPrint('[review] tapped, shot ${clip.shotIndex + 1}');
               ref.read(cameraFeedProvider.notifier).setPreviewPaused(true);
               setState(() => _reviewing = clip);
             },
