@@ -104,10 +104,28 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
     return const CameraFeedState();
   }
 
-  /// 720p rather than the highest the device offers: impact happens in a
-  /// couple of milliseconds, so frame rate is worth more than pixels, and
-  /// UVC cameras routinely halve their fps at 1080p.
-  static const _resolution = ResolutionPreset.high;
+  /// Presets tried in order until one opens.
+  ///
+  /// 720p first: impact happens in a couple of milliseconds, so frame rate is
+  /// worth more than pixels, and UVC cameras routinely halve their fps at
+  /// 1080p. Then downward, because a preset maps to a specific media type and
+  /// a camera that does not offer that type refuses to open at all rather
+  /// than negotiating something smaller.
+  static const _resolutionLadder = [
+    ResolutionPreset.high,
+    ResolutionPreset.medium,
+    ResolutionPreset.low,
+  ];
+
+  /// Both halves of a [CameraException]. The code alone ("camera_error") says
+  /// nothing; the description carries the platform's actual complaint.
+  static String _describe(Object error) {
+    if (error is! CameraException) return error.toString();
+    final detail = error.description;
+    return detail == null || detail.isEmpty
+        ? error.code
+        : '${error.code} — $detail';
+  }
 
   /// Enumerates attached cameras. When [autoOpen] is set and the camera
   /// remembered in preferences is among them, it reopens without the golfer
@@ -211,43 +229,56 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
       selected: device,
     );
 
-    final controller = CameraController(
-      device,
-      _resolution,
-      // Swing video is analysed frame by frame; a microphone track would only
-      // add a permission prompt and bytes.
-      enableAudio: false,
-    );
+    Object? lastError;
+    for (final preset in _resolutionLadder) {
+      final controller = CameraController(
+        device,
+        preset,
+        // Swing video is analysed frame by frame; a microphone track would
+        // only add a permission prompt and bytes.
+        enableAudio: false,
+      );
 
-    try {
-      await controller.initialize();
-    } on CameraException catch (e) {
-      await controller.dispose();
-      if (_disposed || generation != _openGeneration) return;
+      try {
+        await controller.initialize();
+      } catch (error) {
+        // Every failure is logged, not just the last one: which presets a
+        // camera refuses is the diagnosis when it won't open at all.
+        lastError = error;
+        debugPrint(
+          '[camera] "${device.name}" at ${preset.name} failed: '
+          '${_describe(error)}',
+        );
+        await controller.dispose();
+        continue;
+      }
+
+      // A newer select() landed while this one was opening, or the provider
+      // went away: drop this camera rather than leaving it held open.
+      if (_disposed || generation != _openGeneration) {
+        await controller.dispose();
+        return;
+      }
+
+      _controller = controller;
       state = CameraFeedState(
-        status: CameraFeedStatus.failed,
+        status: CameraFeedStatus.streaming,
         devices: state.devices,
         selected: device,
-        error: e.description ?? e.code,
+        controller: controller,
       );
+      ref.read(unitPrefsProvider.notifier).setCameraDeviceName(device.name);
       return;
     }
 
-    // A newer select() landed while this one was opening, or the provider
-    // went away: drop this camera rather than leaving it held open.
-    if (_disposed || generation != _openGeneration) {
-      await controller.dispose();
-      return;
-    }
-
-    _controller = controller;
+    // Every preset refused.
+    if (_disposed || generation != _openGeneration) return;
     state = CameraFeedState(
-      status: CameraFeedStatus.streaming,
+      status: CameraFeedStatus.failed,
       devices: state.devices,
       selected: device,
-      controller: controller,
+      error: lastError == null ? null : _describe(lastError),
     );
-    ref.read(unitPrefsProvider.notifier).setCameraDeviceName(device.name);
   }
 
   /// Closes the camera, releasing it back to the OS, and forgets the choice

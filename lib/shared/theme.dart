@@ -16,6 +16,16 @@ class AppColors {
   static const errorBackground = Color(0xFF2D0A0A);
   static const errorText = Color(0xFFFCA5A5);
 
+  // ── Diagnostic severity ─────────────────────────────────────────────────
+  // Fixed hues, deliberately not accent-derived. "This is costing you yards"
+  // has to read the same whatever accent the golfer picked — an amber-ish
+  // accent would otherwise collapse the warning/optimal distinction — and
+  // these three were previously hardcoded at eight call sites in the
+  // optimizer with no name on them.
+  static const severityCritical = Color(0xFFEF4444);
+  static const severityWarning = Color(0xFFF59E0B);
+  static const severityInfo = Color(0xFF60A5FA);
+
   // Pre-computed accent tints — use instead of AppColors.accent.withAlpha(n)
   static const accentGhost = Color(0x142DD4B0); // accent withAlpha(20)
   static const accentFaint = Color(0x162DD4B0); // accent withAlpha(22)
