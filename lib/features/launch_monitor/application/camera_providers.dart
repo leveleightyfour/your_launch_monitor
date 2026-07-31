@@ -400,6 +400,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
           requestWidth: requested.width,
           requestHeight: requested.height,
           previewIntervalMs: _previewInterval.inMilliseconds,
+          rotationQuarterTurns: _slotPref().rotationQuarterTurns,
         ),
         // Uncaught worker errors arrive on the same port as a List rather
         // than dying silently.
@@ -566,6 +567,23 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
       completer.complete,
     );
     return completer.future;
+  }
+
+  /// Applies [quarterTurns] clockwise to the live feed and remembers it.
+  /// Takes effect on the very next frame — no reopen — but the ring buffer
+  /// restarts, because a clip mixing two orientations would hand the export
+  /// writer frames of two different sizes.
+  Future<void> setRotation(int quarterTurns) async {
+    if (_disposed) return;
+    final turns = quarterTurns % 4;
+    ref
+        .read(unitPrefsProvider.notifier)
+        .setCameraSlot(slot, rotationQuarterTurns: turns);
+    if (_link == null) return;
+    _link?.send({'cmd': 'rotation', 'value': turns});
+    final recorder = ref.read(impactClipProvider.notifier);
+    recorder.setArmed(slot, false);
+    recorder.setArmed(slot, true);
   }
 
   /// Stops converting and sending preview frames while something else is on
