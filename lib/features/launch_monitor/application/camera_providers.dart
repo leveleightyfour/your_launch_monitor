@@ -470,12 +470,14 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
         if (stale) return;
         final seconds = message['seconds'] as double;
         final loops = message['loops'] as int;
+        final empties = message['emptyReads'] as int? ?? 0;
         double perLoop(Object? us) => (us as int) / loops / 1000;
         debugPrint(
           '[pump] ${(loops / seconds).toStringAsFixed(1)}/s in worker · '
           'read ${perLoop(message['readUs']).toStringAsFixed(1)}ms · '
           'encode ${perLoop(message['encodeUs']).toStringAsFixed(1)}ms · '
           'preview ${((message['previewUs'] as int) / 1000).toStringAsFixed(1)}ms/s · '
+          '$empties empty reads · '
           '${_previewPaused ? 'paused' : 'live'}',
         );
 

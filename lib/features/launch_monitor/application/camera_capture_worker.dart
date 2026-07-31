@@ -154,6 +154,7 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
   var readUs = 0;
   var encodeUs = 0;
   var previewUs = 0;
+  var emptyReads = 0;
   var consecutiveFailures = 0;
 
   while (!stop) {
@@ -169,9 +170,12 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
     }
     if (!ok || frame.isEmpty) {
       frame.dispose();
-      // A dropped frame now and then is normal; a run of them means the
-      // camera has gone away, most often unplugged mid-session.
-      if (++consecutiveFailures >= 30) {
+      emptyReads++;
+      // A run of failures means the camera has gone away, most often
+      // unplugged mid-session. The threshold is high because an empty read
+      // can also just mean "no new frame yet": some backends return instead
+      // of blocking when polled between deliveries.
+      if (++consecutiveFailures >= 200) {
         toMain.send({
           'type': 'error',
           'message': 'The camera stopped sending frames.',
@@ -181,7 +185,11 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
         commands.close();
         return;
       }
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+      // Short back-off only. This used to be 30ms, which turned a
+      // non-blocking backend into read → empty → sleep 30 → read: roughly
+      // 13fps from a 30fps camera, with the sleep — not the camera —
+      // setting the pace.
+      await Future<void>.delayed(const Duration(milliseconds: 2));
       continue;
     }
     consecutiveFailures = 0;
@@ -237,18 +245,22 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
         'readUs': readUs,
         'encodeUs': encodeUs,
         'previewUs': previewUs,
+        'emptyReads': emptyReads,
       });
       report.reset();
       loops = 0;
       readUs = 0;
       encodeUs = 0;
       previewUs = 0;
+      emptyReads = 0;
     }
 
-    // Keep this isolate's own event loop breathing so the command port is
-    // heard even when readAsync completes synchronously off a full driver
-    // queue.
-    await Future<void>.delayed(Duration.zero);
+    // No explicit yield here, deliberately. On the UI isolate one was vital,
+    // but here the readAsync await already hands the event loop a turn — its
+    // completion arrives as a port message, which cannot be delivered
+    // synchronously — so the command port is always serviced. The
+    // zero-duration timer this used to carry was pure per-frame overhead in
+    // a background isolate.
   }
 
   capture.release();
