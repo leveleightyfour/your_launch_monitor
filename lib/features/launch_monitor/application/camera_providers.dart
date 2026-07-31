@@ -28,6 +28,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 
+import 'package:omni_sniffer/features/launch_monitor/application/impact_clip_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 
 // ── OpenCV constants ─────────────────────────────────────────────────────────
@@ -296,6 +297,7 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
 
     debugPrint('[camera] opened "${device.name}" on index ${device.index}');
     _capture = capture;
+    ref.read(impactClipProvider.notifier).setArmed(true);
     state = CameraFeedState(
       status: CameraFeedStatus.streaming,
       devices: state.devices,
@@ -340,6 +342,10 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
       consecutiveFailures = 0;
 
       try {
+        // Buffer before painting: the clip is the thing that can't be
+        // recovered if this turn of the loop runs late, whereas a preview
+        // frame arriving a few milliseconds behind is invisible.
+        ref.read(impactClipProvider.notifier).offer(frame);
         await _publish(frame);
       } finally {
         frame.dispose();
@@ -405,6 +411,9 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
   void _releaseCapture() {
     final capture = _capture;
     _capture = null;
+    // No feed, nothing to buffer — and the half-filled ring is stale the
+    // moment the camera stops.
+    if (!_disposed) ref.read(impactClipProvider.notifier).setArmed(false);
     capture?.release();
     capture?.dispose();
     _frame.value = null;

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:omni_sniffer/features/launch_monitor/application/camera_providers.dart';
+import 'package:omni_sniffer/features/launch_monitor/application/impact_clip_provider.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/impact_clip.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 /// Desktop-only tab that streams an attached camera into the window.
@@ -34,15 +36,145 @@ class _CameraTabState extends ConsumerState<CameraTab> {
     });
   }
 
+  /// The clip being scrubbed, or null while the live feed is showing.
+  ImpactClip? _reviewing;
+
   @override
   Widget build(BuildContext context) {
     final feed = ref.watch(cameraFeedProvider);
+    final capture = ref.watch(impactClipProvider);
+    final reviewing = _reviewing;
 
     return Column(
       children: [
         _CameraBar(feed: feed),
-        Expanded(child: _CameraBody(feed: feed)),
+        Expanded(
+          child: reviewing == null
+              ? _CameraBody(feed: feed)
+              : _ClipReview(clip: reviewing),
+        ),
+        if (capture.armed || capture.clips.isNotEmpty)
+          _CaptureBar(
+            capture: capture,
+            reviewing: reviewing,
+            onReview: (clip) => setState(() => _reviewing = clip),
+            onBackToLive: () => setState(() => _reviewing = null),
+          ),
       ],
+    );
+  }
+}
+
+// ── Capture status / review switch ───────────────────────────────────────────
+
+class _CaptureBar extends StatelessWidget {
+  final ImpactClipState capture;
+  final ImpactClip? reviewing;
+  final ValueChanged<ImpactClip> onReview;
+  final VoidCallback onBackToLive;
+
+  const _CaptureBar({
+    required this.capture,
+    required this.reviewing,
+    required this.onReview,
+    required this.onBackToLive,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final latest = capture.latest;
+    final (Color dot, String label) = capture.capturing
+        ? (AppColors.severityWarning, 'Capturing the post-roll…')
+        : capture.armed
+        ? (context.accent, '${capture.bufferedFrames} frames buffered')
+        : (AppColors.textDimmed, 'Not buffering');
+
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: AppColors.border)),
+        color: AppColors.surface,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.sans(size: 12, color: AppColors.textMuted),
+            ),
+          ),
+          const Spacer(),
+          if (latest != null) ...[
+            Flexible(
+              child: Text(
+                _clipSummary(latest),
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: AppTextStyles.sans(
+                  size: 12,
+                  color: AppColors.textDimmed,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _PillButton(
+              label: reviewing == null ? 'Review' : 'Back to live',
+              onTap: reviewing == null
+                  ? () => onReview(latest)
+                  : onBackToLive,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _clipSummary(ImpactClip clip) =>
+      'Shot ${clip.shotIndex + 1} · ${clip.frameCount} frames · '
+      '${clip.effectiveFps.toStringAsFixed(0)} fps';
+}
+
+class _PillButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _PillButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: context.accentSubtle,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: context.accentBorder),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: AppTextStyles.sans(
+                size: 12,
+                weight: FontWeight.w700,
+                color: context.accent,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -445,5 +577,168 @@ class _Message extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ── Clip review ──────────────────────────────────────────────────────────────
+
+/// Frame-by-frame scrub through one captured clip.
+///
+/// A scrubber rather than a player because that is what the clip is for: the
+/// interesting part of a golf swing is a handful of frames wide, and stepping
+/// through them beats watching six seconds play at speed.
+class _ClipReview extends StatefulWidget {
+  final ImpactClip clip;
+
+  const _ClipReview({required this.clip});
+
+  @override
+  State<_ClipReview> createState() => _ClipReviewState();
+}
+
+class _ClipReviewState extends State<_ClipReview> {
+  late int _index = widget.clip.triggerIndex;
+
+  @override
+  void didUpdateWidget(_ClipReview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A newer shot replaced the clip under us; start at its own marker
+    // rather than holding a frame number that meant something else.
+    if (!identical(oldWidget.clip, widget.clip)) {
+      _index = widget.clip.triggerIndex;
+    }
+  }
+
+  void _step(int delta) {
+    setState(
+      () => _index = (_index + delta).clamp(0, widget.clip.frameCount - 1),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final clip = widget.clip;
+    if (clip.isEmpty) {
+      return const _Message(
+        icon: Icons.videocam_off,
+        title: 'Empty clip',
+        detail: 'No frames were buffered for this shot.',
+      );
+    }
+
+    final index = _index.clamp(0, clip.frameCount - 1);
+    final atTrigger = index == clip.triggerIndex;
+
+    return Column(
+      children: [
+        Expanded(
+          child: ColoredBox(
+            color: Colors.black,
+            child: Center(
+              // gaplessPlayback keeps the previous frame on screen while the
+              // next decodes, so scrubbing doesn't strobe through white.
+              child: Image.memory(
+                clip.frames[index].jpeg,
+                gaplessPlayback: true,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
+        Container(
+          decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: AppColors.border)),
+            color: AppColors.surface,
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  _BarButton(
+                    icon: Icons.chevron_left,
+                    label: 'Previous frame',
+                    onTap: index > 0 ? () => _step(-1) : null,
+                  ),
+                  Expanded(
+                    child: SliderTheme(
+                      data: SliderThemeData(
+                        trackHeight: 3,
+                        activeTrackColor: context.accent,
+                        inactiveTrackColor: AppColors.border2,
+                        thumbColor: context.accent,
+                        overlayShape: SliderComponentShape.noOverlay,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 7,
+                        ),
+                      ),
+                      child: Slider(
+                        value: index.toDouble(),
+                        min: 0,
+                        max: (clip.frameCount - 1).toDouble(),
+                        divisions: clip.frameCount > 1
+                            ? clip.frameCount - 1
+                            : null,
+                        label: 'Frame ${index + 1}',
+                        onChanged: (v) => setState(() => _index = v.round()),
+                      ),
+                    ),
+                  ),
+                  _BarButton(
+                    icon: Icons.chevron_right,
+                    label: 'Next frame',
+                    onTap: index < clip.frameCount - 1
+                        ? () => _step(1)
+                        : null,
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  Text(
+                    'FRAME ${index + 1} / ${clip.frameCount}',
+                    style: AppTextStyles.statLabel(),
+                  ),
+                  const SizedBox(width: 14),
+                  Text(
+                    _signedSeconds(clip.offsetFromTrigger(index)),
+                    style: AppTextStyles.statValue(
+                      size: 14,
+                      color: atTrigger
+                          ? AppColors.severityWarning
+                          : Colors.white,
+                    ),
+                  ),
+                  const Spacer(),
+                  _PillButton(
+                    label: 'Jump to packet',
+                    onTap: () =>
+                        setState(() => _index = clip.triggerIndex),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Zero is when the launch monitor reported the shot, not the '
+                'strike — impact is a little earlier, by however long the '
+                'reading took to reach us.',
+                style: AppTextStyles.sans(
+                  size: 11,
+                  color: AppColors.textDimmed,
+                ).copyWith(height: 1.35),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// `-0.433 s`, `+0.100 s`, `0.000 s`. Milliseconds matter here — at 30fps
+  /// one frame is 33ms, and the whole event of interest is a few frames.
+  static String _signedSeconds(Duration offset) {
+    final seconds = offset.inMicroseconds / Duration.microsecondsPerSecond;
+    final sign = seconds > 0 ? '+' : '';
+    return '$sign${seconds.toStringAsFixed(3)} s';
   }
 }
