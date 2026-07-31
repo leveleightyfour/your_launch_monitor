@@ -46,6 +46,7 @@ const _capDshow = 700;
 
 const _propFrameWidth = 3; // cv::CAP_PROP_FRAME_WIDTH
 const _propFrameHeight = 4; // cv::CAP_PROP_FRAME_HEIGHT
+const _propFps = 5; // cv::CAP_PROP_FPS
 
 /// `cv::COLOR_BGR2RGBA` — OpenCV decodes to BGR; Flutter uploads RGBA.
 const _colorBgr2Rgba = 2;
@@ -295,7 +296,19 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
       return;
     }
 
-    debugPrint('[camera] opened "${device.name}" on index ${device.index}');
+    // What the driver actually gave us, which is not what the camera can do:
+    // VideoCapture opens a device on its *default* mode, and for most UVC
+    // cameras that is 640x480 no matter what the sensor is capable of.
+    // Requesting a mode is a prerequisite for the high-speed work, and until
+    // then this line is the only place the real capture size is visible.
+    final width = capture.get(_propFrameWidth).round();
+    final height = capture.get(_propFrameHeight).round();
+    final fps = capture.get(_propFps);
+    debugPrint(
+      '[camera] opened "${device.name}" index ${device.index} — '
+      '${width}x$height @ ${fps.toStringAsFixed(1)}fps',
+    );
+
     _capture = capture;
     ref.read(impactClipProvider.notifier).setArmed(true);
     state = CameraFeedState(
