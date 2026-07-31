@@ -10,6 +10,7 @@ import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
 import 'package:omni_sniffer/shared/providers/router.dart';
 import 'package:omni_sniffer/shared/providers/shorebird_update_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:riverpod_devtools/riverpod_devtools.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,7 +25,12 @@ void main() async {
     AccentColorNotifier.preload(),
     LastDeviceNotifier.preload(),
   ]);
-  runApp(const ProviderScope(child: OmniSnifferApp()));
+  runApp(
+    ProviderScope(
+      observers: [RiverpodDevToolsObserver()],
+      child: OmniSnifferApp(),
+    ),
+  );
 }
 
 Future<void> _primeBlePermissions() async {
@@ -33,9 +39,7 @@ Future<void> _primeBlePermissions() async {
   // Android). Errors are swallowed: denial is fine, the user can grant later
   // from settings.
   try {
-    await FlutterBluePlus.startScan(
-      timeout: const Duration(milliseconds: 50),
-    );
+    await FlutterBluePlus.startScan(timeout: const Duration(milliseconds: 50));
   } catch (_) {}
   try {
     await FlutterBluePlus.stopScan();
