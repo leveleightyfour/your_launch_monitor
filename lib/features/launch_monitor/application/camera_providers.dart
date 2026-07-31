@@ -106,15 +106,24 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
 
   /// Presets tried in order until one opens.
   ///
-  /// 720p first: impact happens in a couple of milliseconds, so frame rate is
-  /// worth more than pixels, and UVC cameras routinely halve their fps at
-  /// 1080p. Then downward, because a preset maps to a specific media type and
-  /// a camera that does not offer that type refuses to open at all rather
-  /// than negotiating something smaller.
+  /// On Windows a preset is not a target size, it is a *ceiling*: the plugin
+  /// scans the camera's native modes and takes the largest whose height is
+  /// at or below the preset's cap (low 240, medium 480, high 720, veryHigh
+  /// 1080, ultraHigh 2160, max unlimited), skipping anything under 15 fps.
+  /// A camera whose smallest mode is taller than the cap matches nothing and
+  /// fails with "Failed to initialize video preview".
+  ///
+  /// So the ladder climbs. 720p first, because impact happens in a couple of
+  /// milliseconds and frame rate is worth more than pixels — but a camera
+  /// that offers nothing that small needs the cap *raised*, not lowered.
+  /// Stepping down would only tighten a ceiling that already matched
+  /// nothing, which is exactly how a 1080p-only camera failed three times
+  /// over.
   static const _resolutionLadder = [
     ResolutionPreset.high,
-    ResolutionPreset.medium,
-    ResolutionPreset.low,
+    ResolutionPreset.veryHigh,
+    ResolutionPreset.ultraHigh,
+    ResolutionPreset.max,
   ];
 
   /// Both halves of a [CameraException]. The code alone ("camera_error") says
@@ -259,6 +268,14 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
         await controller.dispose();
         return;
       }
+
+      final size = controller.value.previewSize;
+      final dims = size == null
+          ? ''
+          : ' at ${size.width.toInt()}x${size.height.toInt()}';
+      debugPrint(
+        '[camera] opened "${device.name}" on ${preset.name}$dims',
+      );
 
       _controller = controller;
       state = CameraFeedState(
