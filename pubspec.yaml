@@ -71,6 +71,23 @@ dev_dependencies:
   drift_dev: ^2.22.0
   rename: ^3.0.2
 
+# OpenCV modules compiled into the native library.
+#
+# dartcv builds only a subset by default, and `videoio` — the module
+# VideoCapture lives in — is not in it. Its Dart bindings are always present,
+# so leaving it out compiles cleanly and then fails at the first call with
+# "Couldn't resolve native function" (Windows error 127,
+# ERROR_PROC_NOT_FOUND): the library loads, the symbol simply isn't in it.
+# Listing modules here replaces the default set, so imgproc (cvtColor, for the
+# BGR-to-RGBA conversion each frame needs) has to be named too.
+hooks:
+  user_defines:
+    dartcv4:
+      include_modules: # `core` is always included
+        - imgproc
+        - imgcodecs
+        - videoio
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
