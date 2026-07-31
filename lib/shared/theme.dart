@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:google_fonts/google_fonts.dart';
@@ -253,4 +254,28 @@ bool isTablet(BuildContext context) =>
 bool isUltraWide(BuildContext context) {
   final size = MediaQuery.of(context).size;
   return size.shortestSide >= 600 && size.width / size.height >= 1.9;
+}
+
+/// Returns true on the desktop platforms (Windows / macOS / Linux), where the
+/// app runs in a resizable window rather than on a fixed-size handset screen.
+/// Uses [defaultTargetPlatform] rather than `dart:io` so the web build still
+/// compiles.
+bool get isDesktopPlatform =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.linux);
+
+/// A pane narrower than this can't hold a dispersion plot or a table's
+/// columns legibly, so three of them need at least three times as much.
+const _minPaneWidth = 360.0;
+
+/// Returns true when the split view should offer a third pane: the app is on
+/// a desktop window or an ultra-wide display, *and* [availableWidth] — the
+/// room the split itself has, which on ultra-wide excludes the pinned shot
+/// list — divides three ways with each pane still readable. A desktop window
+/// dragged narrow drops back to the two-pane split.
+bool supportsThirdSplitPane(BuildContext context, double availableWidth) {
+  if (!isDesktopPlatform && !isUltraWide(context)) return false;
+  return availableWidth >= _minPaneWidth * 3;
 }

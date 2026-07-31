@@ -44,6 +44,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   _ActiveView _view = _ActiveView.split;
   _ActivePaneView _splitLeft = _ActivePaneView.table;
   _ActivePaneView _splitRight = _ActivePaneView.dispersion;
+  _ActivePaneView _splitThird = _ActivePaneView.optimizer;
   bool _showShotList = false;
   ShotListMetric _shotListMetric = ShotListMetric.carry;
 
@@ -66,6 +67,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     _splitRight = _paneFromName(
       prefs.splitRightPane,
       _ActivePaneView.dispersion,
+    );
+    _splitThird = _paneFromName(
+      prefs.splitThirdPane,
+      _ActivePaneView.optimizer,
     );
   }
 
@@ -134,6 +139,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         highlightedShot: selectedShot,
         leftPane: _splitLeft,
         rightPane: _splitRight,
+        thirdPane: _splitThird,
         selectedShotIndex: selectedInClub >= 0 ? selectedInClub : 0,
         onLeftChanged: (v) {
           setState(() => _splitLeft = v);
@@ -142,6 +148,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         onRightChanged: (v) {
           setState(() => _splitRight = v);
           ref.read(unitPrefsProvider.notifier).setSplitPanes(right: v.name);
+        },
+        onThirdChanged: (v) {
+          setState(() => _splitThird = v);
+          ref.read(unitPrefsProvider.notifier).setSplitPanes(third: v.name);
         },
         onShotSelected: (i) =>
             ref.read(selectedShotIndexProvider.notifier).state = i ?? 0,
@@ -230,7 +240,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               if (error != null) ErrorBanner(message: error),
               Expanded(
                 child: isUltraWide(context)
-                    // ── Ultra-wide: shot list always pinned + content + analysis panel
+                    // ── Ultra-wide: shot list always pinned, content fills the
+                    // rest. The optimizer is no longer a fixed rail here — it
+                    // is one of the views the split's third pane can hold, so
+                    // the width goes to whatever the golfer actually wants.
                     ? Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -255,10 +268,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                             ),
                           ),
                           Expanded(child: content),
-                          SizedBox(
-                            width: 380,
-                            child: const ShotOptimizerPanel(),
-                          ),
                         ],
                       )
                     : isTablet(context)
@@ -878,9 +887,13 @@ class _ActiveSplitView extends StatelessWidget {
   final ShotData? highlightedShot;
   final _ActivePaneView leftPane;
   final _ActivePaneView rightPane;
+
+  /// Only rendered where there is room for it — see [supportsThirdSplitPane].
+  final _ActivePaneView thirdPane;
   final int selectedShotIndex;
   final ValueChanged<_ActivePaneView> onLeftChanged;
   final ValueChanged<_ActivePaneView> onRightChanged;
+  final ValueChanged<_ActivePaneView> onThirdChanged;
   final ValueChanged<int?> onShotSelected;
 
   const _ActiveSplitView({
@@ -891,9 +904,11 @@ class _ActiveSplitView extends StatelessWidget {
     required this.highlightedShot,
     required this.leftPane,
     required this.rightPane,
+    required this.thirdPane,
     required this.selectedShotIndex,
     required this.onLeftChanged,
     required this.onRightChanged,
+    required this.onThirdChanged,
     required this.onShotSelected,
   });
 
@@ -956,17 +971,30 @@ class _ActiveSplitView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isTablet(context)) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
-          const VerticalDivider(
-            width: 1,
-            thickness: 1,
-            color: AppColors.border,
-          ),
-          Expanded(child: _pane(rightPane, onRightChanged, 'right')),
-        ],
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final third = supportsThirdSplitPane(context, constraints.maxWidth);
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
+              const VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: AppColors.border,
+              ),
+              Expanded(child: _pane(rightPane, onRightChanged, 'right')),
+              if (third) ...[
+                const VerticalDivider(
+                  width: 1,
+                  thickness: 1,
+                  color: AppColors.border,
+                ),
+                Expanded(child: _pane(thirdPane, onThirdChanged, 'third')),
+              ],
+            ],
+          );
+        },
       );
     }
     return Column(

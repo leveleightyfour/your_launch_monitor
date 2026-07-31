@@ -41,6 +41,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
   // Split pane configuration — persists across view switches
   _PaneView _splitLeft = _PaneView.table;
   _PaneView _splitRight = _PaneView.dispersion;
+  _PaneView _splitThird = _PaneView.flight;
 
   @override
   void initState() {
@@ -51,6 +52,9 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
     final prefs = ref.read(unitPrefsProvider);
     _splitLeft = _paneFromName(prefs.splitLeftPane, _PaneView.table);
     _splitRight = _paneFromName(prefs.splitRightPane, _PaneView.dispersion);
+    // The live screen's third pane defaults to the optimizer, which this
+    // screen has no member for — a saved session falls back to 3D flight.
+    _splitThird = _paneFromName(prefs.splitThirdPane, _PaneView.flight);
   }
 
   static _PaneView _paneFromName(String name, _PaneView fallback) => _PaneView
@@ -118,6 +122,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
         highlightedShot: highlighted,
         leftPane: _splitLeft,
         rightPane: _splitRight,
+        thirdPane: _splitThird,
         selectedShotIndex: selectedInClub >= 0 ? selectedInClub : 0,
         onLeftChanged: (v) {
           setState(() => _splitLeft = v);
@@ -126,6 +131,10 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
         onRightChanged: (v) {
           setState(() => _splitRight = v);
           ref.read(unitPrefsProvider.notifier).setSplitPanes(right: v.name);
+        },
+        onThirdChanged: (v) {
+          setState(() => _splitThird = v);
+          ref.read(unitPrefsProvider.notifier).setSplitPanes(third: v.name);
         },
         onShotSelected: (i) => setState(() {
           if (i != null && i < shots.length) {
@@ -427,9 +436,13 @@ class _SplitViewConfigurable extends StatelessWidget {
   final ShotData? highlightedShot;
   final _PaneView leftPane;
   final _PaneView rightPane;
+
+  /// Only rendered where there is room for it — see [supportsThirdSplitPane].
+  final _PaneView thirdPane;
   final int? selectedShotIndex;
   final ValueChanged<_PaneView> onLeftChanged;
   final ValueChanged<_PaneView> onRightChanged;
+  final ValueChanged<_PaneView> onThirdChanged;
   final ValueChanged<int?> onShotSelected;
 
   const _SplitViewConfigurable({
@@ -439,9 +452,11 @@ class _SplitViewConfigurable extends StatelessWidget {
     required this.highlightedShot,
     required this.leftPane,
     required this.rightPane,
+    required this.thirdPane,
     required this.selectedShotIndex,
     required this.onLeftChanged,
     required this.onRightChanged,
+    required this.onThirdChanged,
     required this.onShotSelected,
   });
 
@@ -503,17 +518,30 @@ class _SplitViewConfigurable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isTablet(context)) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
-          const VerticalDivider(
-            width: 1,
-            thickness: 1,
-            color: AppColors.border,
-          ),
-          Expanded(child: _pane(rightPane, onRightChanged, 'right')),
-        ],
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final third = supportsThirdSplitPane(context, constraints.maxWidth);
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
+              const VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: AppColors.border,
+              ),
+              Expanded(child: _pane(rightPane, onRightChanged, 'right')),
+              if (third) ...[
+                const VerticalDivider(
+                  width: 1,
+                  thickness: 1,
+                  color: AppColors.border,
+                ),
+                Expanded(child: _pane(thirdPane, onThirdChanged, 'third')),
+              ],
+            ],
+          );
+        },
       );
     }
     return Column(
