@@ -66,11 +66,16 @@ class UnitPrefs {
   /// coordinated scene (sky plus turf), not just a backdrop colour.
   final SkyScene skyScene;
 
-  /// The split view's two pane choices, stored by pane-enum name so the
+  /// The split view's pane choices, stored by pane-enum name so the
   /// screens' private enums stay private. Unknown names fall back to the
   /// screen's own default.
+  ///
+  /// The third pane only renders on layouts wide enough for it (desktop and
+  /// ultra-wide — see `supportsThirdSplitPane`), but its choice is remembered
+  /// everywhere so resizing back out restores it.
   final String splitLeftPane;
   final String splitRightPane;
+  final String splitThirdPane;
 
   const UnitPrefs({
     this.distance = DistanceUnit.meters,
@@ -81,6 +86,7 @@ class UnitPrefs {
     this.skyScene = SkyScene.day,
     this.splitLeftPane = 'table',
     this.splitRightPane = 'dispersion',
+    this.splitThirdPane = 'optimizer',
   });
 
   UnitPrefs copyWith({
@@ -92,6 +98,7 @@ class UnitPrefs {
     SkyScene? skyScene,
     String? splitLeftPane,
     String? splitRightPane,
+    String? splitThirdPane,
   }) => UnitPrefs(
     distance: distance ?? this.distance,
     speed: speed ?? this.speed,
@@ -101,6 +108,7 @@ class UnitPrefs {
     skyScene: skyScene ?? this.skyScene,
     splitLeftPane: splitLeftPane ?? this.splitLeftPane,
     splitRightPane: splitRightPane ?? this.splitRightPane,
+    splitThirdPane: splitThirdPane ?? this.splitThirdPane,
   );
 
   /// Display label for distance values.
@@ -129,6 +137,7 @@ class UnitPrefs {
     'skyScene': skyScene.name,
     'splitLeftPane': splitLeftPane,
     'splitRightPane': splitRightPane,
+    'splitThirdPane': splitThirdPane,
   };
 
   factory UnitPrefs.fromJson(Map<String, dynamic> j) => UnitPrefs(
@@ -152,6 +161,7 @@ class UnitPrefs {
     ),
     splitLeftPane: j['splitLeftPane'] as String? ?? 'table',
     splitRightPane: j['splitRightPane'] as String? ?? 'dispersion',
+    splitThirdPane: j['splitThirdPane'] as String? ?? 'optimizer',
   );
 }
 
@@ -200,8 +210,12 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
     _save();
   }
 
-  void setSplitPanes({String? left, String? right}) {
-    state = state.copyWith(splitLeftPane: left, splitRightPane: right);
+  void setSplitPanes({String? left, String? right, String? third}) {
+    state = state.copyWith(
+      splitLeftPane: left,
+      splitRightPane: right,
+      splitThirdPane: third,
+    );
     _save();
   }
 
