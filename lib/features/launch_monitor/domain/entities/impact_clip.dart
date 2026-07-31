@@ -65,6 +65,34 @@ class ImpactClip {
     return seconds <= 0 ? 0 : (frames.length - 1) / seconds;
   }
 
+  /// Time from the first frame to [index].
+  Duration offsetFromStart(int index) {
+    if (frames.isEmpty) return Duration.zero;
+    final safe = index.clamp(0, frames.length - 1);
+    return frames[safe].at.difference(frames.first.at);
+  }
+
+  /// The last frame at or before [offset] into the clip.
+  ///
+  /// Playback seeks by time rather than counting frames, because the camera's
+  /// spacing is never perfectly even — stepping a fixed number of frames per
+  /// tick would drift away from real time over a six-second clip.
+  int indexAtOffset(Duration offset) {
+    if (frames.isEmpty) return 0;
+    final start = frames.first.at;
+    var low = 0;
+    var high = frames.length - 1;
+    while (low < high) {
+      final mid = (low + high + 1) ~/ 2;
+      if (frames[mid].at.difference(start) <= offset) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return low;
+  }
+
   /// Signed offset of [index] from the trigger frame. Negative before the
   /// launch monitor reported the shot, positive after.
   Duration offsetFromTrigger(int index) {
