@@ -82,6 +82,12 @@ class UnitPrefs {
   /// for a pick rather than grabbing whatever camera enumerates first.
   final String cameraDeviceName;
 
+  /// Capture mode requested of the camera. Zero means "whatever the camera
+  /// opens on", which for most UVC devices is 640x480 regardless of what the
+  /// sensor can do.
+  final int cameraWidth;
+  final int cameraHeight;
+
   const UnitPrefs({
     this.distance = DistanceUnit.meters,
     this.speed = SpeedUnit.mph,
@@ -93,6 +99,8 @@ class UnitPrefs {
     this.splitRightPane = 'dispersion',
     this.splitThirdPane = 'optimizer',
     this.cameraDeviceName = '',
+    this.cameraWidth = 0,
+    this.cameraHeight = 0,
   });
 
   UnitPrefs copyWith({
@@ -106,6 +114,8 @@ class UnitPrefs {
     String? splitRightPane,
     String? splitThirdPane,
     String? cameraDeviceName,
+    int? cameraWidth,
+    int? cameraHeight,
   }) => UnitPrefs(
     distance: distance ?? this.distance,
     speed: speed ?? this.speed,
@@ -117,6 +127,8 @@ class UnitPrefs {
     splitRightPane: splitRightPane ?? this.splitRightPane,
     splitThirdPane: splitThirdPane ?? this.splitThirdPane,
     cameraDeviceName: cameraDeviceName ?? this.cameraDeviceName,
+    cameraWidth: cameraWidth ?? this.cameraWidth,
+    cameraHeight: cameraHeight ?? this.cameraHeight,
   );
 
   /// Display label for distance values.
@@ -147,6 +159,8 @@ class UnitPrefs {
     'splitRightPane': splitRightPane,
     'splitThirdPane': splitThirdPane,
     'cameraDeviceName': cameraDeviceName,
+    'cameraWidth': cameraWidth,
+    'cameraHeight': cameraHeight,
   };
 
   factory UnitPrefs.fromJson(Map<String, dynamic> j) => UnitPrefs(
@@ -172,6 +186,8 @@ class UnitPrefs {
     splitRightPane: j['splitRightPane'] as String? ?? 'dispersion',
     splitThirdPane: j['splitThirdPane'] as String? ?? 'optimizer',
     cameraDeviceName: j['cameraDeviceName'] as String? ?? '',
+    cameraWidth: j['cameraWidth'] as int? ?? 0,
+    cameraHeight: j['cameraHeight'] as int? ?? 0,
   );
 }
 
@@ -233,6 +249,12 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
   /// it, so the tab stops reopening a camera the golfer closed.
   void setCameraDeviceName(String? name) {
     state = state.copyWith(cameraDeviceName: name ?? '');
+    _save();
+  }
+
+  /// Requested capture mode. Pass zeroes to go back to the camera default.
+  void setCameraMode(int width, int height) {
+    state = state.copyWith(cameraWidth: width, cameraHeight: height);
     _save();
   }
 

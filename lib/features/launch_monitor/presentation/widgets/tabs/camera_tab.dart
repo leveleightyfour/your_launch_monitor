@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/camera_providers.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/impact_clip_provider.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/impact_clip.dart';
+import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 /// Desktop-only tab that streams an attached camera into the window.
@@ -246,12 +247,18 @@ class _CameraBar extends ConsumerWidget {
               ),
             ),
           ),
-          if (feed.status == CameraFeedStatus.streaming)
+          if (feed.status == CameraFeedStatus.streaming) ...[
+            _BarButton(
+              icon: Icons.aspect_ratio,
+              label: 'Capture resolution',
+              onTap: () => _showModePicker(context, ref),
+            ),
             _BarButton(
               icon: Icons.stop_circle_outlined,
               label: 'Stop camera',
               onTap: () => notifier.stop(),
             ),
+          ],
           _BarButton(
             icon: Icons.refresh,
             label: 'Rescan for cameras',
@@ -319,6 +326,73 @@ class _CameraBar extends ConsumerWidget {
       ),
     );
   }
+}
+
+void _showModePicker(BuildContext context, WidgetRef ref) {
+  final prefs = ref.read(unitPrefsProvider);
+  final current = CaptureMode(prefs.cameraWidth, prefs.cameraHeight);
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (sheetCtx) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Row(
+            children: [
+              Text(
+                'Capture Resolution',
+                style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: Text(
+            'A camera that cannot manage the size you pick gives its nearest '
+            'mode instead. Larger frames cost frame rate and memory per clip.',
+            style: AppTextStyles.sans(
+              size: 11,
+              color: AppColors.textDimmed,
+            ).copyWith(height: 1.35),
+          ),
+        ),
+        const Divider(height: 1, color: AppColors.border),
+        ...CaptureMode.candidates.map((mode) {
+          final isSel = mode == current;
+          return ListTile(
+            leading: Icon(
+              mode.isAuto ? Icons.auto_awesome : Icons.aspect_ratio,
+              size: 18,
+              color: isSel ? context.accent : AppColors.textMuted,
+            ),
+            title: Text(
+              mode.label,
+              style: AppTextStyles.sans(
+                size: 14,
+                weight: isSel ? FontWeight.w600 : FontWeight.w400,
+                color: isSel ? context.accent : Colors.white,
+              ),
+            ),
+            trailing: isSel
+                ? Icon(Icons.check, color: context.accent, size: 18)
+                : null,
+            tileColor: Colors.transparent,
+            onTap: () {
+              Navigator.of(sheetCtx).pop();
+              ref.read(cameraFeedProvider.notifier).setMode(mode);
+            },
+          );
+        }),
+        const SizedBox(height: 8),
+      ],
+    ),
+  );
 }
 
 class _BarButton extends StatelessWidget {
