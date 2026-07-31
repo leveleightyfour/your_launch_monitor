@@ -8,6 +8,7 @@ import 'package:omni_sniffer/features/launch_monitor/application/camera_provider
 import 'package:omni_sniffer/features/launch_monitor/application/impact_clip_provider.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/impact_clip.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
+import 'package:omni_sniffer/shared/services/clip_export_service.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 /// Desktop-only tab that streams an attached camera into the window.
@@ -768,6 +769,39 @@ class _ClipReviewState extends State<_ClipReview>
   static String _speedLabel(double speed) =>
       speed == 1.0 ? '1×' : '${speed.toString().replaceFirst('0.', '.')}×';
 
+  bool _exporting = false;
+
+  Future<void> _export() async {
+    if (_exporting) return;
+    _pause();
+    setState(() => _exporting = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final result = await ClipExportService.export(
+        clip: widget.clip,
+        baseName: 'impact',
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 8),
+          content: Text(
+            result.format == ClipExportFormat.video
+                ? 'Exported MJPG video · ${result.sizeLabel}\n${result.path}'
+                : 'MJPG unavailable (${result.fallbackReason}). '
+                      'Exported ${result.frameCount} frames · '
+                      '${result.sizeLabel}\n${result.path}',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('Export failed: $error')));
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final clip = widget.clip;
@@ -865,7 +899,30 @@ class _ClipReviewState extends State<_ClipReview>
                           : Colors.white,
                     ),
                   ),
-                  const Spacer(),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // A Wrap rather than a Row: docked in a split pane there is not
+              // room for six controls across, and these should stack onto a
+              // second line rather than overflow.
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Text('LOOP', style: AppTextStyles.statLabel()),
+                  ),
+                  for (final speed in _speeds)
+                    _PillButton(
+                      label: _speedLabel(speed),
+                      muted: _speed != speed,
+                      selected: _speed == speed,
+                      onTap: () => _toggleLoop(speed),
+                    ),
+                  if (_speed != null)
+                    _PillButton(label: 'Stop', muted: true, onTap: _pause),
                   _PillButton(
                     label: 'Jump to packet',
                     onTap: () {
@@ -873,28 +930,11 @@ class _ClipReviewState extends State<_ClipReview>
                       setState(() => _index = clip.triggerIndex);
                     },
                   ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Text('LOOP', style: AppTextStyles.statLabel()),
-                  const SizedBox(width: 10),
-                  for (final speed in _speeds) ...[
-                    _PillButton(
-                      label: _speedLabel(speed),
-                      muted: _speed != speed,
-                      selected: _speed == speed,
-                      onTap: () => _toggleLoop(speed),
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-                  if (_speed != null)
-                    _PillButton(
-                      label: 'Stop',
-                      muted: true,
-                      onTap: _pause,
-                    ),
+                  _PillButton(
+                    label: _exporting ? 'Exporting…' : 'Export',
+                    muted: _exporting,
+                    onTap: _exporting ? () {} : _export,
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
