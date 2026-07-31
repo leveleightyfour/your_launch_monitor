@@ -64,7 +64,15 @@ class ImpactClipRecorder extends Notifier<ImpactClipState> {
   /// ceiling rather than a hint — a full session's worth would not fit.
   static const maxClips = 3;
 
+  /// How often the buffered-frame count is allowed to reach the UI.
+  ///
+  /// It used to be published on every frame, which meant a provider update —
+  /// and so a rebuild of the whole Camera tab — thirty times a second, purely
+  /// to change one number. Twice a second reads as live and costs nothing.
+  static const _countPublishInterval = Duration(milliseconds: 500);
+
   final Queue<ClipFrame> _ring = Queue<ClipFrame>();
+  DateTime _lastCountPublish = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime? _triggerAt;
   int _pendingShotIndex = 0;
   bool _disposed = false;
@@ -212,9 +220,10 @@ class ImpactClipRecorder extends Notifier<ImpactClipState> {
   }
 
   void _publishBufferSize() {
-    // Cheap enough to publish every frame, and it is the only signal that
-    // the buffer is actually filling before the first shot lands.
     if (state.bufferedFrames == _ring.length) return;
+    final now = DateTime.now();
+    if (now.difference(_lastCountPublish) < _countPublishInterval) return;
+    _lastCountPublish = now;
     state = ImpactClipState(
       armed: state.armed,
       capturing: state.capturing,

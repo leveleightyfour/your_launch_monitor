@@ -200,6 +200,9 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
   /// camera — the stale open must not claim the preview.
   int _openGeneration = 0;
 
+  /// Set while the tab is showing a captured clip instead of the feed.
+  bool _previewPaused = false;
+
   @override
   CameraFeedState build() {
     ref.onDispose(() {
@@ -441,7 +444,11 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
         // recovered if this turn of the loop runs late, whereas a preview
         // frame arriving a few milliseconds behind is invisible.
         ref.read(impactClipProvider.notifier).offer(frame);
-        await _publish(frame);
+        // Converting and uploading a frame nobody is looking at is pure
+        // waste, and it was competing with clip playback for the same
+        // isolate. Buffering carries on regardless, so a shot hit while
+        // reviewing is still caught.
+        if (!_previewPaused) await _publish(frame);
       } finally {
         frame.dispose();
       }
@@ -478,6 +485,13 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
       completer.complete,
     );
     return completer.future;
+  }
+
+  /// Stops converting and uploading preview frames while something else is
+  /// on screen. The camera keeps running and the ring keeps filling.
+  void setPreviewPaused(bool paused) {
+    if (_disposed || paused == _previewPaused) return;
+    _previewPaused = paused;
   }
 
   /// Closes the camera and forgets the choice, so the tab doesn't silently
