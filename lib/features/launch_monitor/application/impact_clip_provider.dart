@@ -11,10 +11,10 @@
 library;
 
 import 'dart:collection';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:opencv_dart/opencv_dart.dart' as cv;
 
 import 'package:omni_sniffer/features/launch_monitor/application/providers.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/impact_clip.dart';
@@ -112,20 +112,14 @@ class ImpactClipRecorder extends Notifier<ImpactClipState> {
     );
   }
 
-  /// Offers one frame straight off the camera.
-  ///
-  /// Encoding happens here, on the pump's turn of the loop — roughly 5-10ms
-  /// for a 1080p JPEG against a 33ms frame budget at 30fps. If that ever
-  /// starts costing frames, encoding quality is the first dial and dropping
-  /// to every other frame for the pre-roll is the second.
-  void offer(cv.Mat bgr) {
+  /// Offers one frame, already JPEG-encoded by the capture worker on its own
+  /// isolate. [at] is the worker's capture timestamp — wall clock, which both
+  /// isolates share, so it lines up with the BLE trigger stamped here.
+  void offer(Uint8List jpeg, DateTime at) {
     if (_disposed || !state.armed) return;
 
-    final (ok, bytes) = cv.imencode('.jpg', bgr);
-    if (!ok) return;
-
-    final now = DateTime.now();
-    _ring.add(ClipFrame(jpeg: bytes, at: now));
+    final now = at;
+    _ring.add(ClipFrame(jpeg: jpeg, at: now));
 
     final trigger = _triggerAt;
     if (trigger == null) {
