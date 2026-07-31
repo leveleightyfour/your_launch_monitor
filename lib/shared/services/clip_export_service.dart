@@ -92,21 +92,25 @@ class ClipExportService {
   static Future<ClipExportResult> export({
     required ImpactClip clip,
     required String baseName,
+    double speed = 1.0,
   }) async {
     if (clip.isEmpty) {
       throw StateError('Nothing to export: the clip holds no frames.');
+    }
+    if (speed <= 0) {
+      throw ArgumentError.value(speed, 'speed', 'must be positive');
     }
 
     final root = Directory(
       '${(await getApplicationDocumentsDirectory()).path}/clips',
     );
     await root.create(recursive: true);
-    final stem = _stem(baseName, clip);
+    final stem = _stem(baseName, clip, speed);
 
     final reasons = <String>[];
     for (final attempt in _attempts) {
       final path = '${root.path}/$stem${attempt.extension}';
-      final reason = await _tryWriteVideo(clip, attempt, path);
+      final reason = await _tryWriteVideo(clip, attempt, path, speed);
       if (reason == null) {
         final bytes = await File(path).length();
         debugPrint('[export] ${attempt.label} → $path ($bytes bytes)');
@@ -139,6 +143,7 @@ class ClipExportService {
     ImpactClip clip,
     _VideoAttempt attempt,
     String path,
+    double speed,
   ) async {
     // Remove any earlier attempt: a stale file would otherwise pass the size
     // check below and report success for a writer that wrote nothing.
@@ -156,8 +161,11 @@ class ClipExportService {
 
       // The clip's measured rate, not the camera's nominal one — DirectShow
       // reports 0 fps at capture, and a wrong value in the header plays the
-      // clip back at the wrong speed.
-      final fps = clip.effectiveFps > 1 ? clip.effectiveFps : 30.0;
+      // clip back at the wrong speed. Slow motion is the same frames under a
+      // slower header rate: no frames are invented, the player just holds
+      // each one longer. Floored at 1fps, below which some players baulk.
+      final base = clip.effectiveFps > 1 ? clip.effectiveFps : 30.0;
+      final fps = (base * speed).clamp(1.0, double.infinity);
 
       writer = attempt.apiPreference == null
           ? cv.VideoWriter.fromFile(path, attempt.codec, fps, size)
@@ -227,7 +235,7 @@ class ClipExportService {
     return bytes;
   }
 
-  static String _stem(String baseName, ImpactClip clip) {
+  static String _stem(String baseName, ImpactClip clip, double speed) {
     final safe = baseName
         .trim()
         .toLowerCase()
@@ -238,7 +246,10 @@ class ClipExportService {
         '${at.year}-${_two(at.month)}-${_two(at.day)}_'
         '${_two(at.hour)}${_two(at.minute)}${_two(at.second)}';
     final prefix = safe.isEmpty ? 'clip' : safe;
-    return '${prefix}_shot-${clip.shotIndex + 1}_$stamp';
+    // Named into the file so a slowed export can't be mistaken for the
+    // real-time one sitting next to it.
+    final rate = speed == 1.0 ? '' : '_${speed}x';
+    return '${prefix}_shot-${clip.shotIndex + 1}_$stamp$rate';
   }
 
   static String _two(int value) => value.toString().padLeft(2, '0');

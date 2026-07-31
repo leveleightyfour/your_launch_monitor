@@ -165,29 +165,67 @@ class _CaptureBar extends StatelessWidget {
       '${clip.effectiveFps.toStringAsFixed(0)} fps';
 }
 
+/// Low chip for the loop speeds, in the hole builder's palette grammar:
+/// card surface, accent border when active, no label text beyond the value.
+class _SpeedChip extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _SpeedChip({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: active ? 'Stop looping' : 'Loop at $label',
+      child: Semantics(
+        button: true,
+        selected: active,
+        label: 'Loop at $label',
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            height: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active ? context.accentSubtle : AppColors.card,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: active ? context.accent : AppColors.border,
+                width: active ? 1.6 : 1,
+              ),
+            ),
+            child: Text(
+              label,
+              style: AppTextStyles.sans(
+                size: 12,
+                weight: FontWeight.w700,
+                color: active ? context.accent : AppColors.textMuted,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PillButton extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  /// Drawn in the accent by default. Muted marks the off state of a group
-  /// where one member is chosen at a time.
-  final bool muted;
-
-  /// Announced as a selected control when it belongs to such a group.
-  final bool? selected;
-
-  const _PillButton({
-    required this.label,
-    required this.onTap,
-    this.muted = false,
-    this.selected,
-  });
+  const _PillButton({required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      selected: selected,
       label: label,
       child: GestureDetector(
         onTap: onTap,
@@ -196,11 +234,9 @@ class _PillButton extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: 32),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: muted ? AppColors.card : context.accentSubtle,
+            color: context.accentSubtle,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: muted ? AppColors.border2 : context.accentBorder,
-            ),
+            border: Border.all(color: context.accentBorder),
           ),
           child: Center(
             child: Text(
@@ -208,7 +244,7 @@ class _PillButton extends StatelessWidget {
               style: AppTextStyles.sans(
                 size: 12,
                 weight: FontWeight.w700,
-                color: muted ? AppColors.textMuted : context.accent,
+                color: context.accent,
               ),
             ),
           ),
@@ -909,23 +945,82 @@ class _ClipReviewState extends State<_ClipReview>
 
   bool _exporting = false;
 
-  Future<void> _export() async {
+  /// Speed choices offered at export, mirroring the review loop. A slowed
+  /// file is the same frames under a slower header rate — nothing is
+  /// interpolated, players simply hold each frame longer.
+  static const _exportSpeeds = [
+    (1.0, 'Full speed', '1×'),
+    (0.5, 'Half speed', '0.5×'),
+    (0.25, 'Quarter speed', '0.25×'),
+  ];
+
+  void _pickExportSpeed() {
     if (_exporting) return;
     _pause();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Text(
+                  'Export Speed',
+                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          ..._exportSpeeds.map((option) {
+            final (speed, name, label) = option;
+            return ListTile(
+              leading: Icon(
+                speed == 1.0 ? Icons.play_arrow : Icons.slow_motion_video,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
+              title: Text(
+                '$name ($label)',
+                style: AppTextStyles.sans(size: 14, color: Colors.white),
+              ),
+              tileColor: Colors.transparent,
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                _export(speed, label);
+              },
+            );
+          }),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _export(double speed, String speedLabel) async {
+    if (_exporting) return;
     setState(() => _exporting = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
       final result = await ClipExportService.export(
         clip: widget.clip,
         baseName: 'impact',
+        speed: speed,
       );
       if (!mounted) return;
+      final at = speed == 1.0 ? '' : ' at $speedLabel';
       messenger.showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 8),
           content: Text(
             result.format == ClipExportFormat.video
-                ? 'Exported ${result.videoLabel} · ${result.sizeLabel}'
+                ? 'Exported ${result.videoLabel}$at · ${result.sizeLabel}'
                       '\n${result.path}'
                 : 'No video writer available '
                       '(${result.fallbackReason}). Exported '
@@ -974,120 +1069,124 @@ class _ClipReviewState extends State<_ClipReview>
             ),
           ),
         ),
+        // Two rows in the hole builder's compact grammar — small square icon
+        // buttons and low chips — so the video keeps the height. The old
+        // stack of labelled pills plus an explainer paragraph took nearly
+        // half the pane; the explainer now lives on the readout's tooltip.
         Container(
           decoration: const BoxDecoration(
             border: Border(top: BorderSide(color: AppColors.border)),
             color: AppColors.surface,
           ),
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+          padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  _BarButton(
-                    icon: Icons.chevron_left,
-                    label: 'Previous frame',
-                    onTap: index > 0 ? () => _step(-1) : null,
-                  ),
-                  Expanded(
-                    child: SliderTheme(
-                      data: SliderThemeData(
-                        trackHeight: 3,
-                        activeTrackColor: context.accent,
-                        inactiveTrackColor: AppColors.border2,
-                        thumbColor: context.accent,
-                        overlayShape: SliderComponentShape.noOverlay,
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 7,
+              SizedBox(
+                height: 36,
+                child: Row(
+                  children: [
+                    _BarButton(
+                      icon: Icons.chevron_left,
+                      label: 'Previous frame',
+                      onTap: index > 0 ? () => _step(-1) : null,
+                    ),
+                    Expanded(
+                      child: SliderTheme(
+                        data: SliderThemeData(
+                          trackHeight: 3,
+                          activeTrackColor: context.accent,
+                          inactiveTrackColor: AppColors.border2,
+                          thumbColor: context.accent,
+                          overlayShape: SliderComponentShape.noOverlay,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 7,
+                          ),
+                        ),
+                        child: Slider(
+                          value: index.toDouble(),
+                          min: 0,
+                          max: (clip.frameCount - 1).toDouble(),
+                          divisions: clip.frameCount > 1
+                              ? clip.frameCount - 1
+                              : null,
+                          label: 'Frame ${index + 1}',
+                          onChanged: (v) {
+                            _pause();
+                            _setIndex(v.round());
+                          },
                         ),
                       ),
-                      child: Slider(
-                        value: index.toDouble(),
-                        min: 0,
-                        max: (clip.frameCount - 1).toDouble(),
-                        divisions: clip.frameCount > 1
-                            ? clip.frameCount - 1
-                            : null,
-                        label: 'Frame ${index + 1}',
-                        onChanged: (v) {
-                          _pause();
-                          _setIndex(v.round());
-                        },
+                    ),
+                    _BarButton(
+                      icon: Icons.chevron_right,
+                      label: 'Next frame',
+                      onTap: index < clip.frameCount - 1
+                          ? () => _step(1)
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: Tooltip(
+                      message:
+                          'Time from when the launch monitor reported the '
+                          'shot. Impact is slightly earlier — by however '
+                          'long the reading took to reach the app.',
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              '${index + 1}/${clip.frameCount}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.statLabel(),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _signedSeconds(clip.offsetFromTrigger(index)),
+                            style: AppTextStyles.statValue(
+                              size: 13,
+                              color: atTrigger
+                                  ? AppColors.severityWarning
+                                  : Colors.white,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  _BarButton(
-                    icon: Icons.chevron_right,
-                    label: 'Next frame',
-                    onTap: index < clip.frameCount - 1
-                        ? () => _step(1)
-                        : null,
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  Text(
-                    'FRAME ${index + 1} / ${clip.frameCount}',
-                    style: AppTextStyles.statLabel(),
-                  ),
-                  const SizedBox(width: 14),
-                  Text(
-                    _signedSeconds(clip.offsetFromTrigger(index)),
-                    style: AppTextStyles.statValue(
-                      size: 14,
-                      color: atTrigger
-                          ? AppColors.severityWarning
-                          : Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              // A Wrap rather than a Row: docked in a split pane there is not
-              // room for six controls across, and these should stack onto a
-              // second line rather than overflow.
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Text('LOOP', style: AppTextStyles.statLabel()),
-                  ),
-                  for (final speed in _speeds)
-                    _PillButton(
+                  const SizedBox(width: 8),
+                  // Tapping the running speed stops it, so a separate Stop
+                  // control earns no space here.
+                  for (final speed in _speeds) ...[
+                    _SpeedChip(
                       label: _speedLabel(speed),
-                      muted: _speed != speed,
-                      selected: _speed == speed,
+                      active: _speed == speed,
                       onTap: () => _toggleLoop(speed),
                     ),
-                  if (_speed != null)
-                    _PillButton(label: 'Stop', muted: true, onTap: _pause),
-                  _PillButton(
-                    label: 'Jump to packet',
+                    const SizedBox(width: 5),
+                  ],
+                  _BarButton(
+                    icon: Icons.my_location,
+                    label: 'Jump to the shot packet',
                     onTap: () {
                       _pause();
                       _setIndex(clip.triggerIndex);
                     },
                   ),
-                  _PillButton(
-                    label: _exporting ? 'Exporting…' : 'Export',
-                    muted: _exporting,
-                    onTap: _exporting ? () {} : _export,
+                  _BarButton(
+                    icon: Icons.save_alt,
+                    label: _exporting ? 'Exporting…' : 'Export clip',
+                    onTap: _exporting ? null : _pickExportSpeed,
                   ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Zero is when the launch monitor reported the shot, not the '
-                'strike — impact is a little earlier, by however long the '
-                'reading took to reach us.',
-                style: AppTextStyles.sans(
-                  size: 11,
-                  color: AppColors.textDimmed,
-                ).copyWith(height: 1.35),
               ),
             ],
           ),
