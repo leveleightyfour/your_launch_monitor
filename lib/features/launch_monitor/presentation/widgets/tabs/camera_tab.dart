@@ -254,11 +254,7 @@ class _CameraBody extends ConsumerWidget {
               ? (feed.error ?? 'The device did not respond.')
               : '${feed.selected!.name}\n'
                     '${feed.error ?? 'The device did not respond.'}',
-          // Naming the two things that actually cause this on Windows beats
-          // a bare error code the golfer can do nothing with.
-          hint:
-              'Usually either another app is holding the camera, or desktop '
-              'apps are blocked under Windows camera privacy settings.',
+          hint: _failureHint(feed.error),
           action: (
             'Try again',
             () => ref.read(cameraFeedProvider.notifier).refreshDevices(),
@@ -288,6 +284,27 @@ class _CameraBody extends ConsumerWidget {
         );
     }
   }
+}
+
+/// What to try next, chosen from the platform's own error text — a bare
+/// "camera_error" is useless to the golfer, and the wrong advice is worse
+/// than none. Matching on the message is loose by nature; it only picks
+/// which sentence to show, never what the code does.
+String _failureHint(String? error) {
+  final text = (error ?? '').toLowerCase();
+  if (text.contains('preview') || text.contains('media type')) {
+    // The open ladder ends at an unlimited height cap, so size is no longer
+    // a possible cause here — what's left is the plugin's 15 fps floor.
+    return 'Windows found no usable video mode on this camera. The Windows '
+        'camera plugin skips any mode below 15 fps, which rules out a camera '
+        'that only offers slow high-resolution modes.';
+  }
+  if (text.contains('denied') || text.contains('access')) {
+    return 'Windows is refusing access. Turn on Camera access, and "Let '
+        'desktop apps access your camera", under camera privacy settings.';
+  }
+  return 'Usually either another app is holding the camera, or desktop apps '
+      'are blocked under Windows camera privacy settings.';
 }
 
 class _Busy extends StatelessWidget {
