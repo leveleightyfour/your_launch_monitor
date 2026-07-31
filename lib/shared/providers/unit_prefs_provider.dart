@@ -102,6 +102,7 @@ class UnitPrefs {
   final String splitLeftPane;
   final String splitRightPane;
   final String splitThirdPane;
+  final String splitFourthPane;
 
   /// The Camera tab's two slots — device and capture mode per angle, so a
   /// down-the-line and a face-on camera each reopen on their own settings.
@@ -117,6 +118,7 @@ class UnitPrefs {
     this.splitLeftPane = 'table',
     this.splitRightPane = 'dispersion',
     this.splitThirdPane = 'optimizer',
+    this.splitFourthPane = 'camera',
     this.cameraSlots = const [CameraSlotPref(), CameraSlotPref()],
   });
 
@@ -130,6 +132,7 @@ class UnitPrefs {
     String? splitLeftPane,
     String? splitRightPane,
     String? splitThirdPane,
+    String? splitFourthPane,
     List<CameraSlotPref>? cameraSlots,
   }) => UnitPrefs(
     distance: distance ?? this.distance,
@@ -141,6 +144,7 @@ class UnitPrefs {
     splitLeftPane: splitLeftPane ?? this.splitLeftPane,
     splitRightPane: splitRightPane ?? this.splitRightPane,
     splitThirdPane: splitThirdPane ?? this.splitThirdPane,
+    splitFourthPane: splitFourthPane ?? this.splitFourthPane,
     cameraSlots: cameraSlots ?? this.cameraSlots,
   );
 
@@ -171,6 +175,7 @@ class UnitPrefs {
     'splitLeftPane': splitLeftPane,
     'splitRightPane': splitRightPane,
     'splitThirdPane': splitThirdPane,
+    'splitFourthPane': splitFourthPane,
     'cameraSlots': cameraSlots.map((slot) => slot.toJson()).toList(),
   };
 
@@ -196,6 +201,7 @@ class UnitPrefs {
     splitLeftPane: j['splitLeftPane'] as String? ?? 'table',
     splitRightPane: j['splitRightPane'] as String? ?? 'dispersion',
     splitThirdPane: j['splitThirdPane'] as String? ?? 'optimizer',
+    splitFourthPane: j['splitFourthPane'] as String? ?? 'camera',
     cameraSlots: _slotsFromJson(j),
   );
 
@@ -274,11 +280,17 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
     _save();
   }
 
-  void setSplitPanes({String? left, String? right, String? third}) {
+  void setSplitPanes({
+    String? left,
+    String? right,
+    String? third,
+    String? fourth,
+  }) {
     state = state.copyWith(
       splitLeftPane: left,
       splitRightPane: right,
       splitThirdPane: third,
+      splitFourthPane: fourth,
     );
     _save();
   }

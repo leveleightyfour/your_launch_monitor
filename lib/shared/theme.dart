@@ -325,3 +325,32 @@ bool supportsThirdSplitPane(BuildContext context, double availableWidth) {
   if (isUltraWide(context)) return true;
   return isDesktopPlatform && availableWidth >= _minPaneWidth * 3;
 }
+
+/// A pane shorter than this can't show a chart plus its header usefully, so
+/// two stacked rows need at least twice as much.
+const _minPaneHeight = 280.0;
+
+/// How a four-pane split should be arranged in the given space, or null when
+/// four panes don't fit and the split should stay at three.
+///
+/// The 2×2 grid is preferred whenever there is height for two readable rows:
+/// four panes in one strip leaves each one tall and narrow, which suits
+/// neither a 16:9 camera feed nor a dispersion plot, and that stays true even
+/// on an ultra-wide. The single strip is kept only for windows too short to
+/// stack — an ultra-wide dragged shallow — and wide enough to give every
+/// column its floor.
+enum QuadSplitLayout { grid2x2, row }
+
+QuadSplitLayout? quadSplitLayout(
+  BuildContext context,
+  double availableWidth,
+  double availableHeight,
+) {
+  if (!isDesktopPlatform && !isUltraWide(context)) return null;
+  if (availableWidth >= _minPaneWidth * 2 &&
+      availableHeight >= _minPaneHeight * 2) {
+    return QuadSplitLayout.grid2x2;
+  }
+  if (availableWidth >= _minPaneWidth * 4) return QuadSplitLayout.row;
+  return null;
+}
