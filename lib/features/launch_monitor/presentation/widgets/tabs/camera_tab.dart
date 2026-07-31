@@ -909,23 +909,82 @@ class _ClipReviewState extends State<_ClipReview>
 
   bool _exporting = false;
 
-  Future<void> _export() async {
+  /// Speed choices offered at export, mirroring the review loop. A slowed
+  /// file is the same frames under a slower header rate — nothing is
+  /// interpolated, players simply hold each frame longer.
+  static const _exportSpeeds = [
+    (1.0, 'Full speed', '1×'),
+    (0.5, 'Half speed', '0.5×'),
+    (0.25, 'Quarter speed', '0.25×'),
+  ];
+
+  void _pickExportSpeed() {
     if (_exporting) return;
     _pause();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Text(
+                  'Export Speed',
+                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          ..._exportSpeeds.map((option) {
+            final (speed, name, label) = option;
+            return ListTile(
+              leading: Icon(
+                speed == 1.0 ? Icons.play_arrow : Icons.slow_motion_video,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
+              title: Text(
+                '$name ($label)',
+                style: AppTextStyles.sans(size: 14, color: Colors.white),
+              ),
+              tileColor: Colors.transparent,
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                _export(speed, label);
+              },
+            );
+          }),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _export(double speed, String speedLabel) async {
+    if (_exporting) return;
     setState(() => _exporting = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
       final result = await ClipExportService.export(
         clip: widget.clip,
         baseName: 'impact',
+        speed: speed,
       );
       if (!mounted) return;
+      final at = speed == 1.0 ? '' : ' at $speedLabel';
       messenger.showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 8),
           content: Text(
             result.format == ClipExportFormat.video
-                ? 'Exported ${result.videoLabel} · ${result.sizeLabel}'
+                ? 'Exported ${result.videoLabel}$at · ${result.sizeLabel}'
                       '\n${result.path}'
                 : 'No video writer available '
                       '(${result.fallbackReason}). Exported '
@@ -1075,7 +1134,7 @@ class _ClipReviewState extends State<_ClipReview>
                   _PillButton(
                     label: _exporting ? 'Exporting…' : 'Export',
                     muted: _exporting,
-                    onTap: _exporting ? () {} : _export,
+                    onTap: _exporting ? () {} : _pickExportSpeed,
                   ),
                 ],
               ),
