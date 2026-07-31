@@ -30,6 +30,7 @@ import 'package:opencv_dart/opencv_dart.dart' as cv;
 
 import 'package:omni_sniffer/features/launch_monitor/application/impact_clip_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
+import 'package:omni_sniffer/shared/services/event_loop_watchdog.dart';
 
 // ── OpenCV constants ─────────────────────────────────────────────────────────
 //
@@ -203,11 +204,14 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
   /// Set while the tab is showing a captured clip instead of the feed.
   bool _previewPaused = false;
 
+  final _watchdog = EventLoopWatchdog('camera');
+
   @override
   CameraFeedState build() {
     ref.onDispose(() {
       _disposed = true;
       _openGeneration++;
+      _watchdog.stop();
       final capture = _capture;
       _capture = null;
       capture?.release();
@@ -395,6 +399,7 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
     );
 
     _capture = capture;
+    _watchdog.start();
     ref.read(impactClipProvider.notifier).setArmed(true);
     state = CameraFeedState(
       status: CameraFeedStatus.streaming,
@@ -417,10 +422,26 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
     int generation,
   ) async {
     var consecutiveFailures = 0;
+
+    // Where each turn of the loop actually goes. Reported once a second so
+    // the rate is visible as well as the cost: a loop running at hundreds of
+    // iterations a second is spinning, whereas thirty slow ones is honest
+    // work that simply costs too much.
+    final report = Stopwatch()..start();
+    var loops = 0;
+    var readUs = 0;
+    var encodeUs = 0;
+    var publishUs = 0;
+    final step = Stopwatch();
+
     while (!_disposed &&
         generation == _openGeneration &&
         identical(_capture, capture)) {
+      step
+        ..reset()
+        ..start();
       final (ok, frame) = await capture.readAsync();
+      readUs += step.elapsedMicroseconds;
       if (_disposed || generation != _openGeneration) {
         frame.dispose();
         return;
@@ -443,14 +464,43 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
         // Buffer before painting: the clip is the thing that can't be
         // recovered if this turn of the loop runs late, whereas a preview
         // frame arriving a few milliseconds behind is invisible.
+        step
+          ..reset()
+          ..start();
         ref.read(impactClipProvider.notifier).offer(frame);
+        encodeUs += step.elapsedMicroseconds;
+
         // Converting and uploading a frame nobody is looking at is pure
         // waste, and it was competing with clip playback for the same
         // isolate. Buffering carries on regardless, so a shot hit while
         // reviewing is still caught.
-        if (!_previewPaused) await _publish(frame);
+        if (!_previewPaused) {
+          step
+            ..reset()
+            ..start();
+          await _publish(frame);
+          publishUs += step.elapsedMicroseconds;
+        }
       } finally {
         frame.dispose();
+      }
+
+      loops++;
+      if (report.elapsed >= const Duration(seconds: 1)) {
+        final seconds = report.elapsedMicroseconds / 1000000;
+        double perLoop(int total) => total / loops / 1000;
+        debugPrint(
+          '[pump] ${(loops / seconds).toStringAsFixed(1)}/s · '
+          'read ${perLoop(readUs).toStringAsFixed(1)}ms · '
+          'encode ${perLoop(encodeUs).toStringAsFixed(1)}ms · '
+          'publish ${perLoop(publishUs).toStringAsFixed(1)}ms · '
+          'preview ${_previewPaused ? 'paused' : 'live'}',
+        );
+        report.reset();
+        loops = 0;
+        readUs = 0;
+        encodeUs = 0;
+        publishUs = 0;
       }
 
       // Hand the event loop a turn, every iteration, unconditionally.
@@ -535,6 +585,7 @@ class CameraFeedNotifier extends Notifier<CameraFeedState> {
   void _releaseCapture() {
     final capture = _capture;
     _capture = null;
+    _watchdog.stop();
     // No feed, nothing to buffer — and the half-filled ring is stale the
     // moment the camera stops.
     if (!_disposed) ref.read(impactClipProvider.notifier).setArmed(false);

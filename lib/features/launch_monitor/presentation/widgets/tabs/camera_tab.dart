@@ -10,6 +10,7 @@ import 'package:omni_sniffer/features/launch_monitor/application/impact_clip_pro
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/impact_clip.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/services/clip_export_service.dart';
+import 'package:omni_sniffer/shared/services/event_loop_watchdog.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 /// Desktop-only tab that streams an attached camera into the window.
@@ -732,6 +733,8 @@ class _ClipReviewState extends State<_ClipReview>
 
   late final _ticker = createTicker(_onTick);
 
+  final _watchdog = EventLoopWatchdog('review');
+
   /// Where in the clip playback resumed from. The ticker's own elapsed time
   /// restarts at zero each time it starts, so the offset it is measured
   /// against has to be remembered separately — otherwise changing speed
@@ -741,11 +744,26 @@ class _ClipReviewState extends State<_ClipReview>
   @override
   void initState() {
     super.initState();
+    final clip = widget.clip;
+    debugPrint(
+      '[review] opening shot ${clip.shotIndex + 1}: ${clip.frameCount} frames, '
+      '${(clip.byteSize / (1024 * 1024)).toStringAsFixed(1)}MB, '
+      'starting at ${clip.triggerIndex}',
+    );
+    final first = Stopwatch()..start();
     _requestFrame(_index);
+    // Reported separately from the rolling figures: if the freeze happens on
+    // the way in rather than during playback, this is the line that shows it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      debugPrint(
+        '[review] first frame on screen after ${first.elapsedMilliseconds}ms',
+      );
+    });
   }
 
   @override
   void dispose() {
+    _watchdog.stop();
     _ticker.dispose();
     _shown?.dispose();
     super.dispose();
@@ -769,7 +787,15 @@ class _ClipReviewState extends State<_ClipReview>
     _requestFrame(clamped);
   }
 
+  /// Decodes done, and frames skipped because a newer one was requested
+  /// first. A high skip count means decoding cannot keep up with playback.
+  int _decodes = 0;
+  int _skipped = 0;
+  int _decodeUs = 0;
+  final _decodeReport = Stopwatch();
+
   void _requestFrame(int index) {
+    if (_pending != null && _pending != index) _skipped++;
     _pending = index;
     if (_decoding) return;
     _decoding = true;
@@ -777,15 +803,31 @@ class _ClipReviewState extends State<_ClipReview>
   }
 
   Future<void> _drainDecodes() async {
+    if (!_decodeReport.isRunning) _decodeReport.start();
     while (mounted && _pending != null) {
       final target = _pending!;
       _pending = null;
       final ui.Image image;
+      final timer = Stopwatch()..start();
       try {
         image = await _decodeJpeg(widget.clip.frames[target].jpeg);
       } catch (error) {
-        debugPrint('[clip] frame $target would not decode: $error');
+        debugPrint('[review] frame $target would not decode: $error');
         continue;
+      }
+      _decodes++;
+      _decodeUs += timer.elapsedMicroseconds;
+      if (_decodeReport.elapsed >= const Duration(seconds: 1)) {
+        final seconds = _decodeReport.elapsedMicroseconds / 1000000;
+        debugPrint(
+          '[review] ${(_decodes / seconds).toStringAsFixed(1)} decodes/s · '
+          '${(_decodeUs / _decodes / 1000).toStringAsFixed(1)}ms each · '
+          '$_skipped skipped · speed ${_speed ?? 'paused'}',
+        );
+        _decodeReport.reset();
+        _decodes = 0;
+        _skipped = 0;
+        _decodeUs = 0;
       }
       if (!mounted) {
         image.dispose();
@@ -826,11 +868,13 @@ class _ClipReviewState extends State<_ClipReview>
       _clipAnchor = widget.clip.offsetFromStart(_index);
     });
     _ticker.start();
+    _watchdog.start();
     _requestFrame(_index);
   }
 
   void _pause() {
     _ticker.stop();
+    _watchdog.stop();
     if (_speed != null) setState(() => _speed = null);
   }
 
