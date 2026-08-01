@@ -227,8 +227,10 @@ class CaptureMode {
     auto,
     CaptureMode(640, 480),
     CaptureMode(640, 480, 60),
+    CaptureMode(640, 480, 120),
     CaptureMode(1280, 720),
     CaptureMode(1280, 720, 60),
+    CaptureMode(1280, 720, 120),
     CaptureMode(1920, 1080),
     CaptureMode(1920, 1080, 60),
   ];
