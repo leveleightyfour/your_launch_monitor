@@ -593,7 +593,7 @@ class _CameraBar extends ConsumerWidget {
           ),
           const Divider(height: 1, color: AppColors.border),
           ...feed.devices.map((device) {
-            final isSel = device.name == feed.selected?.name;
+            final isSel = device.index == feed.selected?.index;
             return ListTile(
               leading: Icon(
                 Icons.videocam,
@@ -801,6 +801,16 @@ String _failureHint(String? error) {
     return 'The OpenCV build is missing its videoio module. Check the '
         'hooks/user_defines block in pubspec.yaml lists videoio, then '
         'rebuild.';
+  }
+  if (text.contains('other slot')) {
+    return 'Each angle needs its own device. If both cameras are the same '
+        'model, check the resolution shown beside each entry to tell them '
+        'apart.';
+  }
+  if (text.contains('timeout')) {
+    return 'The camera scan stalled inside a driver. Unplug and replug the '
+        'camera — and if both cameras share one USB hub, move one to a '
+        'different port.';
   }
   if (text.contains('holding') || text.contains('refused to open')) {
     return 'Close anything else using the camera — Teams, Zoom, OBS or the '
