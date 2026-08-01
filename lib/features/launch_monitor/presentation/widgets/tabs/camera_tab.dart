@@ -562,7 +562,7 @@ class _CameraBar extends ConsumerWidget {
             // capture, so a rescan means stopping first.
             onTap: feed.isBusy || feed.status == CameraFeedStatus.streaming
                 ? null
-                : () => notifier.refreshDevices(),
+                : () => notifier.refreshDevices(force: true),
           ),
           if (trailing != null) trailing!,
         ],
@@ -748,7 +748,9 @@ class _CameraBody extends ConsumerWidget {
           detail: 'Plug in a USB camera, then rescan.',
           action: (
             'Rescan',
-            () => ref.read(cameraFeedProvider(slot).notifier).refreshDevices(),
+            () => ref
+                .read(cameraFeedProvider(slot).notifier)
+                .refreshDevices(force: true),
           ),
         );
       case CameraFeedStatus.failed:
@@ -762,7 +764,9 @@ class _CameraBody extends ConsumerWidget {
           hint: _failureHint(feed.error),
           action: (
             'Try again',
-            () => ref.read(cameraFeedProvider(slot).notifier).refreshDevices(),
+            () => ref
+                .read(cameraFeedProvider(slot).notifier)
+                .refreshDevices(force: true),
           ),
         );
       case CameraFeedStatus.idle:

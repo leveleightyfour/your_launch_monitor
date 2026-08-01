@@ -72,6 +72,15 @@ final Map<int, CameraDevice> _liveByIndex = {};
 /// every worker open queues here.
 Future<void> _cameraOps = Future<void>.value();
 
+/// Fresh probe results shared across slots. Both panes scan at startup, and
+/// without this each scan opens every camera — four opens before a single
+/// real one, on drivers that can wedge on any open that goes wrong. A scan
+/// from the last few seconds answers the second requester for free; a manual
+/// rescan bypasses it.
+List<CameraDevice>? _cachedProbe;
+DateTime _cachedProbeAt = DateTime.fromMillisecondsSinceEpoch(0);
+const _probeCacheLife = Duration(seconds: 10);
+
 Future<T> _serialized<T>(Future<T> Function() action) {
   final result = _cameraOps.then((_) => action());
   // The queue must survive a failed action; errors surface to the caller
@@ -384,7 +393,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
   /// Finds attached cameras. OpenCV has no enumeration call, so this asks the
   /// OS for names and then confirms each index by opening it — the only way
   /// to know an index actually yields a camera.
-  Future<void> refreshDevices({bool autoOpen = true}) async {
+  Future<void> refreshDevices({bool autoOpen = true, bool force = false}) async {
     if (_disposed) return;
     if (_link != null) return; // Already streaming; nothing to re-probe.
 
@@ -405,7 +414,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
 
     final List<CameraDevice> found;
     try {
-      found = await _probe(names);
+      found = await _probe(names, force: force);
     } catch (error, stack) {
       // Logged as well as surfaced: a failure on the very first probe means
       // no per-index line ever prints, which reads as total silence.
@@ -450,7 +459,22 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
   /// wedge for half a minute — when another camera is streaming or a driver
   /// is unhappy, and with two slots this scan legitimately runs while the
   /// other slot is live. On the UI thread that was the two-camera freeze.
-  Future<List<CameraDevice>> _probe(List<String> names) async {
+  Future<List<CameraDevice>> _probe(
+    List<String> names, {
+    bool force = false,
+  }) async {
+    final now = DateTime.now();
+    final cached = _cachedProbe;
+    if (!force &&
+        cached != null &&
+        now.difference(_cachedProbeAt) < _probeCacheLife) {
+      debugPrint(
+        '[camera] probe: reusing the scan from '
+        '${now.difference(_cachedProbeAt).inMilliseconds}ms ago',
+      );
+      return List.of(cached);
+    }
+
     final limit = names.length + _probeOvershoot;
     final live = Map<int, CameraDevice>.of(_liveByIndex);
     final backend = _backend;
@@ -506,6 +530,13 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
       );
     }
 
+    // A clean scan is worth sharing with the other slot; one that wedged is
+    // not — the next requester should look again.
+    if (wedgedIndex == null) {
+      _cachedProbe = List.of(found);
+      _cachedProbeAt = now;
+    }
+
     // A wedge with nothing found at all is worth failing loudly; a wedge
     // after real finds is not — the working camera must stay usable.
     if (found.isEmpty && wedgedIndex != null) {
@@ -540,6 +571,10 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
     // The other slot already streams this device. Spawning a worker would
     // only fail after a slow open inside the driver — fail fast instead.
     if (_liveByIndex.containsKey(device.index) && _liveIndex != device.index) {
+      debugPrint(
+        '[camera] slot $slot refused index ${device.index}: held by the '
+        'other slot',
+      );
       state = CameraFeedState(
         status: CameraFeedStatus.failed,
         devices: state.devices,
@@ -575,6 +610,10 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
     // By this point the previous open has fully settled, so the registry
     // tells the truth.
     if (_liveByIndex.containsKey(device.index) && _liveIndex != device.index) {
+      debugPrint(
+        '[camera] slot $slot refused index ${device.index} at open time: '
+        'held by the other slot',
+      );
       state = CameraFeedState(
         status: CameraFeedStatus.failed,
         devices: state.devices,
@@ -585,6 +624,9 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
       return;
     }
 
+    debugPrint(
+      '[camera] slot $slot opening "${device.name}" index ${device.index}',
+    );
     final requested = _preferredMode();
     final link = _WorkerLink(generation, ReceivePort());
     link.fromWorker.listen(
