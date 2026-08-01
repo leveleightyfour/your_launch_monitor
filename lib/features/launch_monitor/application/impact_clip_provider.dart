@@ -69,11 +69,18 @@ class ImpactClipState {
   /// readout.
   final int bufferedFrames;
 
+  /// Measured delivery rate per armed slot, frames per second over the last
+  /// publish window. This is the health readout for a multi-camera rig: a
+  /// camera that opened fine but is being starved of USB bandwidth shows up
+  /// here as a low number long before its clip comes out short.
+  final Map<int, double> anglesFps;
+
   const ImpactClipState({
     this.armedSlots = const {},
     this.capturing = false,
     this.clips = const [],
     this.bufferedFrames = 0,
+    this.anglesFps = const {},
   });
 
   bool get armed => armedSlots.isNotEmpty;
@@ -107,6 +114,10 @@ class ImpactClipRecorder extends Notifier<ImpactClipState> {
   static const _countPublishInterval = Duration(milliseconds: 500);
 
   final Map<int, Queue<ClipFrame>> _rings = {};
+
+  /// Frames offered per slot since the last publish; the numerator of the
+  /// per-angle fps readout.
+  final Map<int, int> _offersSincePublish = {};
   DateTime _lastCountPublish = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime? _triggerAt;
   int _pendingShotIndex = 0;
@@ -146,6 +157,7 @@ class ImpactClipRecorder extends Notifier<ImpactClipState> {
     if (armed) {
       slots.add(slot);
       _rings[slot] = Queue<ClipFrame>();
+      _offersSincePublish[slot] = 0;
     } else {
       slots.remove(slot);
       // A camera leaving mid-capture seals with what it has — the other
@@ -155,13 +167,16 @@ class ImpactClipRecorder extends Notifier<ImpactClipState> {
         _sealSlot(slot, trigger);
       }
       _rings.remove(slot);
+      _offersSincePublish.remove(slot);
     }
 
+    final fps = {...state.anglesFps}..remove(slot);
     state = ImpactClipState(
       armedSlots: Set.unmodifiable(slots),
       capturing: state.capturing,
       clips: state.clips,
       bufferedFrames: _totalBuffered(),
+      anglesFps: Map.unmodifiable(fps),
     );
     _maybeFinish();
   }
@@ -176,6 +191,7 @@ class ImpactClipRecorder extends Notifier<ImpactClipState> {
     if (ring == null) return;
 
     ring.add(ClipFrame(jpeg: jpeg, at: at));
+    _offersSincePublish[slot] = (_offersSincePublish[slot] ?? 0) + 1;
 
     final trigger = _triggerAt;
     if (trigger == null || !_capturingSlots.contains(slot)) {
@@ -218,6 +234,7 @@ class ImpactClipRecorder extends Notifier<ImpactClipState> {
       capturing: true,
       clips: state.clips,
       bufferedFrames: _totalBuffered(),
+      anglesFps: state.anglesFps,
     );
     final preRollCounts = [
       for (final slot in _capturingSlots.toList()..sort())
@@ -268,6 +285,7 @@ class ImpactClipRecorder extends Notifier<ImpactClipState> {
         capturing: false,
         clips: state.clips,
         bufferedFrames: _totalBuffered(),
+        anglesFps: state.anglesFps,
       );
       return;
     }
@@ -287,6 +305,7 @@ class ImpactClipRecorder extends Notifier<ImpactClipState> {
         clips.length > maxClips ? clips.sublist(0, maxClips) : clips,
       ),
       bufferedFrames: _totalBuffered(),
+      anglesFps: state.anglesFps,
     );
 
     debugPrint(
@@ -303,6 +322,7 @@ class ImpactClipRecorder extends Notifier<ImpactClipState> {
       armedSlots: state.armedSlots,
       capturing: state.capturing,
       bufferedFrames: state.bufferedFrames,
+      anglesFps: state.anglesFps,
     );
   }
 
@@ -310,16 +330,29 @@ class ImpactClipRecorder extends Notifier<ImpactClipState> {
       _rings.values.fold<int>(0, (sum, ring) => sum + ring.length);
 
   void _publishBufferSize() {
-    final total = _totalBuffered();
-    if (state.bufferedFrames == total) return;
     final now = DateTime.now();
-    if (now.difference(_lastCountPublish) < _countPublishInterval) return;
+    final elapsed = now.difference(_lastCountPublish);
+    if (elapsed < _countPublishInterval) return;
     _lastCountPublish = now;
+
+    // The fps a slot managed over the window just ended. Slots that offered
+    // nothing get an explicit zero — a stalled camera reading "0" is the
+    // whole point of the readout; a missing entry would just look idle.
+    final windowMs = elapsed.inMilliseconds;
+    final fps = <int, double>{
+      for (final slot in state.armedSlots)
+        slot: windowMs > 0
+            ? (_offersSincePublish[slot] ?? 0) * 1000 / windowMs
+            : 0,
+    };
+    _offersSincePublish.updateAll((_, __) => 0);
+
     state = ImpactClipState(
       armedSlots: state.armedSlots,
       capturing: state.capturing,
       clips: state.clips,
-      bufferedFrames: total,
+      bufferedFrames: _totalBuffered(),
+      anglesFps: Map.unmodifiable(fps),
     );
   }
 }

@@ -29,9 +29,6 @@ class _CameraTabState extends ConsumerState<CameraTab> {
   /// The shot being scrubbed, or null while the live feeds are showing.
   ShotClips? _reviewing;
 
-  /// Which angle of [_reviewing] is on screen.
-  int _reviewSlot = 0;
-
   /// The second pane is open — either the golfer added it this session or
   /// slot 1 has a remembered camera from a previous one.
   bool _secondPaneOpen = false;
@@ -76,28 +73,27 @@ class _CameraTabState extends ConsumerState<CameraTab> {
   Widget build(BuildContext context) {
     final capture = ref.watch(impactClipProvider);
     final reviewing = _reviewing;
-    final reviewClip = reviewing == null
-        ? null
-        : reviewing.angles[_reviewSlot] ?? reviewing.primary;
 
     return Column(
       children: [
         Expanded(
-          child: reviewClip == null ? _buildFeeds(context) : _buildReview(reviewing!, reviewClip),
+          child: reviewing == null
+              ? _buildFeeds(context)
+              : _ShotReview(
+                  // Keyed per shot so a newer capture opens at its own
+                  // trigger rather than inheriting a stale playhead.
+                  key: ValueKey('review-${reviewing.shotIndex}'),
+                  shot: reviewing,
+                ),
         ),
         if (capture.armed || capture.clips.isNotEmpty)
           _CaptureBar(
             capture: capture,
-            reviewing: reviewing,
-            reviewSlot: _reviewSlot,
-            onAngle: (slot) => setState(() => _reviewSlot = slot),
+            isReviewing: reviewing != null,
             onReview: (shot) {
               debugPrint('[review] tapped, shot ${shot.shotIndex + 1}');
               _setAllPreviewsPaused(true);
-              setState(() {
-                _reviewing = shot;
-                _reviewSlot = shot.slots.first;
-              });
+              setState(() => _reviewing = shot);
             },
             onBackToLive: () {
               _setAllPreviewsPaused(false);
@@ -105,19 +101,6 @@ class _CameraTabState extends ConsumerState<CameraTab> {
             },
           ),
       ],
-    );
-  }
-
-  Widget _buildReview(ShotClips shot, ImpactClip clip) {
-    final slotName = _reviewSlot < kCameraSlotShortLabels.length
-        ? kCameraSlotShortLabels[_reviewSlot].toLowerCase()
-        : 'cam$_reviewSlot';
-    return _ClipReview(
-      // Keyed per shot and angle so switching angles resets the playhead to
-      // that clip's own trigger frame.
-      key: ValueKey('review-${shot.shotIndex}-$_reviewSlot'),
-      clip: clip,
-      exportBaseName: shot.angleCount > 1 ? 'impact-$slotName' : 'impact',
     );
   }
 
@@ -266,19 +249,19 @@ class _FeedPane extends StatelessWidget {
 
 // ── Capture status / review switch ───────────────────────────────────────────
 
+String _slotShort(int slot) => slot < kCameraSlotShortLabels.length
+    ? kCameraSlotShortLabels[slot]
+    : 'C$slot';
+
 class _CaptureBar extends StatelessWidget {
   final ImpactClipState capture;
-  final ShotClips? reviewing;
-  final int reviewSlot;
-  final ValueChanged<int> onAngle;
+  final bool isReviewing;
   final ValueChanged<ShotClips> onReview;
   final VoidCallback onBackToLive;
 
   const _CaptureBar({
     required this.capture,
-    required this.reviewing,
-    required this.reviewSlot,
-    required this.onAngle,
+    required this.isReviewing,
     required this.onReview,
     required this.onBackToLive,
   });
@@ -286,11 +269,7 @@ class _CaptureBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final latest = capture.latest;
-    final (Color dot, String label) = capture.capturing
-        ? (AppColors.severityWarning, 'Capturing the post-roll…')
-        : capture.armed
-        ? (context.accent, '${capture.bufferedFrames} frames buffered')
-        : (AppColors.textDimmed, 'Not buffering');
+    final armedSlots = capture.armedSlots.toList()..sort();
 
     return Container(
       decoration: const BoxDecoration(
@@ -300,36 +279,17 @@ class _CaptureBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: AppTextStyles.sans(size: 12, color: AppColors.textMuted),
-            ),
-          ),
+          // With one camera the status is one dot and one number. With two,
+          // each angle gets its own dot and measured rate — the readout that
+          // says "the face-on camera is being starved" before its clip ever
+          // comes out short.
+          if (capture.armed && !capture.capturing && armedSlots.length > 1)
+            Flexible(child: _buildAngleHealth(context, armedSlots))
+          else
+            Flexible(child: _buildSimpleStatus(context)),
           const Spacer(),
-          // Reviewing a multi-angle shot: chips switch the angle in place.
-          if (reviewing != null && reviewing!.angleCount > 1) ...[
-            for (final slot in reviewing!.slots) ...[
-              _SpeedChip(
-                label: slot < kCameraSlotShortLabels.length
-                    ? kCameraSlotShortLabels[slot]
-                    : 'C$slot',
-                active: slot == reviewSlot,
-                onTap: () => onAngle(slot),
-              ),
-              const SizedBox(width: 5),
-            ],
-            const SizedBox(width: 5),
-          ],
           if (latest != null) ...[
-            if (reviewing == null)
+            if (!isReviewing)
               Flexible(
                 child: Text(
                   _clipSummary(latest),
@@ -343,15 +303,91 @@ class _CaptureBar extends StatelessWidget {
               ),
             const SizedBox(width: 10),
             _PillButton(
-              label: reviewing == null ? 'Review' : 'Back to live',
-              onTap: reviewing == null
-                  ? () => onReview(latest)
-                  : onBackToLive,
+              label: isReviewing ? 'Back to live' : 'Review',
+              onTap: isReviewing ? onBackToLive : () => onReview(latest),
             ),
           ],
         ],
       ),
     );
+  }
+
+  Widget _buildSimpleStatus(BuildContext context) {
+    final (Color dot, String label) = capture.capturing
+        ? (AppColors.severityWarning, 'Capturing the post-roll…')
+        : capture.armed
+        ? (context.accent, '${capture.bufferedFrames} frames buffered')
+        : (AppColors.textDimmed, 'Not buffering');
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _dot(dot),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.sans(size: 12, color: AppColors.textMuted),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAngleHealth(BuildContext context, List<int> armedSlots) {
+    final children = <Widget>[];
+    for (final slot in armedSlots) {
+      final fps = capture.anglesFps[slot];
+      if (children.isNotEmpty) children.add(_separator());
+      children.add(_dot(_healthColor(context, fps)));
+      children.add(const SizedBox(width: 5));
+      children.add(
+        Text(
+          '${_slotShort(slot)} ${fps == null ? '—' : fps.toStringAsFixed(0)}',
+          style: AppTextStyles.sans(size: 12, color: AppColors.textMuted),
+        ),
+      );
+    }
+    children.add(_separator());
+    children.add(
+      Flexible(
+        child: Text(
+          '${capture.bufferedFrames} buffered',
+          overflow: TextOverflow.ellipsis,
+          style: AppTextStyles.sans(size: 12, color: AppColors.textDimmed),
+        ),
+      ),
+    );
+    return Tooltip(
+      message:
+          'Measured frames per second reaching the clip buffer, per angle. '
+          'A low number usually means the camera is sharing USB bandwidth.',
+      child: Row(mainAxisSize: MainAxisSize.min, children: children),
+    );
+  }
+
+  static Widget _dot(Color color) => Container(
+    width: 8,
+    height: 8,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
+
+  static Widget _separator() => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 7),
+    child: Text(
+      '·',
+      style: AppTextStyles.sans(size: 12, color: AppColors.textDimmed),
+    ),
+  );
+
+  /// Absolute thresholds rather than a fraction of the requested rate,
+  /// because DirectShow's granted rate is unreliable. 24fps covers a swing
+  /// well enough to review; below 10 the clip will read as a slideshow.
+  static Color _healthColor(BuildContext context, double? fps) {
+    if (fps == null) return AppColors.textDimmed;
+    if (fps >= 24) return context.accent;
+    if (fps >= 10) return AppColors.severityWarning;
+    return AppColors.severityCritical;
   }
 
   static String _clipSummary(ShotClips shot) {
@@ -369,20 +405,26 @@ class _SpeedChip extends StatelessWidget {
   final bool active;
   final VoidCallback onTap;
 
+  /// Overrides the loop-speed wording, so the same chip can serve the
+  /// review's angle switcher without claiming to be a speed.
+  final String? tooltip;
+
   const _SpeedChip({
     required this.label,
     required this.active,
     required this.onTap,
+    this.tooltip,
   });
 
   @override
   Widget build(BuildContext context) {
+    final message = tooltip ?? (active ? 'Stop looping' : 'Loop at $label');
     return Tooltip(
-      message: active ? 'Stop looping' : 'Loop at $label',
+      message: message,
       child: Semantics(
         button: true,
         selected: active,
-        label: 'Loop at $label',
+        label: tooltip ?? 'Loop at $label',
         child: GestureDetector(
           onTap: onTap,
           behavior: HitTestBehavior.opaque,
@@ -967,163 +1009,68 @@ class _Message extends StatelessWidget {
   }
 }
 
-// ── Clip review ──────────────────────────────────────────────────────────────
+// ── Shot review ──────────────────────────────────────────────────────────────
 
-/// Frame-by-frame scrub through one captured clip.
+/// Owned decode pipeline for one angle of the review.
 ///
-/// A scrubber rather than a player because that is what the clip is for: the
-/// interesting part of a golf swing is a handful of frames wide, and stepping
-/// through them beats watching six seconds play at speed.
-class _ClipReview extends StatefulWidget {
+/// Decoded here rather than with `Image.memory`, which was what wedged the
+/// UI: every rebuild built a fresh MemoryImage, so playback pushed thirty
+/// distinct decodes a second through Flutter's image cache and evicted the
+/// cache continuously. Owning the decode means one in flight at a time, no
+/// cache, and explicit disposal. If decoding falls behind, the pending index
+/// is overwritten rather than queued — skip to the newest frame instead of
+/// working through a backlog and drifting further behind.
+class _AngleDecoder {
   final ImpactClip clip;
 
-  /// File-name stem for exports — carries the angle when the shot has more
-  /// than one, so two angles of the same swing never overwrite each other.
-  final String exportBaseName;
+  /// Fired after a decoded frame lands in [shown]; the review rebuilds.
+  final VoidCallback onFrame;
 
-  const _ClipReview({super.key, required this.clip, this.exportBaseName = 'impact'});
+  ui.Image? shown;
+  int shownIndex = -1;
 
-  @override
-  State<_ClipReview> createState() => _ClipReviewState();
-}
-
-class _ClipReviewState extends State<_ClipReview>
-    with SingleTickerProviderStateMixin {
-  /// Loop rates offered. Quarter speed is the slowest worth having at 30fps —
-  /// below that the gaps between frames read as a slideshow rather than
-  /// slow motion, and stepping is the better tool.
-  static const _speeds = [1.0, 0.5, 0.25];
-
-  late int _index = widget.clip.triggerIndex;
-
-  /// Playback rate, or null when paused.
-  double? _speed;
-
-  /// The decoded frame on screen.
-  ///
-  /// Decoded here rather than with `Image.memory`, which was what wedged the
-  /// UI: every rebuild built a fresh MemoryImage, so playback pushed thirty
-  /// distinct decodes a second through Flutter's image cache and evicted the
-  /// cache continuously. Owning the decode means one at a time, no cache, and
-  /// explicit disposal.
-  ui.Image? _shown;
-
-  /// Index waiting to be decoded. Overwritten rather than queued: if decoding
-  /// falls behind the loop, the right behaviour is to skip to the newest
-  /// frame, not to work through a backlog and drift further behind.
   int? _pending;
   bool _decoding = false;
+  bool _disposed = false;
 
-  late final _ticker = createTicker(_onTick);
+  _AngleDecoder({required this.clip, required this.onFrame});
 
-  final _watchdog = EventLoopWatchdog('review');
-
-  /// Where in the clip playback resumed from. The ticker's own elapsed time
-  /// restarts at zero each time it starts, so the offset it is measured
-  /// against has to be remembered separately — otherwise changing speed
-  /// would fling the playhead back to wherever the last run began.
-  Duration _clipAnchor = Duration.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    final clip = widget.clip;
-    debugPrint(
-      '[review] opening shot ${clip.shotIndex + 1}: ${clip.frameCount} frames, '
-      '${(clip.byteSize / (1024 * 1024)).toStringAsFixed(1)}MB, '
-      'starting at ${clip.triggerIndex}',
-    );
-    final first = Stopwatch()..start();
-    _requestFrame(_index);
-    // Reported separately from the rolling figures: if the freeze happens on
-    // the way in rather than during playback, this is the line that shows it.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      debugPrint(
-        '[review] first frame on screen after ${first.elapsedMilliseconds}ms',
-      );
-    });
-  }
-
-  @override
-  void dispose() {
-    _watchdog.stop();
-    _ticker.dispose();
-    _shown?.dispose();
-    super.dispose();
-  }
-
-  @override
-  void didUpdateWidget(_ClipReview oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // A newer shot replaced the clip under us; start at its own marker
-    // rather than holding a frame number that meant something else.
-    if (!identical(oldWidget.clip, widget.clip)) {
-      _pause();
-      _setIndex(widget.clip.triggerIndex);
-    }
-  }
-
-  /// Moves the playhead and asks for that frame.
-  void _setIndex(int next) {
-    final clamped = next.clamp(0, widget.clip.frameCount - 1);
-    if (clamped != _index) setState(() => _index = clamped);
-    _requestFrame(clamped);
-  }
-
-  /// Decodes done, and frames skipped because a newer one was requested
-  /// first. A high skip count means decoding cannot keep up with playback.
-  int _decodes = 0;
-  int _skipped = 0;
-  int _decodeUs = 0;
-  final _decodeReport = Stopwatch();
-
-  void _requestFrame(int index) {
-    if (_pending != null && _pending != index) _skipped++;
+  void request(int index) {
+    if (_disposed) return;
+    if (index == shownIndex && shown != null) return;
     _pending = index;
     if (_decoding) return;
     _decoding = true;
-    unawaited(_drainDecodes());
+    unawaited(_drain());
   }
 
-  Future<void> _drainDecodes() async {
-    if (!_decodeReport.isRunning) _decodeReport.start();
-    while (mounted && _pending != null) {
+  Future<void> _drain() async {
+    while (!_disposed && _pending != null) {
       final target = _pending!;
       _pending = null;
       final ui.Image image;
-      final timer = Stopwatch()..start();
       try {
-        image = await _decodeJpeg(widget.clip.frames[target].jpeg);
+        image = await _decodeJpeg(clip.frames[target].jpeg);
       } catch (error) {
         debugPrint('[review] frame $target would not decode: $error');
         continue;
       }
-      _decodes++;
-      _decodeUs += timer.elapsedMicroseconds;
-      if (_decodeReport.elapsed >= const Duration(seconds: 1)) {
-        final seconds = _decodeReport.elapsedMicroseconds / 1000000;
-        debugPrint(
-          '[review] ${(_decodes / seconds).toStringAsFixed(1)} decodes/s · '
-          '${(_decodeUs / _decodes / 1000).toStringAsFixed(1)}ms each · '
-          '$_skipped skipped · speed ${_speed ?? 'paused'}',
-        );
-        _decodeReport.reset();
-        _decodes = 0;
-        _skipped = 0;
-        _decodeUs = 0;
-      }
-      if (!mounted) {
+      if (_disposed) {
         image.dispose();
         break;
       }
-      final previous = _shown;
-      setState(() => _shown = image);
+      final previous = shown;
+      shown = image;
+      shownIndex = target;
+      onFrame();
       // Freed after the frame that replaced it has actually been painted.
       // Counting generations was not enough: two decodes can land inside one
-      // rendered frame, and then the image being disposed is still the one on
-      // screen.
+      // rendered frame, and then the image being disposed is still the one
+      // on screen.
       if (previous != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => previous.dispose(),
+        );
       }
     }
     _decoding = false;
@@ -1139,54 +1086,54 @@ class _ClipReviewState extends State<_ClipReview>
     }
   }
 
-  /// Starts looping at [speed], or stops if that speed is already running.
-  void _toggleLoop(double speed) {
-    if (_speed == speed) {
-      _pause();
-      return;
-    }
-    _ticker.stop();
-    setState(() {
-      _speed = speed;
-      _clipAnchor = widget.clip.offsetFromStart(_index);
-    });
-    _ticker.start();
-    _watchdog.start();
-    _requestFrame(_index);
+  void dispose() {
+    _disposed = true;
+    shown?.dispose();
+    shown = null;
+    shownIndex = -1;
   }
+}
 
-  void _pause() {
-    _ticker.stop();
-    _watchdog.stop();
-    if (_speed != null) setState(() => _speed = null);
-  }
+/// One way of exporting a multi-angle shot, picked off the layout sheet.
+class _ExportChoice {
+  final String title;
+  final IconData icon;
+  final CompositeLayout? layout;
+  final int? slot;
+  final bool separate;
 
-  void _onTick(Duration elapsed) {
-    final speed = _speed;
-    final span = widget.clip.duration;
-    if (speed == null || span <= Duration.zero) return;
+  const _ExportChoice({
+    required this.title,
+    required this.icon,
+    this.layout,
+    this.slot,
+    this.separate = false,
+  });
+}
 
-    // Seek by time, not by frame count: the camera's spacing is never quite
-    // even, so advancing a fixed number of frames per tick would drift off
-    // real time across six seconds.
-    final played = (elapsed.inMicroseconds * speed).round();
-    final offset = Duration(
-      microseconds:
-          (_clipAnchor.inMicroseconds + played) % span.inMicroseconds,
-    );
-    final next = widget.clip.indexAtOffset(offset);
-    if (next != _index) _setIndex(next);
-  }
+/// Frame-by-frame scrub through every angle of one shot, on a shared clock.
+///
+/// The playhead is a trigger-relative time, not a frame number: zero is the
+/// BLE packet on every angle, so the down-the-line and face-on views show
+/// the same instant of the swing however differently their cameras were
+/// pacing. An angle without a frame at the current instant holds its nearest
+/// one — cameras start and stop buffering at slightly different moments, and
+/// a black flash at the edges would read as a glitch.
+class _ShotReview extends StatefulWidget {
+  final ShotClips shot;
 
-  void _step(int delta) {
-    _pause();
-    _setIndex(_index + delta);
-  }
+  const _ShotReview({super.key, required this.shot});
 
-  static String _speedLabel(double speed) =>
-      speed == 1.0 ? '1×' : '${speed.toString().replaceFirst('0.', '.')}×';
+  @override
+  State<_ShotReview> createState() => _ShotReviewState();
+}
 
-  bool _exporting = false;
+class _ShotReviewState extends State<_ShotReview>
+    with SingleTickerProviderStateMixin {
+  /// Loop rates offered. Quarter speed is the slowest worth having at 30fps —
+  /// below that the gaps between frames read as a slideshow rather than
+  /// slow motion, and stepping is the better tool.
+  static const _speeds = [1.0, 0.5, 0.25];
 
   /// Speed choices offered at export, mirroring the review loop. A slowed
   /// file is the same frames under a slower header rate — nothing is
@@ -1197,9 +1144,313 @@ class _ClipReviewState extends State<_ClipReview>
     (0.25, 'Quarter speed', '0.25×'),
   ];
 
-  void _pickExportSpeed() {
+  /// Angles that actually captured frames, lowest slot first.
+  late List<int> _slots;
+
+  final Map<int, _AngleDecoder> _decoders = {};
+
+  /// The one angle on screen, or null for every angle at once.
+  int? _solo;
+
+  /// The shared playhead, as a signed offset from the trigger packet.
+  Duration _pos = Duration.zero;
+
+  /// Playback rate, or null when paused.
+  double? _speed;
+
+  /// Where playback resumed from. The ticker's elapsed time restarts at zero
+  /// each start, so the position it advances has to be anchored separately —
+  /// otherwise changing speed would fling the playhead back.
+  Duration _anchor = Duration.zero;
+
+  late final _ticker = createTicker(_onTick);
+  final _watchdog = EventLoopWatchdog('review');
+
+  bool _exporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _adoptShot();
+    final shot = widget.shot;
+    debugPrint(
+      '[review] opening shot ${shot.shotIndex + 1}: ${shot.angleCount} '
+      'angle(s), ${(shot.byteSize / (1024 * 1024)).toStringAsFixed(1)}MB',
+    );
+  }
+
+  void _adoptShot() {
+    for (final decoder in _decoders.values) {
+      decoder.dispose();
+    }
+    _decoders.clear();
+    _slots = [
+      for (final slot in widget.shot.slots)
+        if (!widget.shot.angles[slot]!.isEmpty) slot,
+    ];
+    for (final slot in _slots) {
+      _decoders[slot] = _AngleDecoder(
+        clip: widget.shot.angles[slot]!,
+        onFrame: () {
+          if (mounted) setState(() {});
+        },
+      );
+    }
+    if (_solo != null && !_slots.contains(_solo)) _solo = null;
+    _pos = _clampToWindow(Duration.zero);
+    _syncFrames();
+  }
+
+  @override
+  void didUpdateWidget(_ShotReview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A newer shot replaced this one under the same element; start over at
+    // its own trigger rather than holding a playhead that meant something
+    // else.
+    if (!identical(oldWidget.shot, widget.shot)) {
+      _pause();
+      setState(_adoptShot);
+    }
+  }
+
+  @override
+  void dispose() {
+    _watchdog.stop();
+    _ticker.dispose();
+    for (final decoder in _decoders.values) {
+      decoder.dispose();
+    }
+    super.dispose();
+  }
+
+  // ── Shared clock ───────────────────────────────────────────────────────────
+
+  List<int> get _displayedSlots {
+    final solo = _solo;
+    return solo != null && _slots.contains(solo) ? [solo] : _slots;
+  }
+
+  Duration _startRel(ImpactClip clip) =>
+      clip.frames.first.at.difference(widget.shot.capturedAt);
+
+  /// The union of the displayed angles' windows, trigger-relative. Union
+  /// rather than intersection so the scrubber can reach every captured
+  /// frame; angles missing a moment simply hold their nearest frame.
+  (Duration, Duration) _window() {
+    Duration? start;
+    Duration? end;
+    for (final slot in _displayedSlots) {
+      final clip = widget.shot.angles[slot]!;
+      final s = _startRel(clip);
+      final e = clip.frames.last.at.difference(widget.shot.capturedAt);
+      if (start == null || s < start) start = s;
+      if (end == null || e > end) end = e;
+    }
+    return (start ?? Duration.zero, end ?? Duration.zero);
+  }
+
+  Duration _clampToWindow(Duration value) {
+    final (start, end) = _window();
+    if (value < start) return start;
+    if (value > end) return end;
+    return value;
+  }
+
+  int _indexFor(ImpactClip clip) => clip.indexAtOffset(_pos - _startRel(clip));
+
+  void _syncFrames() {
+    for (final slot in _displayedSlots) {
+      final clip = widget.shot.angles[slot]!;
+      _decoders[slot]!.request(_indexFor(clip));
+    }
+  }
+
+  void _seek(Duration pos) {
+    final clamped = _clampToWindow(pos);
+    if (clamped != _pos) setState(() => _pos = clamped);
+    _syncFrames();
+  }
+
+  /// Steps to the nearest frame boundary in [direction] across every
+  /// displayed angle — in two-up view, one press lands on whichever camera
+  /// has the next frame, so no captured instant is skipped over.
+  void _step(int direction) {
+    _pause();
+    Duration? best;
+    for (final slot in _displayedSlots) {
+      final clip = widget.shot.angles[slot]!;
+      final rel = _startRel(clip);
+      final index = _indexFor(clip);
+      final here = rel + clip.offsetFromStart(index);
+      Duration? candidate;
+      if (direction > 0) {
+        if (index + 1 < clip.frameCount) {
+          candidate = rel + clip.offsetFromStart(index + 1);
+        }
+      } else {
+        if (here < _pos) {
+          candidate = here;
+        } else if (index > 0) {
+          candidate = rel + clip.offsetFromStart(index - 1);
+        }
+      }
+      if (candidate == null) continue;
+      if (direction > 0) {
+        if (candidate > _pos && (best == null || candidate < best)) {
+          best = candidate;
+        }
+      } else {
+        if (candidate < _pos && (best == null || candidate > best)) {
+          best = candidate;
+        }
+      }
+    }
+    if (best != null) _seek(best);
+  }
+
+  // ── Playback ───────────────────────────────────────────────────────────────
+
+  /// Starts looping at [speed], or stops if that speed is already running.
+  void _toggleLoop(double speed) {
+    if (_speed == speed) {
+      _pause();
+      return;
+    }
+    _ticker.stop();
+    setState(() {
+      _speed = speed;
+      _anchor = _pos;
+    });
+    _ticker.start();
+    _watchdog.start();
+  }
+
+  void _pause() {
+    _ticker.stop();
+    _watchdog.stop();
+    if (_speed != null) setState(() => _speed = null);
+  }
+
+  void _onTick(Duration elapsed) {
+    final speed = _speed;
+    final (start, end) = _window();
+    final span = end - start;
+    if (speed == null || span <= Duration.zero) return;
+
+    // Seek by time, not by frame count: the cameras' spacing is never quite
+    // even — and in two-up view they don't even share a rate — so time is
+    // the only clock both angles agree on.
+    final played = (elapsed.inMicroseconds * speed).round();
+    final offsetUs =
+        ((_anchor - start).inMicroseconds + played) % span.inMicroseconds;
+    final next = start + Duration(microseconds: offsetUs);
+    if (next != _pos) {
+      setState(() => _pos = next);
+      _syncFrames();
+    }
+  }
+
+  void _setSolo(int? slot) {
+    if (_solo == slot) return;
+    setState(() {
+      _solo = slot;
+      _pos = _clampToWindow(_pos);
+      // Looping continues, re-anchored so the switch doesn't jump the
+      // playhead into a window the new selection may not cover.
+      _anchor = _pos;
+    });
+    if (_speed != null) {
+      _ticker.stop();
+      _ticker.start();
+    }
+    _syncFrames();
+  }
+
+  static String _speedLabel(double speed) =>
+      speed == 1.0 ? '1×' : '${speed.toString().replaceFirst('0.', '.')}×';
+
+  // ── Export ─────────────────────────────────────────────────────────────────
+
+  void _pickExport() {
     if (_exporting) return;
     _pause();
+    if (_slots.length < 2) {
+      _pickSpeed(
+        _ExportChoice(
+          title: 'Export',
+          icon: Icons.save_alt,
+          slot: _slots.first,
+        ),
+      );
+      return;
+    }
+
+    final choices = [
+      const _ExportChoice(
+        title: 'Side by side',
+        icon: Icons.view_column,
+        layout: CompositeLayout.sideBySide,
+      ),
+      const _ExportChoice(
+        title: 'Stacked',
+        icon: Icons.view_agenda,
+        layout: CompositeLayout.stacked,
+      ),
+      const _ExportChoice(
+        title: 'Separate files',
+        icon: Icons.filter_none,
+        separate: true,
+      ),
+      for (final slot in _slots)
+        _ExportChoice(
+          title: '${_slotShort(slot)} only',
+          icon: Icons.videocam,
+          slot: slot,
+        ),
+    ];
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Text(
+                  'Export Layout',
+                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          ...choices.map(
+            (choice) => ListTile(
+              leading: Icon(choice.icon, size: 18, color: AppColors.textMuted),
+              title: Text(
+                choice.title,
+                style: AppTextStyles.sans(size: 14, color: Colors.white),
+              ),
+              tileColor: Colors.transparent,
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                _pickSpeed(choice);
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  void _pickSpeed(_ExportChoice choice) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -1236,7 +1487,7 @@ class _ClipReviewState extends State<_ClipReview>
               tileColor: Colors.transparent,
               onTap: () {
                 Navigator.of(sheetCtx).pop();
-                _export(speed, label);
+                unawaited(_runExport(choice, speed, label));
               },
             );
           }),
@@ -1246,32 +1497,56 @@ class _ClipReviewState extends State<_ClipReview>
     );
   }
 
-  Future<void> _export(double speed, String speedLabel) async {
+  String _soloBaseName(int slot) => _slots.length > 1
+      ? 'impact-${_slotShort(slot).toLowerCase()}'
+      : 'impact';
+
+  Future<void> _runExport(
+    _ExportChoice choice,
+    double speed,
+    String speedLabel,
+  ) async {
     if (_exporting) return;
     setState(() => _exporting = true);
     final messenger = ScaffoldMessenger.of(context);
+    final at = speed == 1.0 ? '' : ' at $speedLabel';
     try {
-      final result = await ClipExportService.export(
-        clip: widget.clip,
-        baseName: widget.exportBaseName,
-        speed: speed,
-      );
-      if (!mounted) return;
-      final at = speed == 1.0 ? '' : ' at $speedLabel';
-      messenger.showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 8),
-          content: Text(
-            result.format == ClipExportFormat.video
-                ? 'Exported ${result.videoLabel}$at · ${result.sizeLabel}'
-                      '\n${result.path}'
-                : 'No video writer available '
-                      '(${result.fallbackReason}). Exported '
-                      '${result.frameCount} frames · '
-                      '${result.sizeLabel}\n${result.path}',
+      if (choice.layout != null) {
+        final result = await ClipExportService.exportComposite(
+          shot: widget.shot,
+          layout: choice.layout!,
+          baseName: 'impact',
+          speed: speed,
+        );
+        _showResult(messenger, result, at);
+      } else if (choice.separate) {
+        final paths = <String>[];
+        for (final slot in _slots) {
+          final result = await ClipExportService.export(
+            clip: widget.shot.angles[slot]!,
+            baseName: _soloBaseName(slot),
+            speed: speed,
+          );
+          paths.add(result.path);
+        }
+        if (!mounted) return;
+        messenger.showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 8),
+            content: Text(
+              'Exported ${paths.length} files$at\n${paths.join('\n')}',
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        final slot = choice.slot ?? _slots.first;
+        final result = await ClipExportService.export(
+          clip: widget.shot.angles[slot]!,
+          baseName: _soloBaseName(slot),
+          speed: speed,
+        );
+        _showResult(messenger, result, at);
+      }
     } catch (error) {
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(content: Text('Export failed: $error')));
@@ -1280,10 +1555,33 @@ class _ClipReviewState extends State<_ClipReview>
     }
   }
 
+  void _showResult(
+    ScaffoldMessengerState messenger,
+    ClipExportResult result,
+    String at,
+  ) {
+    if (!mounted) return;
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 8),
+        content: Text(
+          result.format == ClipExportFormat.video
+              ? 'Exported ${result.videoLabel}$at · ${result.sizeLabel}'
+                    '\n${result.path}'
+              : 'No video writer available '
+                    '(${result.fallbackReason}). Exported '
+                    '${result.frameCount} frames · '
+                    '${result.sizeLabel}\n${result.path}',
+        ),
+      ),
+    );
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    final clip = widget.clip;
-    if (clip.isEmpty) {
+    if (_slots.isEmpty) {
       return const _Message(
         icon: Icons.videocam_off,
         title: 'Empty clip',
@@ -1291,31 +1589,19 @@ class _ClipReviewState extends State<_ClipReview>
       );
     }
 
-    final index = _index.clamp(0, clip.frameCount - 1);
-    final atTrigger = index == clip.triggerIndex;
-    final shown = _shown;
+    final (start, end) = _window();
+    final spanMs = (end - start).inMilliseconds;
+    final posMs = (_pos - start).inMilliseconds.clamp(0, spanMs);
+    final atTrigger = _displayedSlots.any((slot) {
+      final clip = widget.shot.angles[slot]!;
+      return _indexFor(clip) == clip.triggerIndex;
+    });
 
     return Column(
       children: [
-        Expanded(
-          child: ColoredBox(
-            color: Colors.black,
-            child: Center(
-              // The previous frame stays up until the next one has decoded,
-              // so scrubbing never strobes through black.
-              child: shown == null
-                  ? const SizedBox.shrink()
-                  : AspectRatio(
-                      aspectRatio: shown.width / shown.height,
-                      child: RawImage(image: shown, fit: BoxFit.contain),
-                    ),
-            ),
-          ),
-        ),
+        Expanded(child: _buildPanes()),
         // Two rows in the hole builder's compact grammar — small square icon
-        // buttons and low chips — so the video keeps the height. The old
-        // stack of labelled pills plus an explainer paragraph took nearly
-        // half the pane; the explainer now lives on the readout's tooltip.
+        // buttons and low chips — so the video keeps the height.
         Container(
           decoration: const BoxDecoration(
             border: Border(top: BorderSide(color: AppColors.border)),
@@ -1332,7 +1618,7 @@ class _ClipReviewState extends State<_ClipReview>
                     _BarButton(
                       icon: Icons.chevron_left,
                       label: 'Previous frame',
-                      onTap: index > 0 ? () => _step(-1) : null,
+                      onTap: posMs > 0 ? () => _step(-1) : null,
                     ),
                     Expanded(
                       child: SliderTheme(
@@ -1347,26 +1633,26 @@ class _ClipReviewState extends State<_ClipReview>
                           ),
                         ),
                         child: Slider(
-                          value: index.toDouble(),
+                          value: posMs.toDouble(),
                           min: 0,
-                          max: (clip.frameCount - 1).toDouble(),
-                          divisions: clip.frameCount > 1
-                              ? clip.frameCount - 1
+                          max: spanMs > 0 ? spanMs.toDouble() : 1,
+                          label: _signedSeconds(_pos),
+                          onChanged: spanMs > 0
+                              ? (v) {
+                                  _pause();
+                                  _seek(
+                                    start +
+                                        Duration(milliseconds: v.round()),
+                                  );
+                                }
                               : null,
-                          label: 'Frame ${index + 1}',
-                          onChanged: (v) {
-                            _pause();
-                            _setIndex(v.round());
-                          },
                         ),
                       ),
                     ),
                     _BarButton(
                       icon: Icons.chevron_right,
                       label: 'Next frame',
-                      onTap: index < clip.frameCount - 1
-                          ? () => _step(1)
-                          : null,
+                      onTap: posMs < spanMs ? () => _step(1) : null,
                     ),
                   ],
                 ),
@@ -1383,17 +1669,19 @@ class _ClipReviewState extends State<_ClipReview>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Flexible(
-                            child: Text(
-                              '${index + 1}/${clip.frameCount}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyles.statLabel(),
+                          if (_displayedSlots.length == 1) ...[
+                            Flexible(
+                              child: Text(
+                                _frameCounter(_displayedSlots.first),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.statLabel(),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
+                            const SizedBox(width: 8),
+                          ],
                           Text(
-                            _signedSeconds(clip.offsetFromTrigger(index)),
+                            _signedSeconds(_pos),
                             style: AppTextStyles.statValue(
                               size: 13,
                               color: atTrigger
@@ -1406,6 +1694,25 @@ class _ClipReviewState extends State<_ClipReview>
                     ),
                   ),
                   const SizedBox(width: 8),
+                  if (_slots.length > 1) ...[
+                    _SpeedChip(
+                      label: 'Both',
+                      active: _solo == null,
+                      tooltip: 'Show every angle',
+                      onTap: () => _setSolo(null),
+                    ),
+                    const SizedBox(width: 5),
+                    for (final slot in _slots) ...[
+                      _SpeedChip(
+                        label: _slotShort(slot),
+                        active: _solo == slot,
+                        tooltip: 'Show ${_slotShort(slot)} only',
+                        onTap: () => _setSolo(slot),
+                      ),
+                      const SizedBox(width: 5),
+                    ],
+                    const SizedBox(width: 4),
+                  ],
                   // Tapping the running speed stops it, so a separate Stop
                   // control earns no space here.
                   for (final speed in _speeds) ...[
@@ -1419,7 +1726,7 @@ class _ClipReviewState extends State<_ClipReview>
                   _BarButton(
                     icon: Icons.save_alt,
                     label: _exporting ? 'Exporting…' : 'Export clip',
-                    onTap: _exporting ? null : _pickExportSpeed,
+                    onTap: _exporting ? null : _pickExport,
                   ),
                 ],
               ),
@@ -1427,6 +1734,92 @@ class _ClipReviewState extends State<_ClipReview>
           ),
         ),
       ],
+    );
+  }
+
+  String _frameCounter(int slot) {
+    final clip = widget.shot.angles[slot]!;
+    return '${_indexFor(clip) + 1}/${clip.frameCount}';
+  }
+
+  Widget _buildPanes() {
+    final slots = _displayedSlots;
+    if (slots.length == 1) return _pane(slots.first, captioned: false);
+
+    final panes = [for (final slot in slots) _pane(slot, captioned: true)];
+    // Side by side where there is width for two pictures; stacked where
+    // there isn't — a portrait window gives each angle the full width.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final row = constraints.maxWidth >= 520;
+        final children = <Widget>[];
+        for (final pane in panes) {
+          if (children.isNotEmpty) {
+            children.add(
+              row
+                  ? const VerticalDivider(
+                      width: 1,
+                      thickness: 1,
+                      color: AppColors.border,
+                    )
+                  : const Divider(height: 1, color: AppColors.border),
+            );
+          }
+          children.add(Expanded(child: pane));
+        }
+        return row
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
+              )
+            : Column(children: children);
+      },
+    );
+  }
+
+  Widget _pane(int slot, {required bool captioned}) {
+    final clip = widget.shot.angles[slot]!;
+    final shown = _decoders[slot]!.shown;
+    return ColoredBox(
+      color: Colors.black,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Center(
+            // The previous frame stays up until the next one has decoded,
+            // so scrubbing never strobes through black.
+            child: shown == null
+                ? const SizedBox.shrink()
+                : AspectRatio(
+                    aspectRatio: shown.width / shown.height,
+                    child: RawImage(image: shown, fit: BoxFit.contain),
+                  ),
+          ),
+          if (captioned)
+            Positioned(
+              left: 8,
+              top: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withAlpha(140),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '${_slotShort(slot)} · ${_frameCounter(slot)}',
+                  style: AppTextStyles.sans(
+                    size: 11,
+                    weight: FontWeight.w600,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
