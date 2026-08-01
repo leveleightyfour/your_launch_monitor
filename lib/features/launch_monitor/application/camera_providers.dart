@@ -63,6 +63,55 @@ const kCameraSlotShortLabels = ['DTL', 'FO'];
 /// uses it to warn that a device is already spoken for.
 final Map<int, CameraDevice> _liveByIndex = {};
 
+/// One camera operation at a time, app-wide.
+///
+/// Two probes — or a probe and a worker's open — hitting DirectShow at once
+/// is exactly what the two-camera startup did, and the driver's answer was
+/// "raised unknown C++ exception" followed by a 38-second wedge. Device
+/// opens on these drivers are not concurrency-safe, so every probe and
+/// every worker open queues here.
+Future<void> _cameraOps = Future<void>.value();
+
+Future<T> _serialized<T>(Future<T> Function() action) {
+  final result = _cameraOps.then((_) => action());
+  // The queue must survive a failed action; errors surface to the caller
+  // through `result`, not through the chain.
+  _cameraOps = result.then<void>((_) {}, onError: (_) {});
+  return result;
+}
+
+/// Blocking probe body, run inside a short-lived isolate so a slow or
+/// wedged driver stalls that isolate instead of the input thread.
+List<Map<String, Object>> _probeIndicesSync(
+  int backend,
+  int limit,
+  Set<int> skip,
+) {
+  final results = <Map<String, Object>>[];
+  for (var index = 0; index < limit; index++) {
+    if (skip.contains(index)) continue;
+    final timer = Stopwatch()..start();
+    final capture = cv.VideoCapture.fromDevice(index, apiPreference: backend);
+    final opened = capture.isOpened;
+    var width = 0;
+    var height = 0;
+    if (opened) {
+      width = capture.get(propFrameWidth).round();
+      height = capture.get(propFrameHeight).round();
+      capture.release();
+    }
+    capture.dispose();
+    results.add({
+      'index': index,
+      'opened': opened,
+      'width': width,
+      'height': height,
+      'ms': timer.elapsedMilliseconds,
+    });
+  }
+  return results;
+}
+
 // ── Capture mode ─────────────────────────────────────────────────────────────
 
 /// A frame size to ask the camera for.
@@ -182,13 +231,23 @@ class _WorkerLink {
   Isolate? isolate;
   SendPort? commands;
 
+  /// Completes when the worker's open has resolved either way — the device
+  /// answered, errored, or the worker died. Holding the camera-ops queue on
+  /// this is what keeps a probe from hitting DirectShow mid-open.
+  final Completer<void> settled = Completer<void>();
+
   _WorkerLink(this.generation, this.fromWorker);
+
+  void markSettled() {
+    if (!settled.isCompleted) settled.complete();
+  }
 
   void send(Map<String, Object?> command) => commands?.send(command);
 
   /// Ask nicely, then make sure. The kill is a backstop for a worker wedged
   /// inside a native call where the stop command cannot be heard.
   void shutdown() {
+    markSettled();
     send(const {'cmd': 'stop'});
     final doomed = isolate;
     isolate = null;
@@ -295,11 +354,14 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
     if (!autoOpen) return;
     final remembered = _slotPref().deviceName;
     if (remembered.isEmpty) return;
+    // Prefer the first name match that is free: two identical cameras share
+    // a name, and the match could otherwise be the very device the other
+    // slot is streaming — an open guaranteed to fail.
     for (final device in found) {
-      if (device.name == remembered) {
-        await select(device);
-        return;
-      }
+      if (device.name != remembered) continue;
+      if (_liveByIndex.containsKey(device.index)) continue;
+      await select(device);
+      return;
     }
   }
 
@@ -309,48 +371,58 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
   }
 
   /// Opens each candidate index just long enough to learn whether a camera
-  /// answers on it, and at what size. Runs on the UI thread, but only during
-  /// an explicit scan — never while a feed is live.
+  /// answers on it, and at what size.
+  ///
+  /// The opens run in a short-lived isolate behind the camera-ops queue: a
+  /// DirectShow open is a blocking native call that can take seconds — or
+  /// wedge for half a minute — when another camera is streaming or a driver
+  /// is unhappy, and with two slots this scan legitimately runs while the
+  /// other slot is live. On the UI thread that was the two-camera freeze.
   Future<List<CameraDevice>> _probe(List<String> names) async {
-    final found = <CameraDevice>[];
     final limit = names.length + _probeOvershoot;
+    final live = Map<int, CameraDevice>.of(_liveByIndex);
+    final backend = _backend;
+    final skip = live.keys.toSet();
+
+    final results = await _serialized(
+      () => Isolate.run(
+        () => _probeIndicesSync(backend, limit, skip),
+      ).timeout(const Duration(seconds: 20)),
+    );
+
+    final found = <CameraDevice>[];
     for (var index = 0; index < limit; index++) {
       // A device another slot is streaming can't be opened to probe — and
       // failing to open it would silently drop it from the list, vanishing
       // the very camera that is working. Report what the live feed knows.
-      final live = _liveByIndex[index];
-      if (live != null) {
-        found.add(live);
-        debugPrint('[camera] probe $index: ${live.name} (live on a slot)');
+      final liveDevice = live[index];
+      if (liveDevice != null) {
+        found.add(liveDevice);
+        debugPrint(
+          '[camera] probe $index: ${liveDevice.name} (live on a slot)',
+        );
         continue;
       }
-      final capture = cv.VideoCapture.fromDevice(
-        index,
-        apiPreference: _backend,
-      );
-      if (!capture.isOpened) {
-        capture.dispose();
-        continue;
+      Map<String, Object>? result;
+      for (final entry in results) {
+        if (entry['index'] == index) {
+          result = entry;
+          break;
+        }
       }
-      final width = capture.get(propFrameWidth).round();
-      final height = capture.get(propFrameHeight).round();
-      capture.release();
-      capture.dispose();
-
+      if (result == null || result['opened'] != true) continue;
       found.add(
         CameraDevice(
           index: index,
           name: index < names.length ? names[index] : 'Camera $index',
-          width: width,
-          height: height,
+          width: result['width'] as int? ?? 0,
+          height: result['height'] as int? ?? 0,
         ),
       );
       debugPrint(
         '[camera] probe $index: ${found.last.name} '
-        '${found.last.resolutionLabel}',
+        '${found.last.resolutionLabel} in ${result['ms']}ms',
       );
-      // Let input and paint through between the blocking opens.
-      await Future<void>.delayed(Duration.zero);
     }
     return found;
   }
@@ -374,8 +446,21 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
   /// Spawns a capture worker for [device], replacing whatever was running.
   Future<void> select(CameraDevice device) async {
     if (_disposed) return;
-    final generation = ++_openGeneration;
 
+    // The other slot already streams this device. Spawning a worker would
+    // only fail after a slow open inside the driver — fail fast instead.
+    if (_liveByIndex.containsKey(device.index) && _liveIndex != device.index) {
+      state = CameraFeedState(
+        status: CameraFeedStatus.failed,
+        devices: state.devices,
+        selected: device,
+        error: 'This camera is already streaming on the other slot. Pick a '
+            'different device for this angle.',
+      );
+      return;
+    }
+
+    final generation = ++_openGeneration;
     _releaseWorker();
 
     state = CameraFeedState(
@@ -383,6 +468,14 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
       devices: state.devices,
       selected: device,
     );
+
+    // Behind the ops queue, held until the device answers: DirectShow must
+    // never see this open and a probe (or the other slot's open) at once.
+    await _serialized(() => _spawnWorker(device, generation));
+  }
+
+  Future<void> _spawnWorker(CameraDevice device, int generation) async {
+    if (_disposed || generation != _openGeneration) return;
 
     final requested = _preferredMode();
     final link = _WorkerLink(generation, ReceivePort());
@@ -424,6 +517,13 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
       return;
     }
     _link = link;
+
+    // Hold the queue until the worker reports opened, errored or died, with
+    // a ceiling so a wedged driver can't block camera operations forever.
+    await link.settled.future.timeout(
+      const Duration(seconds: 25),
+      onTimeout: () {},
+    );
   }
 
   void _onWorkerMessage(
@@ -437,6 +537,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
 
     // An uncaught error inside the worker, forwarded by onError.
     if (message is List && message.length == 2) {
+      link.markSettled();
       debugPrint('[camera] worker crashed: ${message[0]}\n${message[1]}');
       if (!stale) {
         _fail(device, '${message[0]}', link.generation);
@@ -459,6 +560,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
         }
 
       case 'opened':
+        link.markSettled();
         if (stale) return;
         final width = message['width'] as int;
         final height = message['height'] as int;
@@ -527,12 +629,14 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
         );
 
       case 'error':
+        link.markSettled();
         debugPrint('[camera] worker error: ${message['message']}');
         if (stale) return;
         _fail(device, '${message['message']}', link.generation);
         _releaseWorker();
 
       case 'stopped':
+        link.markSettled();
         link.fromWorker.close();
     }
   }
