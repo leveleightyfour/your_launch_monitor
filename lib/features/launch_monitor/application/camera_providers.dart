@@ -567,6 +567,24 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
   Future<void> _spawnWorker(CameraDevice device, int generation) async {
     if (_disposed || generation != _openGeneration) return;
 
+    // Re-checked here, inside the serialized section — not only in select().
+    // The early check races: two auto-opens both pass it before either has
+    // opened and registered, and the queue then executes both. That is
+    // exactly how both slots opened the same camera at startup, the driver
+    // let two graphs share it, and the first slot starved to death at 1fps.
+    // By this point the previous open has fully settled, so the registry
+    // tells the truth.
+    if (_liveByIndex.containsKey(device.index) && _liveIndex != device.index) {
+      state = CameraFeedState(
+        status: CameraFeedStatus.failed,
+        devices: state.devices,
+        selected: device,
+        error: 'This camera is already streaming on the other slot. Pick a '
+            'different device for this angle.',
+      );
+      return;
+    }
+
     final requested = _preferredMode();
     final link = _WorkerLink(generation, ReceivePort());
     link.fromWorker.listen(
@@ -628,7 +646,9 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
     // An uncaught error inside the worker, forwarded by onError.
     if (message is List && message.length == 2) {
       link.markSettled();
-      debugPrint('[camera] worker crashed: ${message[0]}\n${message[1]}');
+      debugPrint(
+        '[camera] slot $slot worker crashed: ${message[0]}\n${message[1]}',
+      );
       if (!stale) {
         _fail(device, '${message[0]}', link.generation);
         _releaseWorker();
@@ -657,8 +677,8 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
         final fps = message['fps'] as double;
         final fourcc = message['fourcc'] as int? ?? 0;
         debugPrint(
-          '[camera] opened "${device.name}" index ${device.index} — '
-          'requested ${requested.label}, got ${width}x$height '
+          '[camera] slot $slot opened "${device.name}" index ${device.index} '
+          '— requested ${requested.label}, got ${width}x$height '
           '@ ${fps.toStringAsFixed(1)}fps in ${_fourccName(fourcc)}',
         );
         _watchdog.start();
@@ -720,7 +740,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
 
       case 'error':
         link.markSettled();
-        debugPrint('[camera] worker error: ${message['message']}');
+        debugPrint('[camera] slot $slot worker error: ${message['message']}');
         if (stale) return;
         _fail(device, '${message['message']}', link.generation);
         _releaseWorker();
