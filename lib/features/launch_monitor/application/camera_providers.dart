@@ -80,28 +80,42 @@ Future<T> _serialized<T>(Future<T> Function() action) {
   return result;
 }
 
-/// Blocking probe body, run inside a short-lived isolate so a slow or
-/// wedged driver stalls that isolate instead of the input thread.
-List<Map<String, Object>> _probeIndicesSync(
-  int backend,
-  int limit,
-  Set<int> skip,
-) {
-  final results = <Map<String, Object>>[];
+/// Probe isolate entry. Streams a message per device — 'opening' before the
+/// blocking call, 'result' after — so the main isolate always knows exactly
+/// which index a wedged driver died on, and can kill this isolate and keep
+/// the devices that had already answered. A single opaque run-to-completion
+/// probe threw all of that away: one bad driver failed the whole scan with
+/// nothing but a TimeoutException.
+Future<void> _probeIsolateMain(List<Object?> args) async {
+  final toMain = args[0] as SendPort;
+  final backend = args[1] as int;
+  final limit = args[2] as int;
+  final skip = (args[3] as List).cast<int>().toSet();
+
   for (var index = 0; index < limit; index++) {
     if (skip.contains(index)) continue;
+    toMain.send({'type': 'opening', 'index': index});
     final timer = Stopwatch()..start();
-    final capture = cv.VideoCapture.fromDevice(index, apiPreference: backend);
-    final opened = capture.isOpened;
+    var opened = false;
     var width = 0;
     var height = 0;
-    if (opened) {
-      width = capture.get(propFrameWidth).round();
-      height = capture.get(propFrameHeight).round();
-      capture.release();
+    try {
+      final capture = cv.VideoCapture.fromDevice(
+        index,
+        apiPreference: backend,
+      );
+      opened = capture.isOpened;
+      if (opened) {
+        width = capture.get(propFrameWidth).round();
+        height = capture.get(propFrameHeight).round();
+        capture.release();
+      }
+      capture.dispose();
+    } catch (_) {
+      // A throwing open is a real answer: not a camera.
     }
-    capture.dispose();
-    results.add({
+    toMain.send({
+      'type': 'result',
       'index': index,
       'opened': opened,
       'width': width,
@@ -109,7 +123,65 @@ List<Map<String, Object>> _probeIndicesSync(
       'ms': timer.elapsedMilliseconds,
     });
   }
-  return results;
+  toMain.send({'type': 'done'});
+}
+
+/// Runs the probe isolate, watching its progress. Returns the per-index
+/// results plus the index whose open stalled, if one did — that isolate is
+/// killed rather than awaited, and everything found before the stall is
+/// kept.
+Future<(List<Map<String, Object>>, int?)> _runProbeIsolate(
+  int backend,
+  int limit,
+  Set<int> skip,
+) async {
+  final fromProbe = ReceivePort();
+  final results = <Map<String, Object>>[];
+  int? openingIndex;
+  final done = Completer<int?>();
+  Timer? stallTimer;
+
+  // Ten seconds without progress means the current open is wedged. Per open,
+  // not for the whole scan, so three slow-but-honest devices don't trip it.
+  void arm() {
+    stallTimer?.cancel();
+    stallTimer = Timer(const Duration(seconds: 10), () {
+      if (!done.isCompleted) done.complete(openingIndex ?? -1);
+    });
+  }
+
+  final sub = fromProbe.listen((message) {
+    if (message is! Map) return; // onError Lists land here too; stall covers.
+    switch (message['type']) {
+      case 'opening':
+        openingIndex = message['index'] as int;
+        arm();
+      case 'result':
+        results.add(Map<String, Object>.from(message));
+        openingIndex = null;
+        arm();
+      case 'done':
+        if (!done.isCompleted) done.complete(null);
+    }
+  });
+
+  Isolate? isolate;
+  try {
+    isolate = await Isolate.spawn(
+      _probeIsolateMain,
+      [fromProbe.sendPort, backend, limit, skip.toList()],
+      onError: fromProbe.sendPort,
+      debugName: 'camera-probe',
+    );
+    arm();
+    final wedged = await done.future;
+    if (wedged != null) isolate.kill(priority: Isolate.immediate);
+    return (results, wedged);
+  } finally {
+    stallTimer?.cancel();
+    await sub.cancel();
+    fromProbe.close();
+  }
 }
 
 // ── Capture mode ─────────────────────────────────────────────────────────────
@@ -384,11 +456,20 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
     final backend = _backend;
     final skip = live.keys.toSet();
 
-    final results = await _serialized(
-      () => Isolate.run(
-        () => _probeIndicesSync(backend, limit, skip),
-      ).timeout(const Duration(seconds: 20)),
+    final (results, wedgedIndex) = await _serialized(
+      () => _runProbeIsolate(backend, limit, skip),
     );
+
+    if (wedgedIndex != null) {
+      debugPrint(
+        '[camera] probe stalled '
+        '${wedgedIndex >= 0 ? "opening device index $wedgedIndex" : "before its first open"}'
+        ' — probe isolate killed, keeping the '
+        '${results.length} result(s) it got. That device\'s driver is '
+        'wedged: unplug and replug it, on a different USB controller if '
+        'both cameras share one.',
+      );
+    }
 
     final found = <CameraDevice>[];
     for (var index = 0; index < limit; index++) {
@@ -422,6 +503,15 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
       debugPrint(
         '[camera] probe $index: ${found.last.name} '
         '${found.last.resolutionLabel} in ${result['ms']}ms',
+      );
+    }
+
+    // A wedge with nothing found at all is worth failing loudly; a wedge
+    // after real finds is not — the working camera must stay usable.
+    if (found.isEmpty && wedgedIndex != null) {
+      throw TimeoutException(
+        'The camera scan stalled opening device index $wedgedIndex. '
+        'Unplug and replug that camera, then rescan.',
       );
     }
     return found;
