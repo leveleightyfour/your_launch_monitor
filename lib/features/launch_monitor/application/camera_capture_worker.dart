@@ -70,6 +70,9 @@ class CameraWorkerConfig {
   final int requestWidth;
   final int requestHeight;
 
+  /// Requested frame rate; zero falls back to 30 alongside a size request.
+  final int requestFps;
+
   /// Shortest gap between preview buffers sent to the UI.
   final int previewIntervalMs;
 
@@ -84,6 +87,7 @@ class CameraWorkerConfig {
     required this.requestWidth,
     required this.requestHeight,
     required this.previewIntervalMs,
+    this.requestFps = 0,
     this.rotationQuarterTurns = 0,
   });
 }
@@ -176,10 +180,14 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
   // the opened message, so a format that refuses to take is visible in the
   // log rather than deduced from the frame rate.
   if (config.requestWidth > 0 && config.requestHeight > 0) {
+    // 30 stays the request when no rate was chosen — it is what first pulled
+    // DirectShow off its slow uncompressed default. A chosen rate replaces
+    // it; the camera snaps down whatever it cannot do.
+    final fps = config.requestFps > 0 ? config.requestFps : 30;
     capture.set(propFourcc, fourccMjpg.toDouble());
     capture.set(propFrameWidth, config.requestWidth.toDouble());
     capture.set(propFrameHeight, config.requestHeight.toDouble());
-    capture.set(propFps, 30);
+    capture.set(propFps, fps.toDouble());
     if (capture.get(propFourcc).toInt() != fourccMjpg) {
       capture.set(propFourcc, fourccMjpg.toDouble());
     }

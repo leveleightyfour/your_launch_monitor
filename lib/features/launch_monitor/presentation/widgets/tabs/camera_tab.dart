@@ -628,7 +628,7 @@ class _CameraBar extends ConsumerWidget {
 void _showModePicker(BuildContext context, WidgetRef ref, int slot) {
   final slots = ref.read(unitPrefsProvider).cameraSlots;
   final pref = slot < slots.length ? slots[slot] : const CameraSlotPref();
-  final current = CaptureMode(pref.width, pref.height);
+  final current = CaptureMode(pref.width, pref.height, pref.fps);
   showModalBottomSheet<void>(
     context: context,
     backgroundColor: AppColors.surface,
