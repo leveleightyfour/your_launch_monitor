@@ -123,24 +123,44 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
     }
   });
 
-  final cv.VideoCapture capture;
-  try {
-    capture = cv.VideoCapture.fromDevice(
-      config.deviceIndex,
-      apiPreference: config.apiPreference,
-    );
-  } catch (error) {
-    toMain.send({'type': 'error', 'message': '$error'});
-    commands.close();
-    return;
+  // Two attempts, a beat apart. These UVC drivers routinely refuse an open
+  // that lands shortly after a release — the startup probe releases the
+  // device moments before this worker opens it — and one retry clears the
+  // transient case at no cost to the case that opens first time.
+  cv.VideoCapture? capture;
+  Object? openError;
+  for (var attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+    }
+    if (stop) {
+      commands.close();
+      return;
+    }
+    try {
+      final candidate = cv.VideoCapture.fromDevice(
+        config.deviceIndex,
+        apiPreference: config.apiPreference,
+      );
+      if (candidate.isOpened) {
+        capture = candidate;
+        break;
+      }
+      candidate.dispose();
+      openError = null;
+    } catch (error) {
+      openError = error;
+    }
   }
 
-  if (!capture.isOpened) {
-    capture.dispose();
+  if (capture == null) {
     toMain.send({
       'type': 'error',
-      'message': 'The device is attached but refused to open. Another app '
-          'may be holding it.',
+      'message': openError != null
+          ? '$openError'
+          : 'The device is attached but refused to open, twice. Another app '
+                'may be holding it, or its driver is wedged — unplug and '
+                'replug it.',
     });
     commands.close();
     return;
