@@ -330,33 +330,23 @@ bool supportsThirdSplitPane(BuildContext context, double availableWidth) {
 /// two stacked rows need at least twice as much.
 const _minPaneHeight = 280.0;
 
-/// How a four-pane split should be arranged in the given space, or null when
-/// four panes don't fit and the split should stay at three.
+/// Whether a camera pane holding two angles should take a full-width row of
+/// its own — the two data panes sharing the other row — instead of a
+/// double-width column in the three-pane strip.
 ///
-/// Ultra-wide keeps the single strip of four: its quarters come out tall and
+/// Ultra-wide keeps the strip: the doubled camera's halves come out tall and
 /// narrow, which is exactly the shape rotated portrait swing video wants —
 /// two camera quarters side by side read like a pair of phone screens. On
-/// ordinary 16:9 desktops the 2×2 grid is preferred instead, since a strip
-/// there would squeeze every pane, and the strip survives only as the
-/// fallback for a window too shallow to stack two rows.
-enum QuadSplitLayout { grid2x2, row }
-
-QuadSplitLayout? quadSplitLayout(
+/// ordinary 16:9 desktops the stacked rows are preferred, since a strip
+/// there would squeeze every pane; the strip survives as the fallback for a
+/// window too shallow to stack.
+bool dualCameraPrefersOwnRow(
   BuildContext context,
   double availableWidth,
   double availableHeight,
 ) {
-  final fitsRow = availableWidth >= _minPaneWidth * 4;
-  final fitsGrid =
+  if (isUltraWide(context)) return false;
+  return isDesktopPlatform &&
       availableWidth >= _minPaneWidth * 2 &&
       availableHeight >= _minPaneHeight * 2;
-  if (isUltraWide(context)) {
-    if (fitsRow) return QuadSplitLayout.row;
-    if (fitsGrid) return QuadSplitLayout.grid2x2;
-    return null;
-  }
-  if (!isDesktopPlatform) return null;
-  if (fitsGrid) return QuadSplitLayout.grid2x2;
-  if (fitsRow) return QuadSplitLayout.row;
-  return null;
 }

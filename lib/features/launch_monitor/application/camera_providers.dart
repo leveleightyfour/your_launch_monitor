@@ -886,6 +886,19 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
     ref.read(unitPrefsProvider.notifier).setCameraSlot(slot, deviceName: '');
   }
 
+  /// Closes the camera but keeps the remembered choice. Used when the two
+  /// slots trade devices: [stop]'s forget-the-choice would erase the very
+  /// preferences being swapped.
+  Future<void> halt() async {
+    _openGeneration++;
+    _releaseWorker();
+    if (_disposed) return;
+    state = CameraFeedState(
+      status: CameraFeedStatus.idle,
+      devices: state.devices,
+    );
+  }
+
   /// `1196444237` → `MJPG`. Falls back to the raw number for a value that
   /// doesn't decode as four printable characters.
   static String _fourccName(int fourcc) {
