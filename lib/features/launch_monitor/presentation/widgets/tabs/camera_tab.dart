@@ -1536,7 +1536,8 @@ class _ShotExportFlow {
         duration: const Duration(seconds: 8),
         content: Text(
           result.format == ClipExportFormat.video
-              ? 'Exported ${result.videoLabel}$at · ${result.sizeLabel}'
+              ? 'Exported ${result.videoLabel}$at · '
+                    '${result.dimensionsLabel} · ${result.sizeLabel}'
                     '\n${result.path}'
               : 'No video writer available '
                     '(${result.fallbackReason}). Exported '
