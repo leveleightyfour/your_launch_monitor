@@ -263,8 +263,8 @@ class _CameraSlotViewState extends ConsumerState<CameraSlotView> {
           Expanded(
             child: _PaneReplay(
               key: ValueKey('replay-${replaying.shotIndex}-${widget.slot}'),
-              clip: clip,
-              shotIndex: replaying.shotIndex,
+              shot: replaying,
+              slot: widget.slot,
               onLive: () => setState(() => _replaying = null),
             ),
           ),
@@ -1161,14 +1161,14 @@ class _AngleDecoder {
 /// a scrubber and export sheets, and the full Camera tab already auto-opens
 /// those. This is the glanceable version: swing, look up, watch it loop.
 class _PaneReplay extends StatefulWidget {
-  final ImpactClip clip;
-  final int shotIndex;
+  final ShotClips shot;
+  final int slot;
   final VoidCallback onLive;
 
   const _PaneReplay({
     super.key,
-    required this.clip,
-    required this.shotIndex,
+    required this.shot,
+    required this.slot,
     required this.onLive,
   });
 
@@ -1178,8 +1178,10 @@ class _PaneReplay extends StatefulWidget {
 
 class _PaneReplayState extends State<_PaneReplay>
     with SingleTickerProviderStateMixin {
+  ImpactClip get _clip => widget.shot.angles[widget.slot]!;
+
   late final _AngleDecoder _decoder = _AngleDecoder(
-    clip: widget.clip,
+    clip: _clip,
     onFrame: () {
       if (mounted) setState(() {});
     },
@@ -1187,11 +1189,13 @@ class _PaneReplayState extends State<_PaneReplay>
 
   late final _ticker = createTicker(_onTick);
 
+  bool _exporting = false;
+
   @override
   void initState() {
     super.initState();
-    _decoder.request(widget.clip.triggerIndex);
-    if (widget.clip.duration > Duration.zero) _ticker.start();
+    _decoder.request(_clip.triggerIndex);
+    if (_clip.duration > Duration.zero) _ticker.start();
   }
 
   @override
@@ -1202,7 +1206,7 @@ class _PaneReplayState extends State<_PaneReplay>
   }
 
   void _onTick(Duration elapsed) {
-    final span = widget.clip.duration;
+    final span = _clip.duration;
     if (span <= Duration.zero) return;
     // Same time-seek as the review loop; requests for an unchanged index
     // are dropped by the decoder, so the per-vsync tick costs nothing
@@ -1210,7 +1214,19 @@ class _PaneReplayState extends State<_PaneReplay>
     final offset = Duration(
       microseconds: elapsed.inMicroseconds % span.inMicroseconds,
     );
-    _decoder.request(widget.clip.indexAtOffset(offset));
+    _decoder.request(_clip.indexAtOffset(offset));
+  }
+
+  void _export() {
+    // The whole shot, not just this pane's angle — the layout sheet offers
+    // the stitched two-angle file even though only one angle loops here.
+    _ShotExportFlow.start(
+      context: context,
+      shot: widget.shot,
+      onBusy: (busy) {
+        if (mounted) setState(() => _exporting = busy);
+      },
+    );
   }
 
   @override
@@ -1239,7 +1255,7 @@ class _PaneReplayState extends State<_PaneReplay>
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                'Shot ${widget.shotIndex + 1} · replay',
+                'Shot ${widget.shot.shotIndex + 1} · replay',
                 style: AppTextStyles.sans(
                   size: 11,
                   weight: FontWeight.w600,
@@ -1251,7 +1267,18 @@ class _PaneReplayState extends State<_PaneReplay>
           Positioned(
             right: 8,
             top: 8,
-            child: _PillButton(label: 'Live', onTap: widget.onLive),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _BarButton(
+                  icon: Icons.save_alt,
+                  label: _exporting ? 'Exporting…' : 'Export shot',
+                  onTap: _exporting ? null : _export,
+                ),
+                const SizedBox(width: 6),
+                _PillButton(label: 'Live', onTap: widget.onLive),
+              ],
+            ),
           ),
         ],
       ),
@@ -1274,6 +1301,251 @@ class _ExportChoice {
     this.slot,
     this.separate = false,
   });
+}
+
+/// The export flow, shared by the full review and the split-pane replay:
+/// a layout sheet when the shot has more than one angle (side by side,
+/// stacked, separate files, or one angle), then the speed sheet, then the
+/// write — results reported by snackbar. Always offered the *whole* shot,
+/// so a stitched two-angle file is reachable from a pane that only shows
+/// one of them.
+class _ShotExportFlow {
+  /// Speed choices offered, mirroring the review loop. A slowed file is the
+  /// same frames under a slower header rate — nothing is interpolated,
+  /// players simply hold each frame longer.
+  static const _exportSpeeds = [
+    (1.0, 'Full speed', '1×'),
+    (0.5, 'Half speed', '0.5×'),
+    (0.25, 'Quarter speed', '0.25×'),
+  ];
+
+  final BuildContext context;
+  final ShotClips shot;
+
+  /// Reports the write starting and finishing, so the launching widget can
+  /// disable its export button for the duration.
+  final ValueChanged<bool>? onBusy;
+
+  /// Angles that actually captured frames, lowest slot first.
+  final List<int> slots;
+
+  _ShotExportFlow._(this.context, this.shot, this.onBusy)
+    : slots = [
+        for (final slot in shot.slots)
+          if (!shot.angles[slot]!.isEmpty) slot,
+      ];
+
+  static void start({
+    required BuildContext context,
+    required ShotClips shot,
+    ValueChanged<bool>? onBusy,
+  }) {
+    final flow = _ShotExportFlow._(context, shot, onBusy);
+    if (flow.slots.isEmpty) return;
+    flow._pickLayout();
+  }
+
+  void _pickLayout() {
+    if (slots.length < 2) {
+      _pickSpeed(
+        _ExportChoice(
+          title: 'Export',
+          icon: Icons.save_alt,
+          slot: slots.first,
+        ),
+      );
+      return;
+    }
+
+    final choices = [
+      const _ExportChoice(
+        title: 'Side by side',
+        icon: Icons.view_column,
+        layout: CompositeLayout.sideBySide,
+      ),
+      const _ExportChoice(
+        title: 'Stacked',
+        icon: Icons.view_agenda,
+        layout: CompositeLayout.stacked,
+      ),
+      const _ExportChoice(
+        title: 'Separate files',
+        icon: Icons.filter_none,
+        separate: true,
+      ),
+      for (final slot in slots)
+        _ExportChoice(
+          title: '${_slotShort(slot)} only',
+          icon: Icons.videocam,
+          slot: slot,
+        ),
+    ];
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Text(
+                  'Export Layout',
+                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          ...choices.map(
+            (choice) => ListTile(
+              leading: Icon(choice.icon, size: 18, color: AppColors.textMuted),
+              title: Text(
+                choice.title,
+                style: AppTextStyles.sans(size: 14, color: Colors.white),
+              ),
+              tileColor: Colors.transparent,
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                _pickSpeed(choice);
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  void _pickSpeed(_ExportChoice choice) {
+    if (!context.mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Text(
+                  'Export Speed',
+                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          ..._exportSpeeds.map((option) {
+            final (speed, name, label) = option;
+            return ListTile(
+              leading: Icon(
+                speed == 1.0 ? Icons.play_arrow : Icons.slow_motion_video,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
+              title: Text(
+                '$name ($label)',
+                style: AppTextStyles.sans(size: 14, color: Colors.white),
+              ),
+              tileColor: Colors.transparent,
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                unawaited(_run(choice, speed, label));
+              },
+            );
+          }),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  String _soloBaseName(int slot) => slots.length > 1
+      ? 'impact-${_slotShort(slot).toLowerCase()}'
+      : 'impact';
+
+  Future<void> _run(
+    _ExportChoice choice,
+    double speed,
+    String speedLabel,
+  ) async {
+    if (!context.mounted) return;
+    onBusy?.call(true);
+    final messenger = ScaffoldMessenger.of(context);
+    final at = speed == 1.0 ? '' : ' at $speedLabel';
+    try {
+      if (choice.layout != null) {
+        final result = await ClipExportService.exportComposite(
+          shot: shot,
+          layout: choice.layout!,
+          baseName: 'impact',
+          speed: speed,
+        );
+        _showResult(messenger, result, at);
+      } else if (choice.separate) {
+        final paths = <String>[];
+        for (final slot in slots) {
+          final result = await ClipExportService.export(
+            clip: shot.angles[slot]!,
+            baseName: _soloBaseName(slot),
+            speed: speed,
+          );
+          paths.add(result.path);
+        }
+        messenger.showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 8),
+            content: Text(
+              'Exported ${paths.length} files$at\n${paths.join('\n')}',
+            ),
+          ),
+        );
+      } else {
+        final slot = choice.slot ?? slots.first;
+        final result = await ClipExportService.export(
+          clip: shot.angles[slot]!,
+          baseName: _soloBaseName(slot),
+          speed: speed,
+        );
+        _showResult(messenger, result, at);
+      }
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text('Export failed: $error')));
+    } finally {
+      onBusy?.call(false);
+    }
+  }
+
+  void _showResult(
+    ScaffoldMessengerState messenger,
+    ClipExportResult result,
+    String at,
+  ) {
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 8),
+        content: Text(
+          result.format == ClipExportFormat.video
+              ? 'Exported ${result.videoLabel}$at · ${result.sizeLabel}'
+                    '\n${result.path}'
+              : 'No video writer available '
+                    '(${result.fallbackReason}). Exported '
+                    '${result.frameCount} frames · '
+                    '${result.sizeLabel}\n${result.path}',
+        ),
+      ),
+    );
+  }
 }
 
 /// Frame-by-frame scrub through every angle of one shot, on a shared clock.
@@ -1303,15 +1575,6 @@ class _ShotReviewState extends State<_ShotReview>
   /// below that the gaps between frames read as a slideshow rather than
   /// slow motion, and stepping is the better tool.
   static const _speeds = [1.0, 0.5, 0.25];
-
-  /// Speed choices offered at export, mirroring the review loop. A slowed
-  /// file is the same frames under a slower header rate — nothing is
-  /// interpolated, players simply hold each frame longer.
-  static const _exportSpeeds = [
-    (1.0, 'Full speed', '1×'),
-    (0.5, 'Half speed', '0.5×'),
-    (0.25, 'Quarter speed', '0.25×'),
-  ];
 
   /// Angles that actually captured frames, lowest slot first.
   late List<int> _slots;
@@ -1547,209 +1810,15 @@ class _ShotReviewState extends State<_ShotReview>
 
   // ── Export ─────────────────────────────────────────────────────────────────
 
-  void _pickExport() {
+  void _startExport() {
     if (_exporting) return;
     _pause();
-    if (_slots.length < 2) {
-      _pickSpeed(
-        _ExportChoice(
-          title: 'Export',
-          icon: Icons.save_alt,
-          slot: _slots.first,
-        ),
-      );
-      return;
-    }
-
-    final choices = [
-      const _ExportChoice(
-        title: 'Side by side',
-        icon: Icons.view_column,
-        layout: CompositeLayout.sideBySide,
-      ),
-      const _ExportChoice(
-        title: 'Stacked',
-        icon: Icons.view_agenda,
-        layout: CompositeLayout.stacked,
-      ),
-      const _ExportChoice(
-        title: 'Separate files',
-        icon: Icons.filter_none,
-        separate: true,
-      ),
-      for (final slot in _slots)
-        _ExportChoice(
-          title: '${_slotShort(slot)} only',
-          icon: Icons.videocam,
-          slot: slot,
-        ),
-    ];
-
-    showModalBottomSheet<void>(
+    _ShotExportFlow.start(
       context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (sheetCtx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Row(
-              children: [
-                Text(
-                  'Export Layout',
-                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: AppColors.border),
-          ...choices.map(
-            (choice) => ListTile(
-              leading: Icon(choice.icon, size: 18, color: AppColors.textMuted),
-              title: Text(
-                choice.title,
-                style: AppTextStyles.sans(size: 14, color: Colors.white),
-              ),
-              tileColor: Colors.transparent,
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                _pickSpeed(choice);
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-
-  void _pickSpeed(_ExportChoice choice) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (sheetCtx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Row(
-              children: [
-                Text(
-                  'Export Speed',
-                  style: AppTextStyles.sans(size: 16, weight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: AppColors.border),
-          ..._exportSpeeds.map((option) {
-            final (speed, name, label) = option;
-            return ListTile(
-              leading: Icon(
-                speed == 1.0 ? Icons.play_arrow : Icons.slow_motion_video,
-                size: 18,
-                color: AppColors.textMuted,
-              ),
-              title: Text(
-                '$name ($label)',
-                style: AppTextStyles.sans(size: 14, color: Colors.white),
-              ),
-              tileColor: Colors.transparent,
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                unawaited(_runExport(choice, speed, label));
-              },
-            );
-          }),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-
-  String _soloBaseName(int slot) => _slots.length > 1
-      ? 'impact-${_slotShort(slot).toLowerCase()}'
-      : 'impact';
-
-  Future<void> _runExport(
-    _ExportChoice choice,
-    double speed,
-    String speedLabel,
-  ) async {
-    if (_exporting) return;
-    setState(() => _exporting = true);
-    final messenger = ScaffoldMessenger.of(context);
-    final at = speed == 1.0 ? '' : ' at $speedLabel';
-    try {
-      if (choice.layout != null) {
-        final result = await ClipExportService.exportComposite(
-          shot: widget.shot,
-          layout: choice.layout!,
-          baseName: 'impact',
-          speed: speed,
-        );
-        _showResult(messenger, result, at);
-      } else if (choice.separate) {
-        final paths = <String>[];
-        for (final slot in _slots) {
-          final result = await ClipExportService.export(
-            clip: widget.shot.angles[slot]!,
-            baseName: _soloBaseName(slot),
-            speed: speed,
-          );
-          paths.add(result.path);
-        }
-        if (!mounted) return;
-        messenger.showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 8),
-            content: Text(
-              'Exported ${paths.length} files$at\n${paths.join('\n')}',
-            ),
-          ),
-        );
-      } else {
-        final slot = choice.slot ?? _slots.first;
-        final result = await ClipExportService.export(
-          clip: widget.shot.angles[slot]!,
-          baseName: _soloBaseName(slot),
-          speed: speed,
-        );
-        _showResult(messenger, result, at);
-      }
-    } catch (error) {
-      if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('Export failed: $error')));
-    } finally {
-      if (mounted) setState(() => _exporting = false);
-    }
-  }
-
-  void _showResult(
-    ScaffoldMessengerState messenger,
-    ClipExportResult result,
-    String at,
-  ) {
-    if (!mounted) return;
-    messenger.showSnackBar(
-      SnackBar(
-        duration: const Duration(seconds: 8),
-        content: Text(
-          result.format == ClipExportFormat.video
-              ? 'Exported ${result.videoLabel}$at · ${result.sizeLabel}'
-                    '\n${result.path}'
-              : 'No video writer available '
-                    '(${result.fallbackReason}). Exported '
-                    '${result.frameCount} frames · '
-                    '${result.sizeLabel}\n${result.path}',
-        ),
-      ),
+      shot: widget.shot,
+      onBusy: (busy) {
+        if (mounted) setState(() => _exporting = busy);
+      },
     );
   }
 
@@ -1902,7 +1971,7 @@ class _ShotReviewState extends State<_ShotReview>
                   _BarButton(
                     icon: Icons.save_alt,
                     label: _exporting ? 'Exporting…' : 'Export clip',
-                    onTap: _exporting ? null : _pickExport,
+                    onTap: _exporting ? null : _startExport,
                   ),
                 ],
               ),
