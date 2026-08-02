@@ -130,6 +130,53 @@ class _CameraTabState extends ConsumerState<CameraTab> {
     );
   }
 
+  bool _swapping = false;
+
+  /// Trades the two slots' cameras — device, capture mode and rotation move
+  /// together, since they all describe the physical camera and its mount.
+  /// This is how "which one is DTL?" gets fixed without unplugging anything:
+  /// both feeds halt, the remembered choices swap, and each slot reopens on
+  /// its new assignment.
+  Future<void> _swapAngles() async {
+    if (_swapping) return;
+    setState(() => _swapping = true);
+    try {
+      final slots = ref.read(unitPrefsProvider).cameraSlots;
+      final a = slots[0];
+      final b = slots.length > 1 ? slots[1] : const CameraSlotPref();
+
+      final feed0 = ref.read(cameraFeedProvider(0).notifier);
+      final feed1 = ref.read(cameraFeedProvider(1).notifier);
+      await feed0.halt();
+      await feed1.halt();
+
+      final prefs = ref.read(unitPrefsProvider.notifier);
+      prefs.setCameraSlot(
+        0,
+        deviceName: b.deviceName,
+        width: b.width,
+        height: b.height,
+        fps: b.fps,
+        rotationQuarterTurns: b.rotationQuarterTurns,
+      );
+      prefs.setCameraSlot(
+        1,
+        deviceName: a.deviceName,
+        width: a.width,
+        height: a.height,
+        fps: a.fps,
+        rotationQuarterTurns: a.rotationQuarterTurns,
+      );
+
+      // Reopens run through the serialized camera-ops queue, so the two
+      // opens cannot race each other or a probe.
+      await feed0.refreshDevices();
+      await feed1.refreshDevices();
+    } finally {
+      if (mounted) setState(() => _swapping = false);
+    }
+  }
+
   Widget _buildFeeds(BuildContext context) {
     final feedA = ref.watch(cameraFeedProvider(0));
     final panes = <Widget>[
@@ -139,7 +186,13 @@ class _CameraTabState extends ConsumerState<CameraTab> {
           feed: feedA,
           caption: _secondPaneOpen ? kCameraSlotLabels[0] : null,
           trailing: _secondPaneOpen
-              ? null
+              ? _BarButton(
+                  icon: Icons.swap_horiz,
+                  label: _swapping
+                      ? 'Swapping…'
+                      : 'Swap angles (this camera becomes ${kCameraSlotShortLabels[1]})',
+                  onTap: _swapping ? null : _swapAngles,
+                )
               : _BarButton(
                   icon: Icons.video_call,
                   label: 'Add second camera',
@@ -199,80 +252,6 @@ class _CameraTabState extends ConsumerState<CameraTab> {
         );
       },
     );
-  }
-}
-
-/// One camera slot as a standalone view, for a split-view pane.
-///
-/// Just the toolbar and the picture — capture status and clip review stay on
-/// the full Camera tab, because in a quarter-width pane those controls would
-/// crowd out the video this pane exists to show. With two cameras in
-/// adjacent panes, each pane is one angle.
-class CameraSlotView extends ConsumerStatefulWidget {
-  final int slot;
-
-  const CameraSlotView({super.key, required this.slot});
-
-  @override
-  ConsumerState<CameraSlotView> createState() => _CameraSlotViewState();
-}
-
-class _CameraSlotViewState extends ConsumerState<CameraSlotView> {
-  /// The shot this pane is replaying, or null while the live feed shows.
-  /// Set automatically when a capture completes — in a split-view pane
-  /// there is no capture bar, so without this a shot would come and go
-  /// with nothing on screen reacting at all.
-  ShotClips? _replaying;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final feed = ref.read(cameraFeedProvider(widget.slot));
-      if (feed.status == CameraFeedStatus.idle && feed.devices.isEmpty) {
-        ref.read(cameraFeedProvider(widget.slot).notifier).refreshDevices();
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final feed = ref.watch(cameraFeedProvider(widget.slot));
-
-    ref.listen<ShotClips?>(impactClipProvider.select((s) => s.latest), (
-      previous,
-      next,
-    ) {
-      if (next == null || next.shotIndex == previous?.shotIndex) return;
-      final clip = next.angles[widget.slot];
-      if (clip == null || clip.isEmpty) return;
-      setState(() => _replaying = next);
-    });
-
-    final caption = widget.slot < kCameraSlotLabels.length
-        ? kCameraSlotLabels[widget.slot]
-        : null;
-
-    final replaying = _replaying;
-    final clip = replaying?.angles[widget.slot];
-    if (replaying != null && clip != null && !clip.isEmpty) {
-      return Column(
-        children: [
-          _CameraBar(slot: widget.slot, feed: feed, caption: caption),
-          Expanded(
-            child: _PaneReplay(
-              key: ValueKey('replay-${replaying.shotIndex}-${widget.slot}'),
-              shot: replaying,
-              slot: widget.slot,
-              onLive: () => setState(() => _replaying = null),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return _FeedPane(slot: widget.slot, feed: feed, caption: caption);
   }
 }
 
@@ -1150,139 +1129,6 @@ class _AngleDecoder {
     shown?.dispose();
     shown = null;
     shownIndex = -1;
-  }
-}
-
-/// A split-view pane's automatic replay: one angle of the latest shot,
-/// looping at real speed until the golfer taps Live or the next shot
-/// replaces it.
-///
-/// Deliberately not the full review — a quarter-width pane has no room for
-/// a scrubber and export sheets, and the full Camera tab already auto-opens
-/// those. This is the glanceable version: swing, look up, watch it loop.
-class _PaneReplay extends StatefulWidget {
-  final ShotClips shot;
-  final int slot;
-  final VoidCallback onLive;
-
-  const _PaneReplay({
-    super.key,
-    required this.shot,
-    required this.slot,
-    required this.onLive,
-  });
-
-  @override
-  State<_PaneReplay> createState() => _PaneReplayState();
-}
-
-class _PaneReplayState extends State<_PaneReplay>
-    with SingleTickerProviderStateMixin {
-  ImpactClip get _clip => widget.shot.angles[widget.slot]!;
-
-  late final _AngleDecoder _decoder = _AngleDecoder(
-    clip: _clip,
-    onFrame: () {
-      if (mounted) setState(() {});
-    },
-  );
-
-  late final _ticker = createTicker(_onTick);
-
-  bool _exporting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _decoder.request(_clip.triggerIndex);
-    if (_clip.duration > Duration.zero) _ticker.start();
-  }
-
-  @override
-  void dispose() {
-    _ticker.dispose();
-    _decoder.dispose();
-    super.dispose();
-  }
-
-  void _onTick(Duration elapsed) {
-    final span = _clip.duration;
-    if (span <= Duration.zero) return;
-    // Same time-seek as the review loop; requests for an unchanged index
-    // are dropped by the decoder, so the per-vsync tick costs nothing
-    // between frames.
-    final offset = Duration(
-      microseconds: elapsed.inMicroseconds % span.inMicroseconds,
-    );
-    _decoder.request(_clip.indexAtOffset(offset));
-  }
-
-  void _export() {
-    // The whole shot, not just this pane's angle — the layout sheet offers
-    // the stitched two-angle file even though only one angle loops here.
-    _ShotExportFlow.start(
-      context: context,
-      shot: widget.shot,
-      onBusy: (busy) {
-        if (mounted) setState(() => _exporting = busy);
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final shown = _decoder.shown;
-    return ColoredBox(
-      color: Colors.black,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Center(
-            child: shown == null
-                ? const SizedBox.shrink()
-                : AspectRatio(
-                    aspectRatio: shown.width / shown.height,
-                    child: RawImage(image: shown, fit: BoxFit.contain),
-                  ),
-          ),
-          Positioned(
-            left: 8,
-            top: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.black.withAlpha(140),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                'Shot ${widget.shot.shotIndex + 1} · replay',
-                style: AppTextStyles.sans(
-                  size: 11,
-                  weight: FontWeight.w600,
-                  color: AppColors.textMuted,
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 8,
-            top: 8,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _BarButton(
-                  icon: Icons.save_alt,
-                  label: _exporting ? 'Exporting…' : 'Export shot',
-                  onTap: _exporting ? null : _export,
-                ),
-                const SizedBox(width: 6),
-                _PillButton(label: 'Live', onTap: widget.onLive),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 

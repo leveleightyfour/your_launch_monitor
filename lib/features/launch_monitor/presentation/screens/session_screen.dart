@@ -45,8 +45,6 @@ enum _ActivePaneView {
   table,
   optimizer,
   camera,
-  cameraDtl,
-  cameraFo,
 }
 
 /// The camera feed needs a desktop camera backend, so it is offered only
@@ -56,12 +54,8 @@ enum _ActivePaneView {
 bool _viewAvailable(_ActiveView v) =>
     v != _ActiveView.camera || isDesktopPlatform;
 
-bool _paneAvailable(_ActivePaneView v) => switch (v) {
-  _ActivePaneView.camera ||
-  _ActivePaneView.cameraDtl ||
-  _ActivePaneView.cameraFo => isDesktopPlatform,
-  _ => true,
-};
+bool _paneAvailable(_ActivePaneView v) =>
+    v != _ActivePaneView.camera || isDesktopPlatform;
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 
@@ -79,7 +73,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   _ActivePaneView _splitLeft = _ActivePaneView.table;
   _ActivePaneView _splitRight = _ActivePaneView.dispersion;
   _ActivePaneView _splitThird = _ActivePaneView.optimizer;
-  _ActivePaneView _splitFourth = _ActivePaneView.camera;
   bool _showShotList = false;
   ShotListMetric _shotListMetric = ShotListMetric.carry;
 
@@ -107,17 +100,33 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       prefs.splitThirdPane,
       _ActivePaneView.optimizer,
     );
-    _splitFourth = _paneFromName(
-      prefs.splitFourthPane,
-      _ActivePaneView.cameraFo,
-    );
+    // The legacy single-angle panes both map to the camera pane, so a stored
+    // DTL-and-FO pair would come back as two camera panes; keep the first
+    // and hand the rest back to data views.
+    var cameraSeen = false;
+    _ActivePaneView dedupe(_ActivePaneView v, _ActivePaneView fallback) {
+      if (v != _ActivePaneView.camera) return v;
+      if (cameraSeen) return fallback;
+      cameraSeen = true;
+      return v;
+    }
+
+    _splitLeft = dedupe(_splitLeft, _ActivePaneView.table);
+    _splitRight = dedupe(_splitRight, _ActivePaneView.dispersion);
+    _splitThird = dedupe(_splitThird, _ActivePaneView.optimizer);
   }
 
-  static _ActivePaneView _paneFromName(String name, _ActivePaneView fallback) =>
-      _ActivePaneView.values.firstWhere(
-        (v) => v.name == name && _paneAvailable(v),
-        orElse: () => fallback,
-      );
+  static _ActivePaneView _paneFromName(String name, _ActivePaneView fallback) {
+    // Pane names stored before the camera pane learned to hold both angles
+    // itself ('cameraDtl'/'cameraFo') fold into it.
+    final effective = name == 'cameraDtl' || name == 'cameraFo'
+        ? 'camera'
+        : name;
+    return _ActivePaneView.values.firstWhere(
+      (v) => v.name == effective && _paneAvailable(v),
+      orElse: () => fallback,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -150,23 +159,26 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         ? allShots
         : allShots.where((s) => s.clubId == filterClub.id).toList();
 
-    // The moment a second camera is configured, hand the split's right half
-    // to the cameras — one quarter per angle — leaving the left half to the
-    // data panes. Only on the transition: any pane choice made after that
-    // is the golfer's and stays.
+    // The moment a second camera is configured, make sure the split holds a
+    // camera pane at all — it widens to half the view on its own. Only on
+    // the transition: any pane choice made after that is the golfer's and
+    // stays.
     ref.listen(
       unitPrefsProvider.select(
         (p) => p.cameraSlots.length > 1 && !p.cameraSlots[1].isEmpty,
       ),
       (previous, next) {
         if (previous == false && next == true) {
-          setState(() {
-            _splitThird = _ActivePaneView.cameraDtl;
-            _splitFourth = _ActivePaneView.cameraFo;
-          });
-          ref
-              .read(unitPrefsProvider.notifier)
-              .setSplitPanes(third: 'cameraDtl', fourth: 'cameraFo');
+          final hasCamera =
+              _splitLeft == _ActivePaneView.camera ||
+              _splitRight == _ActivePaneView.camera ||
+              _splitThird == _ActivePaneView.camera;
+          if (!hasCamera) {
+            setState(() => _splitThird = _ActivePaneView.camera);
+            ref
+                .read(unitPrefsProvider.notifier)
+                .setSplitPanes(third: 'camera');
+          }
         }
       },
     );
@@ -200,10 +212,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         leftPane: _splitLeft,
         rightPane: _splitRight,
         thirdPane: _splitThird,
-        fourthPane: _splitFourth,
-        // Quarters exist for the second camera: with one camera the fourth
-        // pane would only dilute the other three.
-        enableFourthPane: ref.watch(
+        // With both angles configured, the camera pane holds two feeds and
+        // earns double width — half the view on an ultrawide strip.
+        dualCamera: ref.watch(
           unitPrefsProvider.select(
             (p) => p.cameraSlots.length > 1 && !p.cameraSlots[1].isEmpty,
           ),
@@ -220,10 +231,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         onThirdChanged: (v) {
           setState(() => _splitThird = v);
           ref.read(unitPrefsProvider.notifier).setSplitPanes(third: v.name);
-        },
-        onFourthChanged: (v) {
-          setState(() => _splitFourth = v);
-          ref.read(unitPrefsProvider.notifier).setSplitPanes(fourth: v.name);
         },
         onShotSelected: (i) =>
             ref.read(selectedShotIndexProvider.notifier).state = i ?? 0,
@@ -965,15 +972,13 @@ class _ActiveSplitView extends StatelessWidget {
   /// Only rendered where there is room for it — see [supportsThirdSplitPane].
   final _ActivePaneView thirdPane;
 
-  /// Rendered only when [enableFourthPane] and the geometry allows quarters
-  /// — see [quadSplitLayout].
-  final _ActivePaneView fourthPane;
-  final bool enableFourthPane;
+  /// Both camera slots are configured, so the camera pane holds two feeds
+  /// and earns double the width of a data pane.
+  final bool dualCamera;
   final int selectedShotIndex;
   final ValueChanged<_ActivePaneView> onLeftChanged;
   final ValueChanged<_ActivePaneView> onRightChanged;
   final ValueChanged<_ActivePaneView> onThirdChanged;
-  final ValueChanged<_ActivePaneView> onFourthChanged;
   final ValueChanged<int?> onShotSelected;
 
   const _ActiveSplitView({
@@ -985,13 +990,11 @@ class _ActiveSplitView extends StatelessWidget {
     required this.leftPane,
     required this.rightPane,
     required this.thirdPane,
-    required this.fourthPane,
-    required this.enableFourthPane,
+    required this.dualCamera,
     required this.selectedShotIndex,
     required this.onLeftChanged,
     required this.onRightChanged,
     required this.onThirdChanged,
-    required this.onFourthChanged,
     required this.onShotSelected,
   });
 
@@ -1037,10 +1040,6 @@ class _ActiveSplitView extends StatelessWidget {
         return const ShotOptimizerPanel(showLeftBorder: false);
       case _ActivePaneView.camera:
         return const CameraTab();
-      case _ActivePaneView.cameraDtl:
-        return const CameraSlotView(slot: 0);
-      case _ActivePaneView.cameraFo:
-        return const CameraSlotView(slot: 1);
     }
   }
 
@@ -1062,77 +1061,89 @@ class _ActiveSplitView extends StatelessWidget {
     if (isTablet(context)) {
       return LayoutBuilder(
         builder: (context, constraints) {
-          // Every pane is a flex-1 Expanded, so the panes always split the
-          // space into equal shares — halves, thirds, or quarters.
           const divider = VerticalDivider(
             width: 1,
             thickness: 1,
             color: AppColors.border,
           );
 
-          // Quarters, but only earned: a second camera is configured and the
-          // geometry fits four readable panes. 2x2 whenever two rows fit —
-          // four across leaves every pane tall and narrow, which suits
-          // neither a camera feed nor a dispersion plot — and one strip of
-          // four only for windows too shallow to stack.
-          final quad = enableFourthPane
-              ? quadSplitLayout(
-                  context,
-                  constraints.maxWidth,
-                  constraints.maxHeight,
-                )
-              : null;
-
-          if (quad == QuadSplitLayout.grid2x2) {
-            return Column(
+          final hasThird = supportsThirdSplitPane(
+            context,
+            constraints.maxWidth,
+          );
+          if (!hasThird) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
-                      divider,
-                      Expanded(
-                        child: _pane(rightPane, onRightChanged, 'right'),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1, color: AppColors.border),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        child: _pane(thirdPane, onThirdChanged, 'third'),
-                      ),
-                      divider,
-                      Expanded(
-                        child: _pane(fourthPane, onFourthChanged, 'fourth'),
-                      ),
-                    ],
-                  ),
-                ),
+                Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
+                divider,
+                Expanded(child: _pane(rightPane, onRightChanged, 'right')),
               ],
             );
           }
 
-          final third =
-              quad == QuadSplitLayout.row ||
-              supportsThirdSplitPane(context, constraints.maxWidth);
+          final panes = [
+            (leftPane, onLeftChanged, 'left'),
+            (rightPane, onRightChanged, 'right'),
+            (thirdPane, onThirdChanged, 'third'),
+          ];
+
+          // With both angles configured, the camera pane holds two feeds and
+          // earns double width: on an ultrawide strip that is half the view
+          // — a quarter per angle — with the data panes on the other half.
+          // On an ordinary desktop tall enough to stack, the camera takes a
+          // full-width row of its own instead, keeping both feeds large.
+          final cameraIdx = dualCamera
+              ? panes.indexWhere((p) => p.$1 == _ActivePaneView.camera)
+              : -1;
+
+          if (cameraIdx >= 0 &&
+              dualCameraPrefersOwnRow(
+                context,
+                constraints.maxWidth,
+                constraints.maxHeight,
+              )) {
+            final camera = panes[cameraIdx];
+            final others = [
+              for (var i = 0; i < panes.length; i++)
+                if (i != cameraIdx) panes[i],
+            ];
+            final cameraRow = Expanded(
+              child: _pane(camera.$1, camera.$2, camera.$3),
+            );
+            final dataRow = Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _pane(others[0].$1, others[0].$2, others[0].$3),
+                  ),
+                  divider,
+                  Expanded(
+                    child: _pane(others[1].$1, others[1].$2, others[1].$3),
+                  ),
+                ],
+              ),
+            );
+            const rowDivider = Divider(height: 1, color: AppColors.border);
+            // The camera row keeps its configured position: chosen as the
+            // left pane it leads, anywhere else it sits below the data.
+            return Column(
+              children: cameraIdx == 0
+                  ? [cameraRow, rowDivider, dataRow]
+                  : [dataRow, rowDivider, cameraRow],
+            );
+          }
+
           return Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(child: _pane(leftPane, onLeftChanged, 'left')),
-              divider,
-              Expanded(child: _pane(rightPane, onRightChanged, 'right')),
-              if (third) ...[
-                divider,
-                Expanded(child: _pane(thirdPane, onThirdChanged, 'third')),
-              ],
-              if (quad == QuadSplitLayout.row) ...[
-                divider,
-                Expanded(child: _pane(fourthPane, onFourthChanged, 'fourth')),
+              for (var i = 0; i < panes.length; i++) ...[
+                if (i > 0) divider,
+                Expanded(
+                  flex: i == cameraIdx ? 2 : 1,
+                  child: _pane(panes[i].$1, panes[i].$2, panes[i].$3),
+                ),
               ],
             ],
           );
@@ -1164,11 +1175,9 @@ class _ActivePaneHeader extends StatelessWidget {
     (_ActivePaneView.club, Icons.sports_golf, 'Club'),
     (_ActivePaneView.table, Icons.table_rows, 'Table'),
     (_ActivePaneView.optimizer, Icons.tune, 'Optimizer'),
+    // One entry for any number of angles: the camera pane carries every
+    // configured feed itself and widens when a second one arrives.
     (_ActivePaneView.camera, Icons.videocam, 'Camera'),
-    // Single angles, so two cameras can hold a quarter each in the
-    // four-pane split instead of nesting both feeds inside one pane.
-    (_ActivePaneView.cameraDtl, Icons.videocam_outlined, 'DTL Camera'),
-    (_ActivePaneView.cameraFo, Icons.video_camera_front, 'FO Camera'),
   ];
 
   String get _label => _options.firstWhere((o) => o.$1 == current).$3;
