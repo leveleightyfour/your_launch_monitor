@@ -80,6 +80,12 @@ class ClipExportResult {
   final int bytes;
   final int frameCount;
 
+  /// Pixel size of the written video (zero for the frame-folder fallback).
+  /// Surfaced so a "that file looks the wrong size" report can be settled
+  /// by reading the snackbar instead of hunting through file properties.
+  final int width;
+  final int height;
+
   /// Why the video rungs were abandoned, when they all were.
   final String? fallbackReason;
 
@@ -88,11 +94,15 @@ class ClipExportResult {
     required this.path,
     required this.bytes,
     required this.frameCount,
+    this.width = 0,
+    this.height = 0,
     this.videoLabel,
     this.fallbackReason,
   });
 
   String get sizeLabel => '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+
+  String get dimensionsLabel => '$width×$height';
 }
 
 class ClipExportService {
@@ -122,19 +132,28 @@ class ClipExportService {
     await root.create(recursive: true);
     final stem = _stem(baseName, clip.shotIndex, clip.capturedAt, speed);
 
+    final probe = cv.imdecode(clip.frames.first.jpeg, _imreadColor);
+    final (frameWidth, frameHeight) = (probe.cols, probe.rows);
+    probe.dispose();
+
     final reasons = <String>[];
     for (final attempt in _attempts) {
       final path = '${root.path}/$stem${attempt.extension}';
       final reason = await _tryWriteVideo(clip, attempt, path, speed);
       if (reason == null) {
         final bytes = await File(path).length();
-        debugPrint('[export] ${attempt.label} → $path ($bytes bytes)');
+        debugPrint(
+          '[export] ${attempt.label} ${frameWidth}x$frameHeight → $path '
+          '($bytes bytes)',
+        );
         return ClipExportResult(
           format: ClipExportFormat.video,
           videoLabel: attempt.label,
           path: path,
           bytes: bytes,
           frameCount: clip.frameCount,
+          width: frameWidth,
+          height: frameHeight,
         );
       }
       debugPrint('[export] ${attempt.label} unavailable — $reason');
@@ -279,6 +298,15 @@ class ClipExportService {
     }
 
     final plan = _CompositePlan.build(shot, clips, layout);
+    debugPrint(
+      '[export] composite ${layout.name}: ${clips.length} angles → '
+      '${plan.outWidth}×${plan.outHeight} '
+      '(panes ${plan.paneSizes.map((s) => '${s.$1}×${s.$2}').join(' + ')}), '
+      'window ${plan.windowStart.inMilliseconds}..'
+      '${plan.windowEnd.inMilliseconds}ms, '
+      'master ${plan.masterFps.toStringAsFixed(1)}fps, '
+      '${plan.tickCount} frames',
+    );
 
     final root = Directory(
       '${(await getApplicationDocumentsDirectory()).path}/clips',
@@ -298,13 +326,18 @@ class ClipExportService {
       final reason = await _tryWriteComposite(plan, attempt, path, speed);
       if (reason == null) {
         final bytes = await File(path).length();
-        debugPrint('[export] ${attempt.label} composite → $path ($bytes bytes)');
+        debugPrint(
+          '[export] ${attempt.label} composite '
+          '${plan.outWidth}x${plan.outHeight} → $path ($bytes bytes)',
+        );
         return ClipExportResult(
           format: ClipExportFormat.video,
           videoLabel: attempt.label,
           path: path,
           bytes: bytes,
           frameCount: plan.tickCount,
+          width: plan.outWidth,
+          height: plan.outHeight,
         );
       }
       debugPrint('[export] ${attempt.label} composite unavailable — $reason');
@@ -516,9 +549,13 @@ class _CompositePlan {
 
     // Native sizes come from decoding one frame per angle — a camera's frames
     // are one size for the life of a clip. Panes are scaled to a shared edge
-    // (heights for a row, widths for a column), scaling *down* to the
-    // smallest so no angle is invented pixels. Dimensions are kept even
-    // because H.264 encoders refuse odd ones.
+    // (heights for a row, widths for a column), scaling *up* to the largest
+    // so no angle surrenders pixels. This matters once one camera is rotated
+    // portrait: matching down to a landscape neighbour's 720px height would
+    // shrink a 720×1280 portrait angle to a 404px-wide sliver, which is the
+    // angle the composite exists to show. Upscaling the smaller pane costs
+    // only file size. Dimensions are kept even because H.264 encoders
+    // refuse odd ones.
     final natives = <(int, int)>[];
     for (final clip in clips) {
       final probe = cv.imdecode(clip.frames.first.jpeg, _imreadColor);
@@ -535,7 +572,7 @@ class _CompositePlan {
     int outHeight;
     if (layout == CompositeLayout.sideBySide) {
       final height = _even(
-        natives.map((s) => s.$2).reduce((a, b) => a < b ? a : b),
+        natives.map((s) => s.$2).reduce((a, b) => a > b ? a : b),
       );
       for (final (w, h) in natives) {
         paneSizes.add((_even((w * height / h).round()), height));
@@ -544,7 +581,7 @@ class _CompositePlan {
       outHeight = height;
     } else {
       final width = _even(
-        natives.map((s) => s.$1).reduce((a, b) => a < b ? a : b),
+        natives.map((s) => s.$1).reduce((a, b) => a > b ? a : b),
       );
       for (final (w, h) in natives) {
         paneSizes.add((width, _even((h * width / w).round())));
