@@ -29,6 +29,11 @@ class _CameraTabState extends ConsumerState<CameraTab> {
   /// The shot being scrubbed, or null while the live feeds are showing.
   ShotClips? _reviewing;
 
+  /// The review in [_reviewing] opened itself off a fresh capture, so it
+  /// starts looping; a review the golfer opened by hand starts paused at
+  /// the trigger, ready to scrub.
+  bool _autoPlayReview = false;
+
   /// The second pane is open — either the golfer added it this session or
   /// slot 1 has a remembered camera from a previous one.
   bool _secondPaneOpen = false;
@@ -72,8 +77,25 @@ class _CameraTabState extends ConsumerState<CameraTab> {
   @override
   Widget build(BuildContext context) {
     final capture = ref.watch(impactClipProvider);
-    final reviewing = _reviewing;
 
+    // A finished capture opens itself, looping. The golfer's hands are on a
+    // club, not the mouse — the replay appearing unprompted right after the
+    // swing is the point of having cameras on the rig. The next shot simply
+    // replaces it; Back to live dismisses it.
+    ref.listen<ShotClips?>(impactClipProvider.select((s) => s.latest), (
+      previous,
+      next,
+    ) {
+      if (next == null || next.shotIndex == previous?.shotIndex) return;
+      debugPrint('[review] auto-opening shot ${next.shotIndex + 1}');
+      _setAllPreviewsPaused(true);
+      setState(() {
+        _reviewing = next;
+        _autoPlayReview = true;
+      });
+    });
+
+    final reviewing = _reviewing;
     return Column(
       children: [
         Expanded(
@@ -84,6 +106,7 @@ class _CameraTabState extends ConsumerState<CameraTab> {
                   // trigger rather than inheriting a stale playhead.
                   key: ValueKey('review-${reviewing.shotIndex}'),
                   shot: reviewing,
+                  autoPlay: _autoPlayReview,
                 ),
         ),
         if (capture.armed || capture.clips.isNotEmpty)
@@ -93,7 +116,10 @@ class _CameraTabState extends ConsumerState<CameraTab> {
             onReview: (shot) {
               debugPrint('[review] tapped, shot ${shot.shotIndex + 1}');
               _setAllPreviewsPaused(true);
-              setState(() => _reviewing = shot);
+              setState(() {
+                _reviewing = shot;
+                _autoPlayReview = false;
+              });
             },
             onBackToLive: () {
               _setAllPreviewsPaused(false);
@@ -192,6 +218,12 @@ class CameraSlotView extends ConsumerStatefulWidget {
 }
 
 class _CameraSlotViewState extends ConsumerState<CameraSlotView> {
+  /// The shot this pane is replaying, or null while the live feed shows.
+  /// Set automatically when a capture completes — in a split-view pane
+  /// there is no capture bar, so without this a shot would come and go
+  /// with nothing on screen reacting at all.
+  ShotClips? _replaying;
+
   @override
   void initState() {
     super.initState();
@@ -207,13 +239,40 @@ class _CameraSlotViewState extends ConsumerState<CameraSlotView> {
   @override
   Widget build(BuildContext context) {
     final feed = ref.watch(cameraFeedProvider(widget.slot));
-    return _FeedPane(
-      slot: widget.slot,
-      feed: feed,
-      caption: widget.slot < kCameraSlotLabels.length
-          ? kCameraSlotLabels[widget.slot]
-          : null,
-    );
+
+    ref.listen<ShotClips?>(impactClipProvider.select((s) => s.latest), (
+      previous,
+      next,
+    ) {
+      if (next == null || next.shotIndex == previous?.shotIndex) return;
+      final clip = next.angles[widget.slot];
+      if (clip == null || clip.isEmpty) return;
+      setState(() => _replaying = next);
+    });
+
+    final caption = widget.slot < kCameraSlotLabels.length
+        ? kCameraSlotLabels[widget.slot]
+        : null;
+
+    final replaying = _replaying;
+    final clip = replaying?.angles[widget.slot];
+    if (replaying != null && clip != null && !clip.isEmpty) {
+      return Column(
+        children: [
+          _CameraBar(slot: widget.slot, feed: feed, caption: caption),
+          Expanded(
+            child: _PaneReplay(
+              key: ValueKey('replay-${replaying.shotIndex}-${widget.slot}'),
+              clip: clip,
+              shotIndex: replaying.shotIndex,
+              onLive: () => setState(() => _replaying = null),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _FeedPane(slot: widget.slot, feed: feed, caption: caption);
   }
 }
 
@@ -1094,6 +1153,112 @@ class _AngleDecoder {
   }
 }
 
+/// A split-view pane's automatic replay: one angle of the latest shot,
+/// looping at real speed until the golfer taps Live or the next shot
+/// replaces it.
+///
+/// Deliberately not the full review — a quarter-width pane has no room for
+/// a scrubber and export sheets, and the full Camera tab already auto-opens
+/// those. This is the glanceable version: swing, look up, watch it loop.
+class _PaneReplay extends StatefulWidget {
+  final ImpactClip clip;
+  final int shotIndex;
+  final VoidCallback onLive;
+
+  const _PaneReplay({
+    super.key,
+    required this.clip,
+    required this.shotIndex,
+    required this.onLive,
+  });
+
+  @override
+  State<_PaneReplay> createState() => _PaneReplayState();
+}
+
+class _PaneReplayState extends State<_PaneReplay>
+    with SingleTickerProviderStateMixin {
+  late final _AngleDecoder _decoder = _AngleDecoder(
+    clip: widget.clip,
+    onFrame: () {
+      if (mounted) setState(() {});
+    },
+  );
+
+  late final _ticker = createTicker(_onTick);
+
+  @override
+  void initState() {
+    super.initState();
+    _decoder.request(widget.clip.triggerIndex);
+    if (widget.clip.duration > Duration.zero) _ticker.start();
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    _decoder.dispose();
+    super.dispose();
+  }
+
+  void _onTick(Duration elapsed) {
+    final span = widget.clip.duration;
+    if (span <= Duration.zero) return;
+    // Same time-seek as the review loop; requests for an unchanged index
+    // are dropped by the decoder, so the per-vsync tick costs nothing
+    // between frames.
+    final offset = Duration(
+      microseconds: elapsed.inMicroseconds % span.inMicroseconds,
+    );
+    _decoder.request(widget.clip.indexAtOffset(offset));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = _decoder.shown;
+    return ColoredBox(
+      color: Colors.black,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Center(
+            child: shown == null
+                ? const SizedBox.shrink()
+                : AspectRatio(
+                    aspectRatio: shown.width / shown.height,
+                    child: RawImage(image: shown, fit: BoxFit.contain),
+                  ),
+          ),
+          Positioned(
+            left: 8,
+            top: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.black.withAlpha(140),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'Shot ${widget.shotIndex + 1} · replay',
+                style: AppTextStyles.sans(
+                  size: 11,
+                  weight: FontWeight.w600,
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 8,
+            top: 8,
+            child: _PillButton(label: 'Live', onTap: widget.onLive),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// One way of exporting a multi-angle shot, picked off the layout sheet.
 class _ExportChoice {
   final String title;
@@ -1122,7 +1287,11 @@ class _ExportChoice {
 class _ShotReview extends StatefulWidget {
   final ShotClips shot;
 
-  const _ShotReview({super.key, required this.shot});
+  /// Start looping at full speed instead of paused at the trigger — set
+  /// when the review opened itself off a fresh capture.
+  final bool autoPlay;
+
+  const _ShotReview({super.key, required this.shot, this.autoPlay = false});
 
   @override
   State<_ShotReview> createState() => _ShotReviewState();
@@ -1177,6 +1346,13 @@ class _ShotReviewState extends State<_ShotReview>
       '[review] opening shot ${shot.shotIndex + 1}: ${shot.angleCount} '
       'angle(s), ${(shot.byteSize / (1024 * 1024)).toStringAsFixed(1)}MB',
     );
+    if (widget.autoPlay) {
+      // After the first frame, not during mount — the ticker and setState
+      // want a built element under them.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _speed == null && _slots.isNotEmpty) _toggleLoop(1.0);
+      });
+    }
   }
 
   void _adoptShot() {
