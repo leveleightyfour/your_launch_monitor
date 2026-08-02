@@ -549,9 +549,13 @@ class _CompositePlan {
 
     // Native sizes come from decoding one frame per angle — a camera's frames
     // are one size for the life of a clip. Panes are scaled to a shared edge
-    // (heights for a row, widths for a column), scaling *down* to the
-    // smallest so no angle is invented pixels. Dimensions are kept even
-    // because H.264 encoders refuse odd ones.
+    // (heights for a row, widths for a column), scaling *up* to the largest
+    // so no angle surrenders pixels. This matters once one camera is rotated
+    // portrait: matching down to a landscape neighbour's 720px height would
+    // shrink a 720×1280 portrait angle to a 404px-wide sliver, which is the
+    // angle the composite exists to show. Upscaling the smaller pane costs
+    // only file size. Dimensions are kept even because H.264 encoders
+    // refuse odd ones.
     final natives = <(int, int)>[];
     for (final clip in clips) {
       final probe = cv.imdecode(clip.frames.first.jpeg, _imreadColor);
@@ -568,7 +572,7 @@ class _CompositePlan {
     int outHeight;
     if (layout == CompositeLayout.sideBySide) {
       final height = _even(
-        natives.map((s) => s.$2).reduce((a, b) => a < b ? a : b),
+        natives.map((s) => s.$2).reduce((a, b) => a > b ? a : b),
       );
       for (final (w, h) in natives) {
         paneSizes.add((_even((w * height / h).round()), height));
@@ -577,7 +581,7 @@ class _CompositePlan {
       outHeight = height;
     } else {
       final width = _even(
-        natives.map((s) => s.$1).reduce((a, b) => a < b ? a : b),
+        natives.map((s) => s.$1).reduce((a, b) => a > b ? a : b),
       );
       for (final (w, h) in natives) {
         paneSizes.add((width, _even((h * width / w).round())));
