@@ -201,7 +201,13 @@ class CaptureMode {
   final int width;
   final int height;
 
-  const CaptureMode(this.width, this.height);
+  /// Requested frame rate. Zero means "no preference", which the worker
+  /// treats as 30 alongside a size request — the value that first pulled
+  /// DirectShow off its slow uncompressed default. A rate the camera cannot
+  /// do snaps down; the clip's measured fps stays the number to trust.
+  final int fps;
+
+  const CaptureMode(this.width, this.height, [this.fps = 0]);
 
   /// Take whatever the camera opens on. For most UVC devices that is 640x480,
   /// whatever the sensor is capable of.
@@ -209,24 +215,35 @@ class CaptureMode {
 
   bool get isAuto => width <= 0 || height <= 0;
 
-  String get label => isAuto ? 'Camera default' : '$width×$height';
+  String get label {
+    if (isAuto) return 'Camera default';
+    return fps > 0 ? '$width×$height @ ${fps}fps' : '$width×$height';
+  }
 
-  /// Offered in the picker. A camera that cannot do the requested size snaps
-  /// to its nearest supported mode rather than failing, so an over-ambitious
-  /// choice costs nothing but a smaller frame than asked for.
+  /// Offered in the picker. A camera that cannot do the requested size or
+  /// rate snaps to its nearest supported mode rather than failing, so an
+  /// over-ambitious choice costs nothing but less than was asked for.
   static const candidates = [
     auto,
     CaptureMode(640, 480),
+    CaptureMode(640, 480, 60),
+    CaptureMode(640, 480, 120),
     CaptureMode(1280, 720),
+    CaptureMode(1280, 720, 60),
+    CaptureMode(1280, 720, 120),
     CaptureMode(1920, 1080),
+    CaptureMode(1920, 1080, 60),
   ];
 
   @override
   bool operator ==(Object other) =>
-      other is CaptureMode && other.width == width && other.height == height;
+      other is CaptureMode &&
+      other.width == width &&
+      other.height == height &&
+      other.fps == fps;
 
   @override
-  int get hashCode => Object.hash(width, height);
+  int get hashCode => Object.hash(width, height, fps);
 }
 
 // ── Devices ──────────────────────────────────────────────────────────────────
@@ -550,7 +567,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
 
   CaptureMode _preferredMode() {
     final pref = _slotPref();
-    return CaptureMode(pref.width, pref.height);
+    return CaptureMode(pref.width, pref.height, pref.fps);
   }
 
   /// Requests a different capture mode, reopening the live camera on it.
@@ -558,7 +575,12 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
     if (_disposed) return;
     ref
         .read(unitPrefsProvider.notifier)
-        .setCameraSlot(slot, width: mode.width, height: mode.height);
+        .setCameraSlot(
+          slot,
+          width: mode.width,
+          height: mode.height,
+          fps: mode.fps,
+        );
     final device = state.selected;
     if (device == null || _link == null) return;
     await select(device);
@@ -642,6 +664,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
           apiPreference: _backend,
           requestWidth: requested.width,
           requestHeight: requested.height,
+          requestFps: requested.fps,
           previewIntervalMs: _previewInterval.inMilliseconds,
           rotationQuarterTurns: _slotPref().rotationQuarterTurns,
         ),

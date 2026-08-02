@@ -14,6 +14,7 @@ import 'package:flutter/foundation.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:omni_sniffer/features/launch_monitor/application/impact_clip_provider.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/impact_clip.dart';
 
 /// `cv::IMREAD_COLOR` — decode to 3-channel BGR, which is what writers expect.
@@ -50,6 +51,20 @@ const _attempts = [
 ];
 
 enum ClipExportFormat { video, frames }
+
+/// How a multi-angle shot is arranged in a single composite video.
+enum CompositeLayout {
+  sideBySide('Side by side', 'side-by-side'),
+  stacked('Stacked', 'stacked');
+
+  final String label;
+
+  /// Goes into the file name, so a composite can't be mistaken for a
+  /// single-angle export sitting next to it.
+  final String stemSuffix;
+
+  const CompositeLayout(this.label, this.stemSuffix);
+}
 
 @immutable
 class ClipExportResult {
@@ -105,7 +120,7 @@ class ClipExportService {
       '${(await getApplicationDocumentsDirectory()).path}/clips',
     );
     await root.create(recursive: true);
-    final stem = _stem(baseName, clip, speed);
+    final stem = _stem(baseName, clip.shotIndex, clip.capturedAt, speed);
 
     final reasons = <String>[];
     for (final attempt in _attempts) {
@@ -235,22 +250,406 @@ class ClipExportService {
     return bytes;
   }
 
-  static String _stem(String baseName, ImpactClip clip, double speed) {
+  // ── Composite export ───────────────────────────────────────────────────────
+
+  /// Writes every angle of [shot] into one video, aligned on the shared
+  /// trigger, arranged per [layout].
+  ///
+  /// Alignment is arithmetic, not guesswork: every angle's frames carry wall
+  /// clock timestamps and the shot carries the trigger's, so each frame has a
+  /// signed offset from the packet. The composite covers the *intersection*
+  /// of the angles' windows — the span where every camera was actually
+  /// recording — because padding a late-starting angle with black or frozen
+  /// frames would misrepresent what was captured.
+  static Future<ClipExportResult> exportComposite({
+    required ShotClips shot,
+    required CompositeLayout layout,
+    required String baseName,
+    double speed = 1.0,
+  }) async {
+    if (speed <= 0) {
+      throw ArgumentError.value(speed, 'speed', 'must be positive');
+    }
+    final clips = [
+      for (final slot in shot.slots)
+        if (!shot.angles[slot]!.isEmpty) shot.angles[slot]!,
+    ];
+    if (clips.length < 2) {
+      throw StateError('A composite needs at least two captured angles.');
+    }
+
+    final plan = _CompositePlan.build(shot, clips, layout);
+
+    final root = Directory(
+      '${(await getApplicationDocumentsDirectory()).path}/clips',
+    );
+    await root.create(recursive: true);
+    final stem = _stem(
+      baseName,
+      shot.shotIndex,
+      shot.capturedAt,
+      speed,
+      suffix: layout.stemSuffix,
+    );
+
+    final reasons = <String>[];
+    for (final attempt in _attempts) {
+      final path = '${root.path}/$stem${attempt.extension}';
+      final reason = await _tryWriteComposite(plan, attempt, path, speed);
+      if (reason == null) {
+        final bytes = await File(path).length();
+        debugPrint('[export] ${attempt.label} composite → $path ($bytes bytes)');
+        return ClipExportResult(
+          format: ClipExportFormat.video,
+          videoLabel: attempt.label,
+          path: path,
+          bytes: bytes,
+          frameCount: plan.tickCount,
+        );
+      }
+      debugPrint('[export] ${attempt.label} composite unavailable — $reason');
+      reasons.add('${attempt.label}: $reason');
+    }
+
+    final framesDir = Directory('${root.path}/$stem');
+    final bytes = await _writeCompositeFrames(plan, framesDir);
+    debugPrint('[export] composite frames → ${framesDir.path} ($bytes bytes)');
+    return ClipExportResult(
+      format: ClipExportFormat.frames,
+      path: framesDir.path,
+      bytes: bytes,
+      frameCount: plan.tickCount,
+      fallbackReason: reasons.join('; '),
+    );
+  }
+
+  static Future<String?> _tryWriteComposite(
+    _CompositePlan plan,
+    _VideoAttempt attempt,
+    String path,
+    double speed,
+  ) async {
+    final file = File(path);
+    if (await file.exists()) await file.delete();
+
+    final fps = (plan.masterFps * speed).clamp(1.0, double.infinity);
+    cv.VideoWriter? writer;
+    final tracks = plan.newTracks();
+    try {
+      writer = attempt.apiPreference == null
+          ? cv.VideoWriter.fromFile(
+              path,
+              attempt.codec,
+              fps,
+              (plan.outWidth, plan.outHeight),
+            )
+          : cv.VideoWriter.fromFile(
+              path,
+              attempt.codec,
+              fps,
+              (plan.outWidth, plan.outHeight),
+              apiPreference: attempt.apiPreference,
+            );
+      if (!writer.isOpened) {
+        return 'OpenCV would not open a ${attempt.codec} writer';
+      }
+
+      for (var tick = 0; tick < plan.tickCount; tick++) {
+        final composite = plan.composeTick(tracks, tick);
+        try {
+          writer.write(composite);
+        } finally {
+          composite.dispose();
+        }
+      }
+      writer.release();
+    } catch (error) {
+      return '$error';
+    } finally {
+      for (final track in tracks) {
+        track.dispose();
+      }
+      writer?.dispose();
+    }
+
+    if (!await file.exists()) return 'the writer produced no file';
+    final length = await file.length();
+    if (length < _minPlausibleVideoBytes) {
+      await file.delete();
+      return 'the file came out empty ($length bytes)';
+    }
+    return null;
+  }
+
+  /// The composite equivalent of [_writeFrames]: re-encoded JPEGs of every
+  /// composed tick, plus a manifest of trigger-relative offsets.
+  static Future<int> _writeCompositeFrames(
+    _CompositePlan plan,
+    Directory dir,
+  ) async {
+    if (await dir.exists()) await dir.delete(recursive: true);
+    await dir.create(recursive: true);
+
+    final manifest = StringBuffer('frame,offset_ms,is_trigger\n');
+    var bytes = 0;
+    var triggerMarked = false;
+
+    final tracks = plan.newTracks();
+    try {
+      for (var tick = 0; tick < plan.tickCount; tick++) {
+        final offset = plan.tickOffset(tick);
+        final isTrigger = !triggerMarked && offset >= Duration.zero;
+        if (isTrigger) triggerMarked = true;
+
+        final composite = plan.composeTick(tracks, tick);
+        try {
+          final (encoded, jpeg) = cv.imencode('.jpg', composite);
+          if (!encoded) continue;
+          final number = tick.toString().padLeft(4, '0');
+          final suffix = isTrigger ? '_packet' : '';
+          await File('${dir.path}/frame_$number$suffix.jpg')
+              .writeAsBytes(jpeg);
+          bytes += jpeg.lengthInBytes;
+          manifest.writeln('$number,${offset.inMilliseconds},$isTrigger');
+        } finally {
+          composite.dispose();
+        }
+      }
+    } finally {
+      for (final track in tracks) {
+        track.dispose();
+      }
+    }
+
+    await File('${dir.path}/manifest.csv').writeAsString(manifest.toString());
+    return bytes;
+  }
+
+  static String _stem(
+    String baseName,
+    int shotIndex,
+    DateTime at,
+    double speed, {
+    String suffix = '',
+  }) {
     final safe = baseName
         .trim()
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
         .replaceAll(RegExp(r'^-+|-+$'), '');
-    final at = clip.capturedAt;
     final stamp =
         '${at.year}-${_two(at.month)}-${_two(at.day)}_'
         '${_two(at.hour)}${_two(at.minute)}${_two(at.second)}';
     final prefix = safe.isEmpty ? 'clip' : safe;
+    final tag = suffix.isEmpty ? '' : '_$suffix';
     // Named into the file so a slowed export can't be mistaken for the
     // real-time one sitting next to it.
     final rate = speed == 1.0 ? '' : '_${speed}x';
-    return '${prefix}_shot-${clip.shotIndex + 1}_$stamp$rate';
+    return '${prefix}_shot-${shotIndex + 1}_$stamp$tag$rate';
   }
 
   static String _two(int value) => value.toString().padLeft(2, '0');
+}
+
+// ── Composite plumbing ───────────────────────────────────────────────────────
+
+/// Everything decided once per composite export: the shared time window, the
+/// master frame clock, and each angle's pane size. Built before any writer is
+/// opened so an impossible export (angles that never overlap) fails with a
+/// real explanation instead of an empty file.
+class _CompositePlan {
+  final CompositeLayout layout;
+  final List<ImpactClip> clips;
+
+  /// Each angle's first-frame time relative to the trigger.
+  final List<Duration> startRels;
+
+  /// The intersection window, trigger-relative.
+  final Duration windowStart;
+  final Duration windowEnd;
+
+  /// The finest angle's measured rate — ticking at anything slower would
+  /// throw away frames the best camera captured.
+  final double masterFps;
+
+  final List<(int, int)> paneSizes;
+  final int outWidth;
+  final int outHeight;
+
+  _CompositePlan._({
+    required this.layout,
+    required this.clips,
+    required this.startRels,
+    required this.windowStart,
+    required this.windowEnd,
+    required this.masterFps,
+    required this.paneSizes,
+    required this.outWidth,
+    required this.outHeight,
+  });
+
+  factory _CompositePlan.build(
+    ShotClips shot,
+    List<ImpactClip> clips,
+    CompositeLayout layout,
+  ) {
+    final startRels = [
+      for (final clip in clips)
+        clip.frames.first.at.difference(shot.capturedAt),
+    ];
+    final endRels = [
+      for (final clip in clips) clip.frames.last.at.difference(shot.capturedAt),
+    ];
+    final windowStart = startRels.reduce((a, b) => a > b ? a : b);
+    final windowEnd = endRels.reduce((a, b) => a < b ? a : b);
+    if (windowEnd <= windowStart) {
+      throw StateError(
+        'The angles never overlap in time, so there is nothing to compose. '
+        'This usually means one camera stalled during the capture.',
+      );
+    }
+
+    final bestFps = clips
+        .map((c) => c.effectiveFps)
+        .reduce((a, b) => a > b ? a : b);
+    final masterFps = bestFps > 1 ? bestFps : 30.0;
+
+    // Native sizes come from decoding one frame per angle — a camera's frames
+    // are one size for the life of a clip. Panes are scaled to a shared edge
+    // (heights for a row, widths for a column), scaling *down* to the
+    // smallest so no angle is invented pixels. Dimensions are kept even
+    // because H.264 encoders refuse odd ones.
+    final natives = <(int, int)>[];
+    for (final clip in clips) {
+      final probe = cv.imdecode(clip.frames.first.jpeg, _imreadColor);
+      final size = (probe.cols, probe.rows);
+      probe.dispose();
+      if (size.$1 <= 0 || size.$2 <= 0) {
+        throw StateError('An angle\'s first frame would not decode.');
+      }
+      natives.add(size);
+    }
+
+    final paneSizes = <(int, int)>[];
+    int outWidth;
+    int outHeight;
+    if (layout == CompositeLayout.sideBySide) {
+      final height = _even(
+        natives.map((s) => s.$2).reduce((a, b) => a < b ? a : b),
+      );
+      for (final (w, h) in natives) {
+        paneSizes.add((_even((w * height / h).round()), height));
+      }
+      outWidth = paneSizes.fold(0, (sum, s) => sum + s.$1);
+      outHeight = height;
+    } else {
+      final width = _even(
+        natives.map((s) => s.$1).reduce((a, b) => a < b ? a : b),
+      );
+      for (final (w, h) in natives) {
+        paneSizes.add((width, _even((h * width / w).round())));
+      }
+      outWidth = width;
+      outHeight = paneSizes.fold(0, (sum, s) => sum + s.$2);
+    }
+
+    return _CompositePlan._(
+      layout: layout,
+      clips: clips,
+      startRels: startRels,
+      windowStart: windowStart,
+      windowEnd: windowEnd,
+      masterFps: masterFps,
+      paneSizes: paneSizes,
+      outWidth: outWidth,
+      outHeight: outHeight,
+    );
+  }
+
+  static int _even(int value) => value < 2 ? 2 : value - (value % 2);
+
+  Duration get _tick =>
+      Duration(microseconds: (1000000 / masterFps).round());
+
+  int get tickCount =>
+      (windowEnd - windowStart).inMicroseconds ~/ _tick.inMicroseconds + 1;
+
+  /// Trigger-relative time of [tick] — negative before the packet.
+  Duration tickOffset(int tick) => windowStart + _tick * tick;
+
+  /// Fresh per-angle decode caches. Per attempt rather than per plan, so a
+  /// failed writer rung can't leave the next one holding disposed Mats.
+  List<_AngleTrack> newTracks() => [
+    for (var i = 0; i < clips.length; i++)
+      _AngleTrack(
+        clip: clips[i],
+        startRel: startRels[i],
+        outWidth: paneSizes[i].$1,
+        outHeight: paneSizes[i].$2,
+      ),
+  ];
+
+  /// One composed frame. Each track only re-decodes when the master clock
+  /// crosses into its next source frame — a 30fps angle under a 120fps clock
+  /// is decoded once, not four times.
+  cv.Mat composeTick(List<_AngleTrack> tracks, int tick) {
+    final offset = tickOffset(tick);
+    for (final track in tracks) {
+      track.seek(offset);
+    }
+    var acc = tracks.first.pane.clone();
+    for (var i = 1; i < tracks.length; i++) {
+      final joined = layout == CompositeLayout.sideBySide
+          ? cv.hconcat(acc, tracks[i].pane)
+          : cv.vconcat(acc, tracks[i].pane);
+      acc.dispose();
+      acc = joined;
+    }
+    return acc;
+  }
+}
+
+/// One angle's decode cache during a composite write.
+class _AngleTrack {
+  final ImpactClip clip;
+  final Duration startRel;
+  final int outWidth;
+  final int outHeight;
+
+  int _cachedIndex = -1;
+  cv.Mat? _cached;
+
+  _AngleTrack({
+    required this.clip,
+    required this.startRel,
+    required this.outWidth,
+    required this.outHeight,
+  });
+
+  cv.Mat get pane => _cached!;
+
+  void seek(Duration triggerRelative) {
+    var local = triggerRelative - startRel;
+    if (local < Duration.zero) local = Duration.zero;
+    final index = clip.indexAtOffset(local);
+    if (index == _cachedIndex && _cached != null) return;
+
+    final mat = cv.imdecode(clip.frames[index].jpeg, _imreadColor);
+    cv.Mat scaled;
+    if (mat.cols == outWidth && mat.rows == outHeight) {
+      scaled = mat;
+    } else {
+      scaled = cv.resize(mat, (outWidth, outHeight));
+      mat.dispose();
+    }
+    _cached?.dispose();
+    _cached = scaled;
+    _cachedIndex = index;
+  }
+
+  void dispose() {
+    _cached?.dispose();
+    _cached = null;
+    _cachedIndex = -1;
+  }
 }

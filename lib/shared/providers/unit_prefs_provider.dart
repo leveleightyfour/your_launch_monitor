@@ -57,6 +57,9 @@ class CameraSlotPref {
   final int width;
   final int height;
 
+  /// Requested frame rate; zero means no preference.
+  final int fps;
+
   /// Quarter turns clockwise applied to every frame (0-3). Lets a webcam
   /// mounted sideways for portrait framing come out upright everywhere —
   /// preview, clips and exports alike.
@@ -66,6 +69,7 @@ class CameraSlotPref {
     this.deviceName = '',
     this.width = 0,
     this.height = 0,
+    this.fps = 0,
     this.rotationQuarterTurns = 0,
   });
 
@@ -75,6 +79,7 @@ class CameraSlotPref {
     'deviceName': deviceName,
     'width': width,
     'height': height,
+    'fps': fps,
     'rotation': rotationQuarterTurns,
   };
 
@@ -82,6 +87,7 @@ class CameraSlotPref {
     deviceName: j['deviceName'] as String? ?? '',
     width: j['width'] as int? ?? 0,
     height: j['height'] as int? ?? 0,
+    fps: j['fps'] as int? ?? 0,
     rotationQuarterTurns: (j['rotation'] as int? ?? 0) % 4,
   );
 }
@@ -315,6 +321,7 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
     String? deviceName,
     int? width,
     int? height,
+    int? fps,
     int? rotationQuarterTurns,
   }) {
     if (slot < 0) return;
@@ -327,6 +334,7 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
       deviceName: deviceName ?? current.deviceName,
       width: width ?? current.width,
       height: height ?? current.height,
+      fps: fps ?? current.fps,
       rotationQuarterTurns:
           (rotationQuarterTurns ?? current.rotationQuarterTurns) % 4,
     );
