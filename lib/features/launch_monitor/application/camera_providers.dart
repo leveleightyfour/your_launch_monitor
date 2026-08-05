@@ -32,7 +32,8 @@ import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart' show availableCameras;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show MethodChannel;
+import 'package:flutter/services.dart'
+    show MethodChannel, MissingPluginException, PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 
@@ -56,9 +57,33 @@ int get _backend => switch (defaultTargetPlatform) {
       _ => capAny,
     };
 
-/// The Runner-side AVFoundation device list (macOS MainFlutterWindow.swift,
-/// iOS AppDelegate.swift).
+/// The Runner-side AVFoundation device list and permission request (macOS
+/// MainFlutterWindow.swift, iOS AppDelegate.swift).
 const _appleCameras = MethodChannel('omni_sniffer/apple_cameras');
+
+/// Settles camera authorization before anything opens a device, on the
+/// platforms that gate capture behind consent. OpenCV's open never asks —
+/// with the decision undetermined it would race the system prompt, fail
+/// every index, and report "no cameras" while the dialog is still on
+/// screen. True means capture may proceed; false means the user has denied
+/// access (now or previously) and opening devices is pointless.
+Future<bool> _ensureCameraAccess() async {
+  if (defaultTargetPlatform != TargetPlatform.macOS &&
+      defaultTargetPlatform != TargetPlatform.iOS) {
+    return true;
+  }
+  try {
+    return await _appleCameras.invokeMethod<bool>('requestCameraAccess') ??
+        true;
+  } on MissingPluginException {
+    // A Runner from before this method existed — code push updates only the
+    // Dart side. The old behaviour (open and hope) is the best available.
+    return true;
+  } on PlatformException catch (error) {
+    debugPrint('[camera] permission request failed: ${error.message}');
+    return true;
+  }
+}
 
 /// Device names in index order, from whichever side of the fence can name
 /// them on this platform.
@@ -444,6 +469,18 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
       devices: state.devices,
       selected: state.selected,
     );
+
+    if (!await _ensureCameraAccess()) {
+      if (_disposed) return;
+      state = CameraFeedState(
+        status: CameraFeedStatus.failed,
+        devices: state.devices,
+        error: 'Camera access is turned off for this app. Allow it in the '
+            'system privacy settings, then rescan.',
+      );
+      return;
+    }
+    if (_disposed) return;
 
     // Names are a nicety — an unnamed camera is still perfectly openable.
     List<String> names = const [];

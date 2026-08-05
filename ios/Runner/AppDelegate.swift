@@ -32,13 +32,29 @@ import UIKit
       name: "omni_sniffer/apple_cameras",
       binaryMessenger: registrar.messenger())
     cameraChannel.setMethodCallHandler { call, result in
-      guard call.method == "listCameraNames" else {
+      switch call.method {
+      case "listCameraNames":
+        let devices =
+          AVCaptureDevice.devices(for: .video) + AVCaptureDevice.devices(for: .muxed)
+        result(devices.map { $0.localizedName })
+      case "requestCameraAccess":
+        // Capture goes through OpenCV, which never asks for consent — it
+        // just opens the device and reads nothing while the decision is
+        // pending. Authorization has to be settled here, before the Dart
+        // side probes its first index.
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+          result(true)
+        case .notDetermined:
+          AVCaptureDevice.requestAccess(for: .video) { granted in
+            DispatchQueue.main.async { result(granted) }
+          }
+        default:
+          result(false)
+        }
+      default:
         result(FlutterMethodNotImplemented)
-        return
       }
-      let devices =
-        AVCaptureDevice.devices(for: .video) + AVCaptureDevice.devices(for: .muxed)
-      result(devices.map { $0.localizedName })
     }
   }
 }
