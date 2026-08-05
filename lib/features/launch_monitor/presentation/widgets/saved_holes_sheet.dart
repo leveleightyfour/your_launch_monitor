@@ -15,6 +15,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/saved_hole.
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/snackbars.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 /// Opens the library. Returns the hole the player chose to load, or null.
 Future<HoleSetup?> showSavedHolesSheet(
@@ -62,7 +63,7 @@ class SavedHolesSheet extends ConsumerWidget {
           ),
           const Divider(height: 1, color: AppColors.border),
           ListTile(
-            leading: Icon(Icons.add, size: 18, color: context.accent),
+            leading: Icon(AppIcons.add, size: 18, color: context.accent),
             title: Text(
               'Save this hole',
               style: AppTextStyles.sans(size: 14, color: context.accent),
@@ -71,7 +72,7 @@ class SavedHolesSheet extends ConsumerWidget {
           ),
           ListTile(
             leading: const Icon(
-              Icons.ios_share,
+              AppIcons.share,
               size: 18,
               color: AppColors.textMuted,
             ),
@@ -108,7 +109,7 @@ class SavedHolesSheet extends ConsumerWidget {
                   ),
                   trailing: PopupMenuButton<_HoleRowAction>(
                     icon: const Icon(
-                      Icons.more_vert,
+                      AppIcons.more,
                       size: 18,
                       color: AppColors.textDimmed,
                     ),
@@ -127,7 +128,7 @@ class SavedHolesSheet extends ConsumerWidget {
                         value: _HoleRowAction.update,
                         child: Row(
                           children: [
-                            Icon(Icons.replay, size: 16, color: context.accent),
+                            Icon(AppIcons.replay, size: 16, color: context.accent),
                             const SizedBox(width: 10),
                             Text(
                               'Update with current hole',
@@ -141,7 +142,7 @@ class SavedHolesSheet extends ConsumerWidget {
                         child: Row(
                           children: [
                             Icon(
-                              Icons.ios_share,
+                              AppIcons.share,
                               size: 16,
                               color: context.accent,
                             ),
@@ -155,7 +156,7 @@ class SavedHolesSheet extends ConsumerWidget {
                         child: Row(
                           children: [
                             const Icon(
-                              Icons.delete_outline,
+                              AppIcons.delete,
                               size: 16,
                               color: Color(0xFFEF4444),
                             ),

@@ -16,6 +16,7 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/t
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/tiles_tab.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 // ── Top-level view options ────────────────────────────────────────────────────
 
@@ -314,12 +315,12 @@ class _TopNav extends StatelessWidget {
   const _TopNav({required this.view, required this.onChanged});
 
   static const _items = [
-    (_TopView.split, Icons.view_column, 'Split view'),
-    (_TopView.tiles, Icons.grid_view_rounded, 'Tiles'),
-    (_TopView.dispersion, Icons.scatter_plot, 'Dispersion'),
-    (_TopView.flight, Icons.view_in_ar, '3D Flight'),
-    (_TopView.club, Icons.sports_golf, 'Club'),
-    (_TopView.table, Icons.table_rows, 'Table'),
+    (_TopView.split, AppIcons.columns, 'Split view'),
+    (_TopView.tiles, AppIcons.tiles, 'Tiles'),
+    (_TopView.dispersion, AppIcons.dispersion, 'Dispersion'),
+    (_TopView.flight, AppIcons.flight3d, '3D Flight'),
+    (_TopView.club, AppIcons.golf, 'Club'),
+    (_TopView.table, AppIcons.table, 'Table'),
   ];
 
   /// Below this the labels start colliding, so the bar scrolls instead.
@@ -573,12 +574,12 @@ class _PaneHeader extends StatelessWidget {
   const _PaneHeader({required this.current, required this.onChanged});
 
   static const _options = [
-    (_PaneView.tiles, Icons.grid_view_rounded, 'Tiles'),
-    (_PaneView.dispersion, Icons.scatter_plot, 'Dispersion'),
-    (_PaneView.flight, Icons.view_in_ar, '3D Flight'),
-    (_PaneView.club, Icons.sports_golf, 'Club'),
-    (_PaneView.table, Icons.table_rows, 'Table'),
-    (_PaneView.optimizer, Icons.tune, 'Optimizer'),
+    (_PaneView.tiles, AppIcons.tiles, 'Tiles'),
+    (_PaneView.dispersion, AppIcons.dispersion, 'Dispersion'),
+    (_PaneView.flight, AppIcons.flight3d, '3D Flight'),
+    (_PaneView.club, AppIcons.golf, 'Club'),
+    (_PaneView.table, AppIcons.table, 'Table'),
+    (_PaneView.optimizer, AppIcons.optimizer, 'Optimizer'),
   ];
 
   String get _label => _options.firstWhere((o) => o.$1 == current).$3;
@@ -612,7 +613,7 @@ class _PaneHeader extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               const Icon(
-                Icons.keyboard_arrow_down,
+                AppIcons.chevronDown,
                 size: 16,
                 color: AppColors.textMuted,
               ),
@@ -692,7 +693,7 @@ class _PanePickerSheet extends StatelessWidget {
               ),
             ),
             trailing: isSel
-                ? Icon(Icons.check, color: context.accent, size: 18)
+                ? Icon(AppIcons.check, color: context.accent, size: 18)
                 : null,
             tileColor: Colors.transparent,
             onTap: () => onSelect(view),
@@ -730,7 +731,7 @@ class _DetailTopBar extends StatelessWidget {
               ),
               child: const Center(
                 child: Icon(
-                  Icons.arrow_back,
+                  AppIcons.back,
                   size: 14,
                   color: AppColors.textMuted,
                 ),
@@ -830,7 +831,7 @@ class _BottomBar extends StatelessWidget {
                       ),
                     ),
                     child: Icon(
-                      Icons.menu,
+                      AppIcons.menu,
                       size: 16,
                       color: showShotList
                           ? context.accent

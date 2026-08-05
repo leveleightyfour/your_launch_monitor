@@ -3,6 +3,7 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/screens/sessio
 import 'package:omni_sniffer/features/launch_monitor/presentation/screens/my_bag_screen.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/screens/profile_screen.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -62,9 +63,9 @@ class _PillNav extends StatelessWidget {
   const _PillNav({required this.index, required this.onTap});
 
   static const _items = [
-    (icon: Icons.bolt_rounded, label: 'Sessions'),
-    (icon: Icons.sports_golf, label: 'My Bag'),
-    (icon: Icons.person, label: 'Profile'),
+    (icon: AppIcons.sessions, label: 'Sessions'),
+    (icon: AppIcons.golf, label: 'My Bag'),
+    (icon: AppIcons.profile, label: 'Profile'),
   ];
 
   @override

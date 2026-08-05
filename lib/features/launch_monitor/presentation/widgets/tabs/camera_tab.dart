@@ -13,6 +13,7 @@ import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/services/clip_export_service.dart';
 import 'package:omni_sniffer/shared/services/event_loop_watchdog.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 /// Streams an attached camera into the window, on the platforms with a
 /// capture backend (see isCameraCapturePlatform): desktops, iPhone, iPad.
@@ -189,14 +190,14 @@ class _CameraTabState extends ConsumerState<CameraTab> {
           caption: _secondPaneOpen ? kCameraSlotLabels[0] : null,
           trailing: _secondPaneOpen
               ? _BarButton(
-                  icon: Icons.swap_horiz,
+                  icon: AppIcons.swap,
                   label: _swapping
                       ? 'Swapping…'
                       : 'Swap angles (this camera becomes ${kCameraSlotShortLabels[1]})',
                   onTap: _swapping ? null : _swapAngles,
                 )
               : _BarButton(
-                  icon: Icons.video_call,
+                  icon: AppIcons.addCamera,
                   label: 'Add second camera',
                   onTap: () {
                     setState(() => _secondPaneOpen = true);
@@ -215,7 +216,7 @@ class _CameraTabState extends ConsumerState<CameraTab> {
             feed: feedB,
             caption: kCameraSlotLabels[1],
             trailing: _BarButton(
-              icon: Icons.close,
+              icon: AppIcons.close,
               label: 'Remove second camera',
               onTap: () {
                 ref.read(cameraFeedProvider(1).notifier).stop();
@@ -579,7 +580,7 @@ class _CameraBar extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.videocam,
+                      AppIcons.video,
                       size: 14,
                       color: feed.status == CameraFeedStatus.streaming
                           ? context.accent
@@ -601,7 +602,7 @@ class _CameraBar extends ConsumerWidget {
                     ),
                     const SizedBox(width: 4),
                     Icon(
-                      Icons.keyboard_arrow_down,
+                      AppIcons.chevronDown,
                       size: 16,
                       color: canPick
                           ? AppColors.textMuted
@@ -614,7 +615,7 @@ class _CameraBar extends ConsumerWidget {
           ),
           if (feed.status == CameraFeedStatus.streaming) ...[
             _BarButton(
-              icon: Icons.rotate_90_degrees_cw,
+              icon: AppIcons.rotate,
               label: 'Rotate view 90°',
               onTap: () {
                 final slots = ref.read(unitPrefsProvider).cameraSlots;
@@ -627,18 +628,18 @@ class _CameraBar extends ConsumerWidget {
               },
             ),
             _BarButton(
-              icon: Icons.aspect_ratio,
+              icon: AppIcons.aspectRatio,
               label: 'Capture resolution',
               onTap: () => _showModePicker(context, ref, slot),
             ),
             _BarButton(
-              icon: Icons.stop_circle_outlined,
+              icon: AppIcons.stop,
               label: 'Stop camera',
               onTap: () => notifier.stop(),
             ),
           ],
           _BarButton(
-            icon: Icons.refresh,
+            icon: AppIcons.refresh,
             label: 'Rescan for cameras',
             // Probing reopens every index, which would fight the live
             // capture, so a rescan means stopping first.
@@ -678,7 +679,7 @@ class _CameraBar extends ConsumerWidget {
             final isSel = device.index == feed.selected?.index;
             return ListTile(
               leading: Icon(
-                Icons.videocam,
+                AppIcons.video,
                 size: 18,
                 color: isSel ? context.accent : AppColors.textMuted,
               ),
@@ -691,7 +692,7 @@ class _CameraBar extends ConsumerWidget {
                 ),
               ),
               trailing: isSel
-                  ? Icon(Icons.check, color: context.accent, size: 18)
+                  ? Icon(AppIcons.check, color: context.accent, size: 18)
                   : null,
               tileColor: Colors.transparent,
               onTap: () {
@@ -747,7 +748,7 @@ void _showModePicker(BuildContext context, WidgetRef ref, int slot) {
           final isSel = mode == current;
           return ListTile(
             leading: Icon(
-              mode.isAuto ? Icons.auto_awesome : Icons.aspect_ratio,
+              mode.isAuto ? AppIcons.sparkle : AppIcons.aspectRatio,
               size: 18,
               color: isSel ? context.accent : AppColors.textMuted,
             ),
@@ -760,7 +761,7 @@ void _showModePicker(BuildContext context, WidgetRef ref, int slot) {
               ),
             ),
             trailing: isSel
-                ? Icon(Icons.check, color: context.accent, size: 18)
+                ? Icon(AppIcons.check, color: context.accent, size: 18)
                 : null,
             tileColor: Colors.transparent,
             onTap: () {
@@ -825,7 +826,7 @@ class _CameraBody extends ConsumerWidget {
         return const _Busy(message: 'Opening camera…');
       case CameraFeedStatus.noDevices:
         return _Message(
-          icon: Icons.usb_off,
+          icon: AppIcons.usbOff,
           title: 'No camera detected',
           // On a device with built-in cameras, nothing found almost always
           // means camera access was denied, not absent hardware.
@@ -845,7 +846,7 @@ class _CameraBody extends ConsumerWidget {
         );
       case CameraFeedStatus.failed:
         return _Message(
-          icon: Icons.error_outline,
+          icon: AppIcons.error,
           title: 'Camera failed to start',
           detail: feed.selected == null
               ? (feed.error ?? 'The device did not respond.')
@@ -861,7 +862,7 @@ class _CameraBody extends ConsumerWidget {
         );
       case CameraFeedStatus.idle:
         return const _Message(
-          icon: Icons.videocam,
+          icon: AppIcons.video,
           title: 'No camera selected',
           detail: 'Pick a camera above to stream it into the window.',
         );
@@ -1233,7 +1234,7 @@ class _ShotExportFlow {
       _pickSpeed(
         _ExportChoice(
           title: 'Export',
-          icon: Icons.save_alt,
+          icon: AppIcons.download,
           slot: slots.first,
         ),
       );
@@ -1243,23 +1244,23 @@ class _ShotExportFlow {
     final choices = [
       const _ExportChoice(
         title: 'Side by side',
-        icon: Icons.view_column,
+        icon: AppIcons.columns,
         layout: CompositeLayout.sideBySide,
       ),
       const _ExportChoice(
         title: 'Stacked',
-        icon: Icons.view_agenda,
+        icon: AppIcons.rows,
         layout: CompositeLayout.stacked,
       ),
       const _ExportChoice(
         title: 'Separate files',
-        icon: Icons.filter_none,
+        icon: AppIcons.copies,
         separate: true,
       ),
       for (final slot in slots)
         _ExportChoice(
           title: '${_slotShort(slot)} only',
-          icon: Icons.videocam,
+          icon: AppIcons.video,
           slot: slot,
         ),
     ];
@@ -1332,7 +1333,7 @@ class _ShotExportFlow {
             final (speed, name, label) = option;
             return ListTile(
               leading: Icon(
-                speed == 1.0 ? Icons.play_arrow : Icons.slow_motion_video,
+                speed == 1.0 ? AppIcons.play : AppIcons.slowMotion,
                 size: 18,
                 color: AppColors.textMuted,
               ),
@@ -1769,7 +1770,7 @@ class _ShotReviewState extends State<_ShotReview>
   Widget build(BuildContext context) {
     if (_slots.isEmpty) {
       return const _Message(
-        icon: Icons.videocam_off,
+        icon: AppIcons.videoOff,
         title: 'Empty clip',
         detail: 'No frames were buffered for this shot.',
       );
@@ -1802,7 +1803,7 @@ class _ShotReviewState extends State<_ShotReview>
                 child: Row(
                   children: [
                     _BarButton(
-                      icon: Icons.chevron_left,
+                      icon: AppIcons.chevronLeft,
                       label: 'Previous frame',
                       onTap: posMs > 0 ? () => _step(-1) : null,
                     ),
@@ -1836,7 +1837,7 @@ class _ShotReviewState extends State<_ShotReview>
                       ),
                     ),
                     _BarButton(
-                      icon: Icons.chevron_right,
+                      icon: AppIcons.chevronRight,
                       label: 'Next frame',
                       onTap: posMs < spanMs ? () => _step(1) : null,
                     ),
@@ -1910,7 +1911,7 @@ class _ShotReviewState extends State<_ShotReview>
                     const SizedBox(width: 5),
                   ],
                   _BarButton(
-                    icon: Icons.save_alt,
+                    icon: AppIcons.download,
                     label: _exporting ? 'Exporting…' : 'Export clip',
                     onTap: _exporting ? null : _startExport,
                   ),

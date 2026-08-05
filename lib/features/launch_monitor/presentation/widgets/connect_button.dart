@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 class ConnectButton extends StatelessWidget {
   final LaunchMonitorStatus status;
@@ -36,8 +37,8 @@ class ConnectButton extends StatelessWidget {
             )
           : Icon(
               status == LaunchMonitorStatus.connected
-                  ? Icons.bluetooth_disabled
-                  : Icons.bluetooth_searching,
+                  ? AppIcons.bluetoothOff
+                  : AppIcons.bluetoothSearching,
             ),
       label: Text(
         isLoading

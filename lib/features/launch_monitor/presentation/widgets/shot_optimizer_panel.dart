@@ -7,6 +7,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.d
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_optimizer.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
@@ -76,7 +77,7 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.tune, size: 36, color: AppColors.textDimmed),
+            const Icon(AppIcons.optimizer, size: 36, color: AppColors.textDimmed),
             const SizedBox(height: 14),
             Text(
               'Shot Optimizer',
@@ -372,7 +373,7 @@ class _CarryGapCallout extends StatelessWidget {
       child: Row(
         children: [
           const Icon(
-            Icons.trending_up,
+            AppIcons.trendingUp,
             size: 16,
             color: AppColors.severityWarning,
           ),
@@ -420,15 +421,15 @@ class _StatusBadge extends StatelessWidget {
     final IconData icon;
     if (critical > 0) {
       color = AppColors.severityCritical;
-      icon = Icons.error_outline;
+      icon = AppIcons.error;
       label = '$critical critical ${critical == 1 ? 'issue' : 'issues'}';
     } else if (outOfRange > 0) {
       color = AppColors.severityWarning;
-      icon = Icons.warning_amber_rounded;
+      icon = AppIcons.warning;
       label = '$outOfRange flagged';
     } else {
       color = context.accent;
-      icon = Icons.check_circle_outline;
+      icon = AppIcons.checkCircle;
       label = 'Optimal';
     }
 
@@ -618,9 +619,9 @@ class _DiagnosticTile extends StatelessWidget {
   };
 
   IconData get _icon => switch (diagnostic.severity) {
-    Severity.critical => Icons.error_outline,
-    Severity.high => Icons.warning_amber_rounded,
-    _ => Icons.info_outline,
+    Severity.critical => AppIcons.error,
+    Severity.high => AppIcons.warning,
+    _ => AppIcons.info,
   };
 
   @override
@@ -840,7 +841,7 @@ class _SessionSummarySection extends StatelessWidget {
               child: Row(
                 children: [
                   const Icon(
-                    Icons.insights,
+                    AppIcons.insights,
                     size: 15,
                     color: AppColors.severityWarning,
                   ),

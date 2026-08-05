@@ -8,6 +8,7 @@ import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/log.dart';
 import 'package:omni_sniffer/shared/services/protocol_capture_export.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -44,7 +45,7 @@ class ProfileScreen extends ConsumerWidget {
                     ),
                     child: const Center(
                       child: Icon(
-                        Icons.person,
+                        AppIcons.profile,
                         size: 36,
                         color: AppColors.textDimmed,
                       ),
@@ -93,19 +94,19 @@ class ProfileScreen extends ConsumerWidget {
             const SizedBox(height: 8),
             _SectionHeader('Account'),
             _SettingsRow(
-              icon: Icons.bluetooth,
+              icon: AppIcons.bluetooth,
               label: 'My devices',
               onTap: () {},
             ),
             _SettingsRow(
-              icon: Icons.lock,
+              icon: AppIcons.lock,
               label: 'Change password',
               onTap: () {},
             ),
             const SizedBox(height: 16),
             _SectionHeader('Preferences'),
             _UnitToggleRow(
-              icon: Icons.straighten,
+              icon: AppIcons.ruler,
               label: 'Distance',
               options: const ['m', 'yds'],
               selected: prefs.distance == DistanceUnit.meters ? 0 : 1,
@@ -114,7 +115,7 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ),
             _UnitToggleRow(
-              icon: Icons.speed,
+              icon: AppIcons.gauge,
               label: 'Speed',
               options: const ['mph', 'km/h'],
               selected: prefs.speed == SpeedUnit.mph ? 0 : 1,
@@ -122,7 +123,7 @@ class ProfileScreen extends ConsumerWidget {
                   notifier.setSpeed(i == 0 ? SpeedUnit.mph : SpeedUnit.kmh),
             ),
             _UnitToggleRow(
-              icon: Icons.scatter_plot,
+              icon: AppIcons.dispersion,
               label: 'Dispersion',
               options: const ['Trackman', 'PGA'],
               selected: prefs.dispersionStandard == DispersionStandard.trackman
@@ -133,14 +134,14 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ),
             _UnitToggleRow(
-              icon: Icons.autorenew,
+              icon: AppIcons.refresh,
               label: 'Auto-reconnect',
               options: const ['Off', 'On'],
               selected: prefs.autoReconnect ? 1 : 0,
               onSelect: (i) => notifier.setAutoReconnect(i == 1),
             ),
             _UnitToggleRow(
-              icon: Icons.bolt,
+              icon: AppIcons.sessions,
               label: 'Test shots',
               options: const ['Off', 'On'],
               selected: prefs.showTestShotButton ? 1 : 0,
@@ -153,15 +154,15 @@ class ProfileScreen extends ConsumerWidget {
             const SizedBox(height: 16),
             _SectionHeader('Support'),
             _SettingsRow(
-              icon: Icons.help,
+              icon: AppIcons.help,
               label: 'Help & support',
               onTap: () {},
             ),
-            _SettingsRow(icon: Icons.info, label: 'About', onTap: () {}),
+            _SettingsRow(icon: AppIcons.info, label: 'About', onTap: () {}),
             const _ProtocolLoggingRow(),
             Builder(
               builder: (context) => _SettingsRow(
-                icon: Icons.bug_report,
+                icon: AppIcons.bug,
                 label: 'Export protocol capture',
                 onTap: () => ProtocolCaptureExport.share(context),
               ),
@@ -328,7 +329,7 @@ class _AccentPickerRow extends StatelessWidget {
           // Header row — mirrors the other Preferences rows visually.
           Row(
             children: [
-              const Icon(Icons.palette, size: 18, color: AppColors.textMuted),
+              const Icon(AppIcons.palette, size: 18, color: AppColors.textMuted),
               const SizedBox(width: 12),
               Text('Accent colour', style: AppTextStyles.sans(size: 14)),
             ],
@@ -357,7 +358,7 @@ class _AccentPickerRow extends StatelessWidget {
                           : null,
                     ),
                     child: isSelected
-                        ? const Icon(Icons.check, size: 11, color: Colors.white)
+                        ? const Icon(AppIcons.check, size: 11, color: Colors.white)
                         : null,
                   ),
                 );
@@ -395,7 +396,7 @@ class _ProtocolLoggingRowState extends State<_ProtocolLoggingRow> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.terminal, size: 18, color: AppColors.textMuted),
+            const Icon(AppIcons.terminal, size: 18, color: AppColors.textMuted),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -441,7 +442,7 @@ class _SettingsRow extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(child: Text(label, style: AppTextStyles.sans(size: 14))),
             const Icon(
-              Icons.chevron_right,
+              AppIcons.chevronRight,
               size: 18,
               color: AppColors.textDimmed,
             ),

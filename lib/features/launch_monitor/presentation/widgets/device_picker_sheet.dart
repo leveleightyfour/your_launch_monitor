@@ -7,6 +7,7 @@ import 'package:omni_sniffer/features/launch_monitor/application/providers.dart'
 import 'package:omni_sniffer/features/launch_monitor/data/last_device_provider.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/constants.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 /// Modal bottom sheet that scans for nearby Square Golf devices and lets the
 /// user pick one to connect to. Shows a Home/Omni badge per device based on
@@ -134,7 +135,7 @@ class _DevicePickerSheetState extends ConsumerState<DevicePickerSheet> {
                   )
                 else
                   IconButton(
-                    icon: Icon(Icons.refresh, size: 18, color: context.accent),
+                    icon: Icon(AppIcons.refresh, size: 18, color: context.accent),
                     onPressed: _startScan,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
@@ -242,7 +243,7 @@ class _DeviceTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(Icons.bluetooth, size: 18, color: context.accent),
+            Icon(AppIcons.bluetooth, size: 18, color: context.accent),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -269,7 +270,7 @@ class _DeviceTile extends StatelessWidget {
             _DeviceTypeBadge(type: device.type),
             const SizedBox(width: 6),
             const Icon(
-              Icons.chevron_right,
+              AppIcons.chevronRight,
               size: 18,
               color: AppColors.textDimmed,
             ),

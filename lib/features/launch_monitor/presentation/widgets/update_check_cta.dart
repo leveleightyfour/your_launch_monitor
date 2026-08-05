@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omni_sniffer/shared/providers/shorebird_update_provider.dart';
 import 'package:omni_sniffer/shared/services/shorebird_update_service.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 /// Home-screen Shorebird update control: manual check, download progress, and
 /// a restart prompt once a patch is ready. Renders nothing where OTA patching
@@ -27,7 +28,7 @@ class UpdateCheckCta extends ConsumerWidget {
             final n = service.nextPatchNumber;
             final verb = service.quitOnlyRestart ? 'Quit' : 'Restart';
             return _Chip(
-              icon: Icons.system_update_alt_outlined,
+              icon: AppIcons.appUpdate,
               label: n != null ? '$verb to update ($n)' : '$verb to update',
               color: context.accent,
               onTap: () => _confirmRestart(context, service),
@@ -35,7 +36,7 @@ class UpdateCheckCta extends ConsumerWidget {
           case UpdatePhase.idle:
           case UpdatePhase.failed:
             return _Chip(
-              icon: Icons.refresh,
+              icon: AppIcons.refresh,
               label: service.phase == UpdatePhase.failed
                   ? 'Check failed — retry'
                   : 'Check for updates',
