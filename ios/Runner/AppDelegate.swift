@@ -25,7 +25,9 @@ import UIKit
     // for index N. That API is deprecated (hence the build warning),
     // deliberately: the modern DiscoverySession orders devices differently,
     // which made the picker open the wrong camera on macOS.
-    let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AppleCameraNames")
+    guard
+      let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AppleCameraNames")
+    else { return }
     let cameraChannel = FlutterMethodChannel(
       name: "omni_sniffer/apple_cameras",
       binaryMessenger: registrar.messenger())

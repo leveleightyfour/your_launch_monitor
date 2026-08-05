@@ -359,3 +359,55 @@ bool dualCameraPrefersOwnRow(
       availableWidth >= _minPaneWidth * 2 &&
       availableHeight >= _minPaneHeight * 2;
 }
+
+/// Panes at or above this size read comfortably; between the minimums above
+/// and these they are legal but cramped. 540 is set by the 14" MacBook:
+/// fullscreen it fits three ~500pt panes — legal, and exactly the squash
+/// being complained about — while its half-splits land near 700pt.
+const _comfortPaneWidth = 540.0;
+const _comfortPaneHeight = 320.0;
+
+/// How the split view arranges its panes. Stored in prefs by name; [auto]
+/// defers the decision to [resolveSplitLayout].
+enum SplitLayoutMode { auto, two, three, grid }
+
+/// Resolves the golfer's layout choice against the room actually available.
+/// Never returns [SplitLayoutMode.auto].
+///
+/// An explicit pane count is honoured whenever every pane stays legal
+/// (>= 360×280) and folds to two when not. Auto aims higher than legal:
+/// ultra-wide keeps the three-pane strip (tall narrow panes are the shape
+/// rotated swing video wants), a window with three *comfortable* panes'
+/// worth of width keeps the strip too, and otherwise the 2×2 grid takes
+/// over as soon as all four of its panes would be comfortable — four good
+/// panes beat three cramped ones, which is the 16:10 laptop fullscreen
+/// case. Anything tighter folds to two.
+SplitLayoutMode resolveSplitLayout(
+  SplitLayoutMode choice,
+  BuildContext context,
+  double availableWidth,
+  double availableHeight,
+) {
+  final threeLegal = supportsThirdSplitPane(context, availableWidth);
+  final gridLegal =
+      availableWidth >= _minPaneWidth * 2 &&
+      availableHeight >= _minPaneHeight * 2;
+  switch (choice) {
+    case SplitLayoutMode.two:
+      return SplitLayoutMode.two;
+    case SplitLayoutMode.three:
+      return threeLegal ? SplitLayoutMode.three : SplitLayoutMode.two;
+    case SplitLayoutMode.grid:
+      return gridLegal ? SplitLayoutMode.grid : SplitLayoutMode.two;
+    case SplitLayoutMode.auto:
+      if (isUltraWide(context)) return SplitLayoutMode.three;
+      if (threeLegal && availableWidth >= _comfortPaneWidth * 3) {
+        return SplitLayoutMode.three;
+      }
+      final gridComfortable =
+          availableWidth >= _comfortPaneWidth * 2 &&
+          availableHeight >= _comfortPaneHeight * 2;
+      if (gridLegal && gridComfortable) return SplitLayoutMode.grid;
+      return SplitLayoutMode.two;
+  }
+}

@@ -130,6 +130,10 @@ class UnitPrefs {
   /// folder. Only the desktop export sheet offers to set it.
   final String exportDirectory;
 
+  /// How the split view arranges its panes, by SplitLayoutMode name.
+  /// 'auto' hands the decision to resolveSplitLayout.
+  final String splitLayout;
+
   const UnitPrefs({
     this.distance = DistanceUnit.meters,
     this.speed = SpeedUnit.mph,
@@ -143,6 +147,7 @@ class UnitPrefs {
     this.splitFourthPane = 'cameraFo',
     this.cameraSlots = const [CameraSlotPref(), CameraSlotPref()],
     this.exportDirectory = '',
+    this.splitLayout = 'auto',
   });
 
   UnitPrefs copyWith({
@@ -158,6 +163,7 @@ class UnitPrefs {
     String? splitFourthPane,
     List<CameraSlotPref>? cameraSlots,
     String? exportDirectory,
+    String? splitLayout,
   }) => UnitPrefs(
     distance: distance ?? this.distance,
     speed: speed ?? this.speed,
@@ -171,6 +177,7 @@ class UnitPrefs {
     splitFourthPane: splitFourthPane ?? this.splitFourthPane,
     cameraSlots: cameraSlots ?? this.cameraSlots,
     exportDirectory: exportDirectory ?? this.exportDirectory,
+    splitLayout: splitLayout ?? this.splitLayout,
   );
 
   /// Display label for distance values.
@@ -203,6 +210,7 @@ class UnitPrefs {
     'splitFourthPane': splitFourthPane,
     'cameraSlots': cameraSlots.map((slot) => slot.toJson()).toList(),
     'exportDirectory': exportDirectory,
+    'splitLayout': splitLayout,
   };
 
   factory UnitPrefs.fromJson(Map<String, dynamic> j) => UnitPrefs(
@@ -230,6 +238,7 @@ class UnitPrefs {
     splitFourthPane: j['splitFourthPane'] as String? ?? 'cameraFo',
     cameraSlots: _slotsFromJson(j),
     exportDirectory: j['exportDirectory'] as String? ?? '',
+    splitLayout: j['splitLayout'] as String? ?? 'auto',
   );
 
   /// Reads the slot list, padding to two entries; a prefs file written
@@ -360,6 +369,12 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
   /// default Documents/clips folder.
   void setExportDirectory(String path) {
     state = state.copyWith(exportDirectory: path);
+    _save();
+  }
+
+  /// Remembers the split view's layout choice by SplitLayoutMode name.
+  void setSplitLayout(String name) {
+    state = state.copyWith(splitLayout: name);
     _save();
   }
 
