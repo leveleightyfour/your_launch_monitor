@@ -1,0 +1,908 @@
+<!doctype html>
+<!--
+THESIS: The datasheet of the app itself. Launch-monitor owners read spec
+sheets for sport; this page is one — numbered sections, field labels,
+tabular figures — refusing the SaaS hero-and-cards scaffold.
+OWN-WORLD: The app's committed identity, verbatim: near-black grounds
+#0C0C10/#12151E/#1A1A24, hairline #1E1E28 borders, teal #2DD4B0 meaning
+"your shot", DM Sans (400/600/800 tabular) + DM Mono for measurement,
+tracked 11px caps labels, severity amber/red/blue, turf greens for flight.
+STORY: An Omni owner sees their device's five measured values become a
+verdict — what to fix, what it costs — and registers to be notified.
+FIRST VIEWPORT: Masthead rule; left column title block + CTA; right column
+a live shot readout (tiles + dispersion) in an app frame; measured strip
+beneath establishing MEASURED vs SIMULATED vocabulary.
+FORM: Instrument-grade datasheet — candidate 5 of 7, seed 2a552569
+(degraded roll, no challengers dealt).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your Launch Monitor — practice analytics for the Square Golf Omni</title>
+<meta name="description" content="A companion app for the Square Golf Omni. Dispersion ellipses, a shot optimizer that prices your misses in yards, physics-based 3D flight, and dual-camera swing replay — on Windows, iPad and Android. Your data stays on your device.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600;9..40,800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0C0C10; --surface:#12151E; --card:#1A1A24;
+    --border:#1E1E28; --border2:#2A2A32;
+    --accent:#2DD4B0;
+    --accent-ghost:rgba(45,212,176,.08); --accent-subtle:rgba(45,212,176,.12);
+    --accent-border:rgba(45,212,176,.24); --accent-mid:rgba(45,212,176,.39);
+    --text:#FFFFFF; --muted:#9C9C9C; --dimmed:#848484;
+    --critical:#EF4444; --warning:#F59E0B; --info:#60A5FA;
+    --turf-ground:#161C18; --turf-fairway:#2C4732; --turf-stripe:#35543A;
+    --turf-green:#3E6B45; --pin:#D9483B; --sky-low:#0E1418;
+    --sans:"DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"DM Mono",ui-monospace,"Cascadia Mono","Consolas",monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:var(--sans); font-size:16px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--accent-mid);color:#fff}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+
+  /* ── Datasheet vocabulary ─────────────────────────────────────────── */
+  .field-label{
+    font-family:var(--sans);font-size:11px;font-weight:700;
+    letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);
+  }
+  .mono{font-family:var(--mono)}
+  .stat-value{
+    font-weight:800;font-variant-numeric:tabular-nums;line-height:1;
+    letter-spacing:-0.02em;
+  }
+  .stat-unit{font-size:11px;font-style:italic;color:var(--dimmed)}
+  .badge{
+    display:inline-flex;align-items:center;gap:6px;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.8px;
+    padding:3px 9px;border-radius:4px;border:1px solid;
+    text-transform:uppercase;white-space:nowrap;
+  }
+  .badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+  .badge.measured{color:var(--accent);border-color:var(--accent-border);background:var(--accent-ghost)}
+  .badge.simulated{color:var(--info);border-color:rgba(96,165,250,.28);background:rgba(96,165,250,.08)}
+  .badge.reference{color:var(--dimmed);border-color:var(--border2);background:transparent}
+
+  .sec-ref{font-family:var(--mono);font-size:13px;color:var(--accent);letter-spacing:.5px}
+
+  /* ── Masthead ─────────────────────────────────────────────────────── */
+  header.masthead{
+    position:sticky;top:0;z-index:50;
+    background:rgba(12,12,16,.86);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--border);
+  }
+  .masthead-inner{display:flex;align-items:center;gap:20px;height:60px}
+  .wordmark{display:flex;align-items:baseline;gap:10px;font-weight:600;font-size:15px;letter-spacing:.02em;color:#fff}
+  .wordmark .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);align-self:center}
+  .doc-ref{font-family:var(--mono);font-size:11.5px;color:var(--dimmed);letter-spacing:.6px}
+  .masthead nav{margin-left:auto;display:flex;gap:22px;align-items:center}
+  .masthead nav a{font-size:13.5px;color:var(--muted)}
+  .masthead nav a:hover{color:#fff;text-decoration:none}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    font-family:var(--sans);font-weight:600;font-size:14px;
+    padding:10px 20px;border-radius:8px;cursor:pointer;
+    border:1px solid var(--accent-border);
+    background:var(--accent-subtle);color:var(--accent);
+    transition:background .15s ease,border-color .15s ease;
+    white-space:nowrap;
+  }
+  .btn:hover{background:var(--accent-mid);border-color:var(--accent);color:#fff;text-decoration:none}
+  .btn.solid{background:var(--accent);color:#08110E;border-color:var(--accent)}
+  .btn.solid:hover{background:#3BE9C4;color:#08110E}
+
+  /* ── Hero ─────────────────────────────────────────────────────────── */
+  .hero{padding:72px 0 0;border-bottom:1px solid var(--border)}
+  .hero-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:56px;align-items:center}
+  .hero h1{
+    font-size:clamp(32px,4.1vw,47px);font-weight:800;line-height:1.1;
+    letter-spacing:-0.025em;text-wrap:balance;margin:18px 0 20px;
+  }
+  .hero h1 em{font-style:normal;color:var(--accent)}
+  .hero .lede{font-size:17px;color:var(--muted);max-width:46ch;margin-bottom:30px}
+  .hero .lede strong{color:#fff;font-weight:600}
+
+  .notify{display:flex;gap:10px;max-width:440px}
+  .notify input{
+    flex:1;min-width:0;background:var(--surface);border:1px solid var(--border2);
+    border-radius:8px;padding:11px 14px;color:#fff;font-family:var(--sans);font-size:14px;
+  }
+  .notify input::placeholder{color:var(--dimmed)}
+  .notify input:focus{outline:none;border-color:var(--accent-mid)}
+  .notify-note{font-size:12.5px;color:var(--dimmed);margin-top:10px}
+  .platform-line{display:flex;gap:8px;align-items:center;margin-top:26px;font-family:var(--mono);font-size:12px;color:var(--dimmed);letter-spacing:.4px;flex-wrap:wrap}
+  .platform-line .sep{color:var(--border2)}
+
+  /* App frame — the recreated product surface */
+  .app-frame{
+    background:var(--surface);border:1px solid var(--border2);border-radius:12px;
+    overflow:hidden;box-shadow:0 24px 60px -24px rgba(0,0,0,.7),0 2px 8px rgba(0,0,0,.5);
+  }
+  .app-frame .titlebar{
+    display:flex;align-items:center;gap:8px;padding:9px 12px;
+    border-bottom:1px solid var(--border);background:var(--bg);
+  }
+  .titlebar .pip{width:9px;height:9px;border-radius:50%;background:var(--border2)}
+  .titlebar .app-title{margin-left:6px;font-family:var(--mono);font-size:11px;color:var(--dimmed);letter-spacing:.5px}
+  .titlebar .live{margin-left:auto;display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;color:var(--accent)}
+  .titlebar .live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2.2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--border)}
+  .tile{padding:18px 16px 15px;border-right:1px solid var(--border)}
+  .tile:last-child{border-right:none}
+  .tile .field-label{display:block;margin-bottom:8px;font-size:10px}
+  .tile .sim{font-family:var(--mono);font-size:8.5px;color:var(--info);letter-spacing:.7px;margin-left:6px}
+  .tile .stat-value{font-size:34px}
+  .tile .row{display:flex;align-items:baseline;gap:6px}
+  .hero-lower{display:grid;grid-template-columns:minmax(0,1fr) 170px;gap:0}
+  .hero-disp{padding:14px 16px 12px;border-right:1px solid var(--border)}
+  .hero-verdict{padding:14px 14px 12px;display:flex;flex-direction:column;gap:9px;justify-content:center}
+  .verdict-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+  .verdict-row .sev{width:7px;height:7px;border-radius:50%;flex:none}
+  .hero-caption{font-family:var(--mono);font-size:11px;color:var(--dimmed);text-align:right;margin-top:10px;letter-spacing:.4px}
+
+  /* Measured strip */
+  .measured-strip{border-top:1px solid var(--border);margin-top:64px}
+  .strip-inner{display:flex;align-items:stretch;overflow-x:auto}
+  .strip-head{display:flex;flex-direction:column;justify-content:center;gap:6px;padding:20px 26px 20px 0;border-right:1px solid var(--border);flex:none}
+  .strip-item{padding:20px 26px;border-right:1px solid var(--border);flex:1;min-width:130px}
+  .strip-item .mono-label{font-family:var(--mono);font-size:11px;color:var(--dimmed);letter-spacing:.6px;display:block;margin-bottom:6px}
+  .strip-item .val{font-weight:600;font-size:15px;color:#fff;white-space:nowrap}
+  .strip-item .val span{color:var(--dimmed);font-weight:400;font-size:12.5px}
+
+  /* ── Sections ─────────────────────────────────────────────────────── */
+  section.spec{padding:104px 0 0}
+  .sec-head{display:flex;align-items:baseline;gap:16px;margin-bottom:14px}
+  .sec-head h2{font-size:clamp(24px,2.6vw,32px);font-weight:600;letter-spacing:-0.015em}
+  .sec-body{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:48px;align-items:start}
+  .sec-body.flip{grid-template-columns:minmax(0,3fr) minmax(0,2fr)}
+  .sec-copy p{color:var(--muted);margin:14px 0 0;max-width:52ch}
+  .sec-copy p strong{color:#fff;font-weight:600}
+  .sec-copy .badges{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+  .panel{
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;
+  }
+  .panel-bar{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border)}
+  .panel-bar .field-label{font-size:10.5px}
+  .panel-bar .right{margin-left:auto;display:flex;gap:6px;align-items:center}
+  .chip{
+    font-family:var(--sans);font-size:11.5px;font-weight:700;padding:4px 10px;
+    border-radius:7px;border:1px solid var(--border2);color:var(--muted);background:var(--card);
+  }
+  .chip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-subtle)}
+  figure svg{display:block;width:100%;height:auto}
+  figcaption{font-family:var(--mono);font-size:11px;color:var(--dimmed);letter-spacing:.4px;padding:10px 16px;border-top:1px solid var(--border)}
+
+  /* Optimizer panel */
+  .diag{list-style:none}
+  .diag li{display:flex;gap:12px;padding:13px 16px;border-bottom:1px solid var(--border);align-items:flex-start}
+  .diag .sev{width:8px;height:8px;border-radius:50%;flex:none;margin-top:6px}
+  .diag .what{font-size:14px;color:#fff;font-weight:600}
+  .diag .why{font-size:13px;color:var(--muted);margin-top:2px}
+  .diag .cost{margin-left:auto;text-align:right;flex:none}
+  .diag .cost .stat-value{font-size:20px;color:var(--warning)}
+  .diag .cost .stat-unit{display:block;margin-top:3px}
+  .fix{padding:15px 16px;background:var(--accent-ghost)}
+  .fix .field-label{color:var(--accent);display:block;margin-bottom:6px;font-size:10px}
+  .fix p{font-size:14px;color:#fff;line-height:1.5}
+
+  /* Camera section */
+  .cam-duo{display:grid;grid-template-columns:2fr 3fr;gap:1px;background:var(--border)}
+  .cam-pane{background:#050507;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;height:300px}
+  .cam-pane::after{ /* frame registration marks — reads as a video frame */
+    content:"";position:absolute;inset:8px;pointer-events:none;
+    background:
+      linear-gradient(#3a3a44,#3a3a44) top left/14px 1.5px no-repeat,
+      linear-gradient(#3a3a44,#3a3a44) top left/1.5px 14px no-repeat,
+      linear-gradient(#3a3a44,#3a3a44) bottom right/14px 1.5px no-repeat,
+      linear-gradient(#3a3a44,#3a3a44) bottom right/1.5px 14px no-repeat;
+  }
+  .cam-pane .tag{
+    position:absolute;left:14px;top:14px;z-index:2;font-family:var(--mono);font-size:10.5px;
+    color:var(--muted);background:rgba(0,0,0,.62);padding:3px 8px;border-radius:5px;letter-spacing:.5px;
+  }
+  .cam-pane .fps{position:absolute;right:14px;top:14px;z-index:2;display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;color:var(--accent);background:rgba(0,0,0,.62);padding:3px 8px;border-radius:5px}
+  .cam-pane .fps::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--accent)}
+  .cam-spec{list-style:none;margin-top:22px;border:1px solid var(--border);border-radius:9px;overflow:hidden}
+  .cam-spec li{display:flex;justify-content:space-between;gap:16px;padding:9px 14px;border-bottom:1px solid var(--border);font-size:13px}
+  .cam-spec li:last-child{border-bottom:none}
+  .cam-spec .k{font-family:var(--mono);font-size:11px;color:var(--dimmed);letter-spacing:.6px;align-self:center}
+  .cam-spec .v{color:#fff;font-weight:600;text-align:right}
+  .cam-timeline{padding:14px 16px;border-top:1px solid var(--border)}
+  .tl-track{position:relative;height:34px}
+  .tl-band{position:absolute;inset:12px 0;border-radius:4px;background:linear-gradient(90deg,var(--accent-ghost),var(--accent-subtle) 50%,var(--accent-ghost))}
+  .tl-tick{position:absolute;top:8px;bottom:8px;width:2px;background:var(--warning);left:50%;border-radius:1px}
+  .tl-label{position:absolute;font-family:var(--mono);font-size:10px;color:var(--dimmed);top:-6px;transform:translateX(-50%)}
+  .tl-scale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--dimmed);margin-top:4px}
+  .cam-exports{display:flex;gap:8px;padding:0 16px 14px;flex-wrap:wrap}
+
+  /* Bag bars */
+  .bag{padding:8px 16px 14px}
+  .bag-row{display:grid;grid-template-columns:64px 1fr 68px;gap:12px;align-items:center;padding:7px 0}
+  .bag-row .club{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .bag-row .bar{height:10px;border-radius:5px;background:linear-gradient(90deg,var(--accent-mid),var(--accent));min-width:8px}
+  .bag-row .carry{font-weight:800;font-variant-numeric:tabular-nums;font-size:14px;text-align:right}
+  .bag-row .carry span{font-size:10.5px;color:var(--dimmed);font-weight:400;font-style:italic}
+  .gap-flag{display:flex;gap:8px;align-items:center;margin:6px 0 2px;padding:8px 10px;border:1px dashed rgba(245,158,11,.4);border-radius:7px;font-size:12.5px;color:var(--warning)}
+
+  /* Data section */
+  .data-trio{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border)}
+  .data-cell{background:var(--surface);padding:22px 20px}
+  .data-cell h3{font-size:15px;font-weight:600;margin:10px 0 6px}
+  .data-cell p{font-size:13.5px;color:var(--muted)}
+  .data-cell .glyph{font-family:var(--mono);font-size:12px;color:var(--accent);letter-spacing:.5px}
+  .hexdump{
+    margin-top:12px;font-family:var(--mono);font-size:11px;line-height:1.7;
+    color:var(--dimmed);background:var(--bg);border:1px solid var(--border);
+    border-radius:7px;padding:10px 12px;overflow-x:auto;white-space:pre;
+  }
+  .hexdump b{color:var(--accent);font-weight:500}
+
+  /* Spec table */
+  .spec-table{width:100%;border-collapse:collapse;background:var(--surface)}
+  .spec-table-wrap{border:1px solid var(--border);border-radius:12px;overflow-x:auto}
+  .spec-table th{
+    text-align:left;font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:1.2px;
+    text-transform:uppercase;color:var(--muted);padding:13px 18px;border-bottom:1px solid var(--border2);
+    background:var(--bg);white-space:nowrap;
+  }
+  .spec-table td{padding:12px 18px;border-bottom:1px solid var(--border);font-size:14px;vertical-align:middle}
+  .spec-table tr:last-child td{border-bottom:none}
+  .spec-table td.p{color:#fff;font-weight:600;white-space:nowrap}
+  .spec-table td.d{color:var(--muted);font-size:13.5px}
+  .spec-table td .mono{font-size:12.5px;color:var(--dimmed)}
+  .spec-table tr.group td{
+    background:var(--bg);font-family:var(--mono);font-size:11px;color:var(--dimmed);
+    letter-spacing:.8px;text-transform:uppercase;padding:9px 18px;
+  }
+
+  /* Platforms */
+  .plat-grid{display:grid;grid-template-columns:5fr 4fr;gap:1px;background:var(--border)}
+  .plat-cell{background:var(--surface);padding:24px 22px}
+  .plat-cell h3{font-size:16px;font-weight:600;margin-bottom:6px}
+  .plat-cell p{font-size:13.5px;color:var(--muted);max-width:44ch}
+  .plat-sketch{margin-top:18px;border:1px solid var(--border2);border-radius:8px;overflow:hidden}
+  .plat-sketch svg{display:block;width:100%;height:auto}
+
+  /* Final CTA */
+  .close{margin:120px 0 0;border-top:1px solid var(--border);padding:96px 0;text-align:center;
+    background:
+      radial-gradient(60% 120% at 50% 118%, var(--accent-ghost), transparent 70%);
+  }
+  .close h2{font-size:clamp(28px,3.4vw,40px);font-weight:800;letter-spacing:-0.02em;text-wrap:balance}
+  .close p{color:var(--muted);margin:16px auto 30px;max-width:52ch}
+  .close .notify{margin:0 auto}
+  .close .notify-note{font-size:12.5px;color:var(--dimmed);margin-top:12px}
+
+  footer{border-top:1px solid var(--border);padding:36px 0 48px}
+  .foot-grid{display:flex;gap:28px;flex-wrap:wrap;align-items:baseline;justify-content:space-between}
+  .foot-legal{font-size:12px;color:var(--dimmed);max-width:72ch;line-height:1.65;margin-top:18px}
+  .foot-legal a{color:var(--muted)}
+
+  /* ── Motion: one authored moment (hero readout arrival) ───────────── */
+  .roll-in .tile .stat-value{opacity:0;transform:translateY(6px);animation:rise .55s cubic-bezier(.16,1,.3,1) forwards}
+  .roll-in .tile:nth-child(1) .stat-value{animation-delay:.15s}
+  .roll-in .tile:nth-child(2) .stat-value{animation-delay:.26s}
+  .roll-in .tile:nth-child(3) .stat-value{animation-delay:.37s}
+  .roll-in .tile:nth-child(4) .stat-value{animation-delay:.48s}
+  .roll-in .tile:nth-child(5) .stat-value{animation-delay:.59s}
+  .roll-in .tile:nth-child(6) .stat-value{animation-delay:.70s}
+  @keyframes rise{to{opacity:1;transform:none}}
+  .roll-in .disp-dot{opacity:0;animation:pop .4s ease-out forwards}
+  @keyframes pop{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:scale(1)}}
+  .roll-in .trace-path{stroke-dasharray:800;stroke-dashoffset:800;animation:draw 1.4s cubic-bezier(.33,1,.68,1) .5s forwards}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  @media (prefers-reduced-motion:reduce){
+    .roll-in .tile .stat-value,.roll-in .disp-dot{animation:none;opacity:1;transform:none}
+    .roll-in .trace-path{animation:none;stroke-dashoffset:0}
+    .titlebar .live::before{animation:none}
+    html{scroll-behavior:auto}
+  }
+
+  /* ── Responsive ───────────────────────────────────────────────────── */
+  @media (max-width:960px){
+    .hero-grid{grid-template-columns:1fr;gap:40px}
+    .sec-body,.sec-body.flip{grid-template-columns:1fr;gap:28px}
+    .sec-body.flip .sec-copy{order:-1}
+    .plat-grid{grid-template-columns:1fr}
+    .data-trio{grid-template-columns:1fr}
+    .masthead nav a.navlink{display:none}
+  }
+  @media (max-width:640px){
+    .tiles{grid-template-columns:repeat(2,1fr)}
+    .tile{border-bottom:1px solid var(--border)}
+    .tile:nth-child(even){border-right:none}
+    .tile:nth-child(n+5){border-bottom:none}
+    .hero-lower{grid-template-columns:1fr}
+    .hero-disp{border-right:none;border-bottom:1px solid var(--border)}
+    .cam-duo{grid-template-columns:1fr}
+    .cam-pane{height:230px}
+    .notify{flex-direction:column}
+    .hero{padding-top:48px}
+    section.spec{padding-top:72px}
+    .doc-ref{display:none}
+    .wordmark{white-space:nowrap}
+    .masthead-inner{gap:12px}
+  }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap masthead-inner">
+    <span class="wordmark"><span class="dot" aria-hidden="true"></span>Your Launch Monitor</span>
+    <span class="doc-ref" aria-hidden="true">OMNI COMPANION · REV 2026-08</span>
+    <nav aria-label="Sections">
+      <a class="navlink" href="#dispersion">Dispersion</a>
+      <a class="navlink" href="#optimizer">Optimizer</a>
+      <a class="navlink" href="#flight">Flight</a>
+      <a class="navlink" href="#camera">Camera</a>
+      <a class="navlink" href="#data">Your data</a>
+      <a class="btn" href="#notify">Get notified</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- ═══ First viewport: title block + live readout ═══ -->
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-grid">
+        <div>
+          <span class="sec-ref">§00 · OVERVIEW</span>
+          <h1>Your Omni measures the ball. This tells you <em>what to&nbsp;fix.</em></h1>
+          <p class="lede">A companion app for the <strong>Square Golf Omni</strong> launch monitor.
+          It connects over Bluetooth, records every shot on your own device, and turns raw
+          launch numbers into a verdict — <strong>what's costing you distance, and how many yards it's worth.</strong></p>
+
+          <!-- PLACEHOLDER: wire this form to a real mailing list before launch -->
+          <form class="notify" id="notify" action="#" aria-label="Get notified">
+            <input type="email" name="email" placeholder="you@example.com" aria-label="Email address" required>
+            <button class="btn solid" type="submit">Get notified</button>
+          </form>
+          <p class="notify-note">No spam — one email when it's ready for your setup.</p>
+
+          <p class="platform-line" aria-label="Platforms">
+            <span>WINDOWS DESKTOP</span><span class="sep">·</span>
+            <span>iPAD</span><span class="sep">·</span>
+            <span>ANDROID TABLET</span>
+          </p>
+        </div>
+
+        <div>
+          <div class="app-frame roll-in" role="img" aria-label="The app showing a shot's measured values, a dispersion plot and the optimizer's verdict">
+            <div class="titlebar">
+              <span class="pip"></span><span class="pip"></span><span class="pip"></span>
+              <span class="app-title">SESSION · RANGE-TUE · SHOT 42</span>
+              <span class="live">OMNI CONNECTED</span>
+            </div>
+            <div class="tiles">
+              <div class="tile"><span class="field-label">Ball speed</span>
+                <div class="row"><span class="stat-value">158.7</span><span class="stat-unit">mph</span></div></div>
+              <div class="tile"><span class="field-label">Launch angle</span>
+                <div class="row"><span class="stat-value">11.9</span><span class="stat-unit">deg</span></div></div>
+              <div class="tile"><span class="field-label">Total spin</span>
+                <div class="row"><span class="stat-value">3,412</span><span class="stat-unit">rpm</span></div></div>
+              <div class="tile"><span class="field-label">Carry<span class="sim">SIM</span></span>
+                <div class="row"><span class="stat-value" style="color:var(--accent)">248</span><span class="stat-unit">yds</span></div></div>
+              <div class="tile"><span class="field-label">Offline<span class="sim">SIM</span></span>
+                <div class="row"><span class="stat-value">R 12</span><span class="stat-unit">yds</span></div></div>
+              <div class="tile"><span class="field-label">Apex<span class="sim">SIM</span></span>
+                <div class="row"><span class="stat-value">29</span><span class="stat-unit">yds</span></div></div>
+            </div>
+            <div class="hero-lower">
+              <div class="hero-disp">
+                <svg viewBox="0 0 340 150" aria-hidden="true">
+                  <line x1="170" y1="6" x2="170" y2="144" stroke="#2A2A32" stroke-width="1" stroke-dasharray="3 4"/>
+                  <line x1="16" y1="120" x2="324" y2="120" stroke="#1E1E28" stroke-width="1"/>
+                  <line x1="16" y1="75" x2="324" y2="75" stroke="#1E1E28" stroke-width="1"/>
+                  <line x1="16" y1="30" x2="324" y2="30" stroke="#1E1E28" stroke-width="1"/>
+                  <text x="20" y="126" font-family="DM Mono,monospace" font-size="8.5" fill="#848484">230</text>
+                  <text x="20" y="81" font-family="DM Mono,monospace" font-size="8.5" fill="#848484">245</text>
+                  <text x="20" y="36" font-family="DM Mono,monospace" font-size="8.5" fill="#848484">260</text>
+                  <ellipse cx="186" cy="72" rx="92" ry="46" fill="rgba(45,212,176,.06)" stroke="rgba(45,212,176,.35)" stroke-width="1.2" stroke-dasharray="5 4"/>
+                  <g fill="#2DD4B0">
+                    <circle class="disp-dot" style="animation-delay:.55s" cx="152" cy="60" r="4" opacity=".55"/>
+                    <circle class="disp-dot" style="animation-delay:.62s" cx="197" cy="84" r="4" opacity=".55"/>
+                    <circle class="disp-dot" style="animation-delay:.69s" cx="175" cy="49" r="4" opacity=".55"/>
+                    <circle class="disp-dot" style="animation-delay:.76s" cx="221" cy="66" r="4" opacity=".55"/>
+                    <circle class="disp-dot" style="animation-delay:.83s" cx="139" cy="92" r="4" opacity=".55"/>
+                    <circle class="disp-dot" style="animation-delay:.90s" cx="205" cy="41" r="4" opacity=".55"/>
+                    <circle class="disp-dot" style="animation-delay:.97s" cx="164" cy="99" r="4" opacity=".55"/>
+                    <circle class="disp-dot" style="animation-delay:1.04s" cx="236" cy="90" r="4" opacity=".55"/>
+                    <circle class="disp-dot" style="animation-delay:1.11s" cx="188" cy="108" r="4.8" stroke="#fff" stroke-width="1.4"/>
+                  </g>
+                  <text x="258" y="140" font-family="DM Mono,monospace" font-size="8.5" fill="#848484">OFFLINE →</text>
+                </svg>
+              </div>
+              <div class="hero-verdict">
+                <span class="field-label" style="font-size:10px">Optimizer verdict</span>
+                <div class="verdict-row"><span class="sev" style="background:var(--warning)"></span>Spin 700 rpm high</div>
+                <div class="verdict-row"><span class="sev" style="background:var(--info)"></span>Launch 1.5° low</div>
+                <div class="verdict-row" style="color:#fff;font-weight:600"><span class="sev" style="background:var(--accent)"></span>−9 yds recoverable</div>
+              </div>
+            </div>
+          </div>
+          <p class="hero-caption">EXAMPLE SESSION — ILLUSTRATIVE NUMBERS</p>
+        </div>
+      </div>
+
+      <!-- The truth vocabulary: what the device measures -->
+      <div class="measured-strip" aria-label="Values measured by the Omni at impact">
+        <div class="strip-inner">
+          <div class="strip-head">
+            <span class="badge measured">Measured</span>
+            <span class="field-label" style="font-size:10px">at impact, by the Omni</span>
+          </div>
+          <div class="strip-item"><span class="mono-label">BALL_SPEED</span><span class="val">Ball speed <span>· mph</span></span></div>
+          <div class="strip-item"><span class="mono-label">LAUNCH_ANGLE</span><span class="val">Launch angle <span>· deg</span></span></div>
+          <div class="strip-item"><span class="mono-label">LAUNCH_DIR</span><span class="val">Direction <span>· deg</span></span></div>
+          <div class="strip-item"><span class="mono-label">TOTAL_SPIN</span><span class="val">Total spin <span>· rpm</span></span></div>
+          <div class="strip-item" style="border-right:none"><span class="mono-label">SPIN_AXIS</span><span class="val">Spin axis <span>· deg</span></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ §01 Dispersion ═══ -->
+  <section class="spec" id="dispersion">
+    <div class="wrap">
+      <div class="sec-head"><span class="sec-ref">§01</span><h2>Dispersion, with a confidence interval</h2></div>
+      <div class="sec-body">
+        <div class="sec-copy">
+          <p>Every club's pattern plotted as carry against offline, with a statistical
+          ellipse drawn to the convention you choose — <strong>Trackman's 2σ (~86% of shots)
+          or the PGA Tour's 90%</strong> — so "my 7-iron goes 165" becomes
+          "my 7-iron lands inside this shape."</p>
+          <p>Overlay PGA Tour launch profiles, built from published TrackMan averages,
+          to see how your window compares to the professional one.</p>
+          <div class="badges">
+            <span class="badge measured">Measured inputs</span>
+            <span class="badge reference">PGA benchmark</span>
+          </div>
+        </div>
+        <figure class="panel">
+          <div class="panel-bar">
+            <span class="field-label">Dispersion · 7 Iron</span>
+            <span class="right">
+              <span class="chip on">Trackman 86%</span>
+              <span class="chip">PGA 90%</span>
+            </span>
+          </div>
+          <svg viewBox="0 0 640 300" aria-label="Dispersion plot: a cloud of shots with a statistical ellipse around them">
+            <line x1="320" y1="10" x2="320" y2="290" stroke="#2A2A32" stroke-width="1" stroke-dasharray="3 5"/>
+            <g stroke="#1E1E28" stroke-width="1">
+              <line x1="30" y1="250" x2="610" y2="250"/><line x1="30" y1="190" x2="610" y2="190"/>
+              <line x1="30" y1="130" x2="610" y2="130"/><line x1="30" y1="70" x2="610" y2="70"/>
+            </g>
+            <g font-family="DM Mono,monospace" font-size="10" fill="#848484">
+              <text x="36" y="254">150</text><text x="36" y="194">160</text>
+              <text x="36" y="134">170</text><text x="36" y="74">180</text>
+              <text x="560" y="282">R 20 yds</text><text x="40" y="282">L 20 yds</text>
+            </g>
+            <ellipse cx="338" cy="158" rx="150" ry="86" fill="rgba(45,212,176,.05)" stroke="rgba(45,212,176,.38)" stroke-width="1.4" stroke-dasharray="6 5"/>
+            <line x1="330" y1="150" x2="346" y2="166" stroke="rgba(45,212,176,.8)" stroke-width="1.4"/>
+            <line x1="346" y1="150" x2="330" y2="166" stroke="rgba(45,212,176,.8)" stroke-width="1.4"/>
+            <g fill="#2DD4B0" opacity=".85">
+              <circle cx="300" cy="140" r="5" opacity=".5"/><circle cx="352" cy="176" r="5" opacity=".5"/>
+              <circle cx="326" cy="118" r="5" opacity=".5"/><circle cx="384" cy="150" r="5" opacity=".5"/>
+              <circle cx="272" cy="182" r="5" opacity=".5"/><circle cx="360" cy="106" r="5" opacity=".5"/>
+              <circle cx="310" cy="200" r="5" opacity=".5"/><circle cx="410" cy="188" r="5" opacity=".5"/>
+              <circle cx="342" cy="222" r="5" opacity=".5"/><circle cx="290" cy="96" r="5" opacity=".5"/>
+              <circle cx="398" cy="122" r="5" opacity=".5"/><circle cx="252" cy="150" r="5" opacity=".5"/>
+              <circle cx="376" cy="204" r="5" opacity=".5"/><circle cx="318" cy="164" r="5" opacity=".5"/>
+              <circle cx="356" cy="140" r="6" stroke="#fff" stroke-width="1.6"/>
+            </g>
+          </svg>
+          <figcaption>CARRY (YDS) vs OFFLINE · ELLIPSE: 2σ TRACKMAN CONVENTION · EXAMPLE DATA</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ §02 Optimizer ═══ -->
+  <section class="spec" id="optimizer">
+    <div class="wrap">
+      <div class="sec-head"><span class="sec-ref">§02</span><h2>A verdict, not a data dump</h2></div>
+      <div class="sec-body flip">
+        <figure class="panel">
+          <div class="panel-bar"><span class="field-label">Shot optimizer · Driver · last 14 shots</span></div>
+          <ul class="diag">
+            <li>
+              <span class="sev" style="background:var(--warning)"></span>
+              <span><span class="what">Spin too high</span><br>
+              <span class="why">3,412 rpm against a 2,200–2,700 optimal window at your ball speed</span></span>
+              <span class="cost"><span class="stat-value">−6</span><span class="stat-unit">yds carry</span></span>
+            </li>
+            <li>
+              <span class="sev" style="background:var(--info)"></span>
+              <span><span class="what">Launch slightly low</span><br>
+              <span class="why">11.9° where 13–15° carries furthest at this speed</span></span>
+              <span class="cost"><span class="stat-value">−3</span><span class="stat-unit">yds carry</span></span>
+            </li>
+            <li>
+              <span class="sev" style="background:var(--critical)"></span>
+              <span><span class="what">Face-to-path drifting left</span><br>
+              <span class="why">Spin axis −4.1° average — a draw becoming a pull on misses</span></span>
+              <span class="cost"><span class="stat-value">±14</span><span class="stat-unit">yds offline</span></span>
+            </li>
+          </ul>
+          <div class="fix">
+            <span class="field-label">Recommendation</span>
+            <p>Work on launch first: teeing higher and moving ball position forward raises
+            launch and drops spin together — the two findings share one cause.</p>
+          </div>
+          <figcaption style="border-top:1px solid var(--border)">DIAGNOSTICS RANKED BY ESTIMATED COST · EXAMPLE DATA</figcaption>
+        </figure>
+        <div class="sec-copy">
+          <p>The optimizer reads your last shots per club, compares them against
+          launch-condition windows for your speed, and ranks every inefficiency by
+          <strong>the yards it's estimated to cost you.</strong></p>
+          <p>Analysis ends in an action: each session closes with one prioritized,
+          plain-language recommendation — not thirty numbers to interpret on your own.</p>
+          <div class="badges">
+            <span class="badge measured">Measured inputs</span>
+            <span class="badge simulated">Modeled cost</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ §03 Flight ═══ -->
+  <section class="spec" id="flight">
+    <div class="wrap">
+      <div class="sec-head"><span class="sec-ref">§03</span><h2>Flight you can interrogate</h2></div>
+      <div class="sec-body">
+        <div class="sec-copy">
+          <p>The Omni measures the ball once — at impact. Everything after that moment,
+          <strong>carry, apex, curvature, descent, roll,</strong> is computed by the app's
+          physics-based flight model and rendered as a 3D flight you can orbit, on a hole
+          you lay out yourself.</p>
+          <p>Measured and simulated are different classes of truth, and the app never
+          blurs which is which — the same honesty this page uses in its badges.</p>
+          <div class="badges">
+            <span class="badge measured">Impact values</span>
+            <span class="badge simulated">Everything downstream</span>
+          </div>
+        </div>
+        <figure class="panel">
+          <div class="panel-bar">
+            <span class="field-label">3D flight · side view</span>
+            <span class="right"><span class="chip on">Tracer</span><span class="chip">Orbit</span></span>
+          </div>
+          <svg viewBox="0 0 640 260" aria-label="Side view of a simulated ball flight over a fairway, apex marked">
+            <rect x="0" y="0" width="640" height="200" fill="#0E1418"/>
+            <rect x="0" y="200" width="640" height="60" fill="#161C18"/>
+            <g>
+              <rect x="0" y="200" width="640" height="14" fill="#2C4732"/>
+              <rect x="80" y="200" width="80" height="14" fill="#35543A"/>
+              <rect x="240" y="200" width="80" height="14" fill="#35543A"/>
+              <rect x="400" y="200" width="80" height="14" fill="#35543A"/>
+              <rect x="560" y="200" width="80" height="14" fill="#35543A"/>
+            </g>
+            <g stroke="#1E1E28" stroke-width="1">
+              <line x1="0" y1="60" x2="640" y2="60"/><line x1="0" y1="130" x2="640" y2="130"/>
+            </g>
+            <path class="trace-path" d="M 40 198 C 190 -10, 400 50, 548 196" fill="none" stroke="#2DD4B0" stroke-width="2.6" stroke-linecap="round"/>
+            <circle cx="40" cy="198" r="4" fill="#2DD4B0"/>
+            <circle cx="273" cy="64" r="4.5" fill="none" stroke="#2DD4B0" stroke-width="1.6"/>
+            <line x1="273" y1="72" x2="273" y2="196" stroke="rgba(45,212,176,.28)" stroke-width="1" stroke-dasharray="3 4"/>
+            <circle cx="548" cy="196" r="4.5" fill="#2DD4B0" stroke="#fff" stroke-width="1.4"/>
+            <line x1="596" y1="150" x2="596" y2="200" stroke="#D9483B" stroke-width="2.4"/>
+            <path d="M 596 150 l 15 5 l -15 5 z" fill="#D9483B"/>
+            <g font-family="DM Mono,monospace" font-size="10" fill="#848484">
+              <text x="255" y="52">APEX 29 yds</text>
+              <text x="494" y="126">DESC 41°</text>
+              <text x="46" y="232" fill="#9C9C9C">CARRY 248 yds</text>
+              <text x="500" y="232" fill="#9C9C9C">TOTAL 262 yds</text>
+            </g>
+          </svg>
+          <figcaption>SIMULATED FLIGHT FROM MEASURED IMPACT · EXAMPLE DATA</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ §04 Camera ═══ -->
+  <section class="spec" id="camera">
+    <div class="wrap">
+      <div class="sec-head"><span class="sec-ref">§04</span><h2>See the swing behind the number</h2></div>
+      <div class="sec-body flip">
+        <figure class="panel">
+          <div class="panel-bar">
+            <span class="field-label">Impact camera · Shot 42</span>
+            <span class="right"><span class="chip on">Both</span><span class="chip">DTL</span><span class="chip">FO</span></span>
+          </div>
+          <div class="cam-duo">
+            <div class="cam-pane">
+              <span class="tag">DTL · 91/182</span><span class="fps">60</span>
+              <!-- Down the line: golfer at address, seen from behind the hands -->
+              <svg viewBox="0 0 120 170" height="86%" aria-hidden="true">
+                <line x1="6" y1="152" x2="114" y2="152" stroke="#22222b" stroke-width="1.5"/>
+                <g stroke="#4a4a56" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M 60 44 C 55 58 50 74 48 88"/>
+                  <path d="M 48 88 C 50 108 54 126 56 150"/>
+                  <path d="M 48 88 C 44 108 40 128 40 150"/>
+                  <path d="M 58 52 C 52 62 46 72 42 80"/>
+                </g>
+                <circle cx="63" cy="33" r="8.5" fill="none" stroke="#4a4a56" stroke-width="4"/>
+                <line x1="42" y1="80" x2="30" y2="146" stroke="#5b5b68" stroke-width="2.2"/>
+                <circle cx="28" cy="149" r="2.8" fill="#e8e8e8"/>
+                <line x1="28" y1="156" x2="112" y2="156" stroke="rgba(45,212,176,.25)" stroke-width="1.4" stroke-dasharray="4 4"/>
+              </svg>
+            </div>
+            <div class="cam-pane">
+              <span class="tag">FO · 91/182</span><span class="fps">30</span>
+              <!-- Face on: golfer mid-downswing, ball on the turf line -->
+              <svg viewBox="0 0 220 150" height="86%" aria-hidden="true">
+                <line x1="10" y1="132" x2="210" y2="132" stroke="#22222b" stroke-width="1.5"/>
+                <g stroke="#4a4a56" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M 116 40 C 114 54 112 66 110 76"/>
+                  <path d="M 110 76 C 116 94 122 112 124 130"/>
+                  <path d="M 110 76 C 104 96 98 112 94 130"/>
+                  <path d="M 114 48 C 104 52 92 58 84 64"/>
+                  <path d="M 114 48 C 110 58 104 64 96 66"/>
+                </g>
+                <circle cx="120" cy="29" r="8.5" fill="none" stroke="#4a4a56" stroke-width="4"/>
+                <line x1="84" y1="64" x2="56" y2="122" stroke="#5b5b68" stroke-width="2.2"/>
+                <path d="M 56 122 l -7 4 l 3 5" stroke="#5b5b68" stroke-width="3.4" fill="none" stroke-linecap="round"/>
+                <circle cx="72" cy="128" r="2.8" fill="#e8e8e8"/>
+              </svg>
+            </div>
+          </div>
+          <div class="cam-timeline" aria-label="Capture timeline: three seconds before and after the shot">
+            <div class="tl-track">
+              <div class="tl-band"></div>
+              <div class="tl-tick"></div>
+              <span class="tl-label" style="left:50%">SHOT REPORTED</span>
+            </div>
+            <div class="tl-scale"><span>−3.0 s</span><span>0</span><span>+3.0 s</span></div>
+          </div>
+          <div class="cam-exports">
+            <span class="chip">MP4</span><span class="chip">Side by side</span>
+            <span class="chip">0.25×</span><span class="chip on">Synced to the shot</span>
+          </div>
+          <figcaption>TWO UVC CAMERAS, ONE TRIGGER · AUTO-REPLAY AFTER EVERY SHOT</figcaption>
+        </figure>
+        <div class="sec-copy">
+          <p>Plug in one or two ordinary UVC webcams. The app keeps a rolling buffer and,
+          when the Omni reports a shot, seals <strong>three seconds either side of impact</strong>
+          from every angle — down the line and face on, on one shared clock.</p>
+          <p>The replay opens itself the moment the capture completes, loops at full,
+          half or quarter speed, and exports as a single stitched video aligned to the
+          shot the launch monitor recorded.</p>
+          <div class="badges"><span class="badge measured">Trigger: the Omni's packet</span></div>
+          <ul class="cam-spec">
+            <li><span class="k">PRE_ROLL</span><span class="v">3.0 s before the shot</span></li>
+            <li><span class="k">POST_ROLL</span><span class="v">3.0 s after</span></li>
+            <li><span class="k">ANGLES</span><span class="v">up to 2, one shared clock</span></li>
+            <li><span class="k">REPLAY</span><span class="v">auto · 1× / 0.5× / 0.25×</span></li>
+            <li><span class="k">EXPORT</span><span class="v">MP4 · stitched or separate</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ §05 Bag + §06 Data ═══ -->
+  <section class="spec" id="bag">
+    <div class="wrap">
+      <div class="sec-head"><span class="sec-ref">§05</span><h2>Gapping that shows the gap</h2></div>
+      <div class="sec-body">
+        <div class="sec-copy">
+          <p>Every session feeds My Bag: real carry numbers per club, from your shots,
+          not the loft printed on the sole. The chart makes the flaw visible —
+          <strong>a 24-yard hole between two clubs</strong> is a decision you can act on.</p>
+          <div class="badges"><span class="badge measured">Your sessions</span></div>
+        </div>
+        <figure class="panel">
+          <div class="panel-bar"><span class="field-label">My bag · median carry</span></div>
+          <div class="bag" role="img" aria-label="Carry distance bars per club, with a flagged 24 yard gap between five iron and hybrid">
+            <div class="bag-row"><span class="club">DR</span><div class="bar" style="width:100%"></div><span class="carry">248 <span>yds</span></span></div>
+            <div class="bag-row"><span class="club">3W</span><div class="bar" style="width:88%"></div><span class="carry">221 <span>yds</span></span></div>
+            <div class="bag-row"><span class="club">HY</span><div class="bar" style="width:78%"></div><span class="carry">196 <span>yds</span></span></div>
+            <div class="gap-flag">⚠ 24-yd gap — nothing in the bag carries 172–196</div>
+            <div class="bag-row"><span class="club">5i</span><div class="bar" style="width:66%"></div><span class="carry">172 <span>yds</span></span></div>
+            <div class="bag-row"><span class="club">7i</span><div class="bar" style="width:60%"></div><span class="carry">158 <span>yds</span></span></div>
+            <div class="bag-row"><span class="club">9i</span><div class="bar" style="width:52%"></div><span class="carry">134 <span>yds</span></span></div>
+            <div class="bag-row"><span class="club">PW</span><div class="bar" style="width:46%"></div><span class="carry">118 <span>yds</span></span></div>
+          </div>
+          <figcaption>MEDIAN CARRY PER CLUB · EXAMPLE DATA</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="spec" id="data">
+    <div class="wrap">
+      <div class="sec-head"><span class="sec-ref">§06</span><h2>Your shots never leave your device</h2></div>
+      <div class="data-trio" style="border:1px solid var(--border);border-radius:12px;overflow:hidden">
+        <div class="data-cell">
+          <span class="glyph">LOCAL_DB</span>
+          <h3>No account. No cloud.</h3>
+          <p>Sessions live in a local database on the machine that recorded them.
+          The app works entirely offline — the only radio it needs is Bluetooth to the Omni.</p>
+        </div>
+        <div class="data-cell">
+          <span class="glyph">EXPORT_CSV</span>
+          <h3>Take everything with you</h3>
+          <p>Any session exports to CSV — every measured value, every derived value,
+          ready for your own spreadsheet or analysis tools.</p>
+        </div>
+        <div class="data-cell">
+          <span class="glyph">PROTO_CAPTURE</span>
+          <h3>Down to the protocol</h3>
+          <p>The app grew out of understanding the Omni's BLE protocol first-hand,
+          and it will show you the raw frames it decodes.</p>
+          <div class="hexdump" aria-label="Example BLE protocol capture">A5 5A 10 07  <b>SHOT_DATA</b>
+1E 3E 00 4A  ball_speed
+0C 22 F5 01  spin · axis</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ §07 Platforms ═══ -->
+  <section class="spec" id="platforms">
+    <div class="wrap">
+      <div class="sec-head"><span class="sec-ref">§07</span><h2>Built for where you actually practice</h2></div>
+      <div class="plat-grid" style="border:1px solid var(--border);border-radius:12px;overflow:hidden">
+        <div class="plat-cell">
+          <h3>The sim room — Windows desktop</h3>
+          <p>The official app doesn't run on a PC. This one was built there first, with its
+          own Windows Bluetooth stack, and it uses the width: on an ultrawide monitor the
+          session splits into table, dispersion, optimizer and both camera angles at once.</p>
+          <div class="plat-sketch" role="img" aria-label="Ultrawide split view: shot table, dispersion, and a double-width dual camera pane">
+            <svg viewBox="0 0 520 150">
+              <rect width="520" height="150" fill="#0C0C10"/>
+              <rect x="0" y="0" width="520" height="18" fill="#12151E"/>
+              <circle cx="12" cy="9" r="3" fill="#2DD4B0"/>
+              <rect x="24" y="6" width="90" height="6" rx="3" fill="#2A2A32"/>
+              <g>
+                <rect x="8" y="26" width="118" height="116" rx="4" fill="#12151E" stroke="#1E1E28"/>
+                <g fill="#2A2A32"><rect x="16" y="38" width="100" height="5" rx="2.5"/><rect x="16" y="50" width="88" height="5" rx="2.5"/><rect x="16" y="62" width="96" height="5" rx="2.5"/><rect x="16" y="74" width="80" height="5" rx="2.5"/></g>
+                <rect x="16" y="86" width="100" height="5" rx="2.5" fill="rgba(45,212,176,.5)"/>
+                <g fill="#2A2A32"><rect x="16" y="98" width="92" height="5" rx="2.5"/><rect x="16" y="110" width="98" height="5" rx="2.5"/></g>
+              </g>
+              <g>
+                <rect x="134" y="26" width="118" height="116" rx="4" fill="#12151E" stroke="#1E1E28"/>
+                <ellipse cx="193" cy="84" rx="42" ry="28" fill="none" stroke="rgba(45,212,176,.4)" stroke-dasharray="4 3"/>
+                <g fill="#2DD4B0" opacity=".7">
+                  <circle cx="182" cy="76" r="2.5"/><circle cx="202" cy="92" r="2.5"/><circle cx="196" cy="70" r="2.5"/>
+                  <circle cx="176" cy="94" r="2.5"/><circle cx="208" cy="80" r="2.5"/>
+                </g>
+              </g>
+              <g>
+                <rect x="260" y="26" width="252" height="116" rx="4" fill="#000" stroke="#1E1E28"/>
+                <line x1="386" y1="26" x2="386" y2="142" stroke="#1E1E28"/>
+                <rect x="268" y="34" width="34" height="10" rx="3" fill="#1A1A24"/>
+                <rect x="394" y="34" width="30" height="10" rx="3" fill="#1A1A24"/>
+                <path d="M 316 118 Q 322 78 330 70 M 330 70 L 344 114" stroke="#4a4a56" stroke-width="3" fill="none" stroke-linecap="round"/>
+                <path d="M 436 118 Q 446 84 452 76 M 452 76 L 468 112" stroke="#4a4a56" stroke-width="3" fill="none" stroke-linecap="round"/>
+                <rect x="268" y="128" width="236" height="4" rx="2" fill="rgba(45,212,176,.35)"/>
+              </g>
+            </svg>
+          </div>
+        </div>
+        <div class="plat-cell">
+          <h3>The mat — iPad &amp; Android tablet</h3>
+          <p>Propped beside the hitting mat and read from address position: big tabular
+          numbers, one glance between swings. Same app, same design, same local data.</p>
+          <div class="plat-sketch" role="img" aria-label="Tablet layout with large shot number tiles">
+            <svg viewBox="0 0 400 150">
+              <rect width="400" height="150" fill="#0C0C10"/>
+              <g>
+                <rect x="10" y="12" width="122" height="60" rx="4" fill="#12151E" stroke="#1E1E28"/>
+                <rect x="139" y="12" width="122" height="60" rx="4" fill="#12151E" stroke="#1E1E28"/>
+                <rect x="268" y="12" width="122" height="60" rx="4" fill="#12151E" stroke="#1E1E28"/>
+                <rect x="10" y="78" width="122" height="60" rx="4" fill="#12151E" stroke="#1E1E28"/>
+                <rect x="139" y="78" width="122" height="60" rx="4" fill="#12151E" stroke="#1E1E28"/>
+                <rect x="268" y="78" width="122" height="60" rx="4" fill="#12151E" stroke="#1E1E28"/>
+              </g>
+              <g fill="#2A2A32">
+                <rect x="20" y="22" width="46" height="5" rx="2.5"/><rect x="149" y="22" width="46" height="5" rx="2.5"/>
+                <rect x="278" y="22" width="46" height="5" rx="2.5"/><rect x="20" y="88" width="46" height="5" rx="2.5"/>
+                <rect x="149" y="88" width="46" height="5" rx="2.5"/><rect x="278" y="88" width="46" height="5" rx="2.5"/>
+              </g>
+              <g font-family="DM Sans,sans-serif" font-weight="800" font-size="26" fill="#fff">
+                <text x="20" y="60">163</text><text x="149" y="60">12.4</text><text x="278" y="60" fill="#2DD4B0">248</text>
+                <text x="20" y="126">2.6k</text><text x="149" y="126">R 8</text><text x="278" y="126">1.48</text>
+              </g>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Spec table ═══ -->
+  <section class="spec" id="specs">
+    <div class="wrap">
+      <div class="sec-head"><span class="sec-ref">§08</span><h2>Data classes</h2></div>
+      <p style="color:var(--muted);max-width:62ch;margin-bottom:26px">Every number in the app carries its class.
+      Measured values come from the device; simulated values come from the flight model and are documented,
+      validated and honest about their limits; reference values come from published sources.</p>
+      <div class="spec-table-wrap">
+      <table class="spec-table">
+        <thead><tr><th>Parameter</th><th>Description</th><th>Class</th></tr></thead>
+        <tbody>
+          <tr class="group"><td colspan="3">Impact — from the Omni over BLE</td></tr>
+          <tr><td class="p">Ball speed</td><td class="d">Speed of the ball leaving the face <span class="mono">· mph</span></td><td><span class="badge measured">Measured</span></td></tr>
+          <tr><td class="p">Launch angle</td><td class="d">Vertical launch relative to the ground <span class="mono">· deg</span></td><td><span class="badge measured">Measured</span></td></tr>
+          <tr><td class="p">Launch direction</td><td class="d">Horizontal start line relative to target <span class="mono">· deg</span></td><td><span class="badge measured">Measured</span></td></tr>
+          <tr><td class="p">Total spin</td><td class="d">Rate of rotation at launch <span class="mono">· rpm</span></td><td><span class="badge measured">Measured</span></td></tr>
+          <tr><td class="p">Spin axis</td><td class="d">Tilt of the spin — draw and fade live here <span class="mono">· deg</span></td><td><span class="badge measured">Measured</span></td></tr>
+          <tr class="group"><td colspan="3">Downstream — computed by the flight model</td></tr>
+          <tr><td class="p">Carry / total / roll</td><td class="d">Flight distance, finish distance and the run between them <span class="mono">· yds</span></td><td><span class="badge simulated">Simulated</span></td></tr>
+          <tr><td class="p">Apex &amp; descent</td><td class="d">Peak height and the angle the ball lands at <span class="mono">· yds / deg</span></td><td><span class="badge simulated">Simulated</span></td></tr>
+          <tr><td class="p">Curve &amp; offline</td><td class="d">Shape through the air and finish position vs the target line <span class="mono">· yds</span></td><td><span class="badge simulated">Simulated</span></td></tr>
+          <tr class="group"><td colspan="3">Context — published sources</td></tr>
+          <tr><td class="p">PGA Tour profiles</td><td class="d">Launch-parameter averages from published TrackMan data</td><td><span class="badge reference">Reference</span></td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Close ═══ -->
+  <section class="close">
+    <div class="wrap">
+      <h2>Leave every session knowing<br>what to work on.</h2>
+      <p>Your Launch Monitor is in active development, being battle-tested in a real sim room.
+      Leave an email and you'll get one message when it's ready for yours.</p>
+      <!-- PLACEHOLDER: wire this form to a real mailing list before launch -->
+      <form class="notify" action="#" aria-label="Get notified">
+        <input type="email" name="email" placeholder="you@example.com" aria-label="Email address" required>
+        <button class="btn solid" type="submit">Get notified</button>
+      </form>
+      <p class="notify-note">No spam — one email when it's ready for your setup.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <span class="wordmark"><span class="dot" aria-hidden="true"></span>Your Launch Monitor</span>
+      <span class="doc-ref">OMNI COMPANION · REV 2026-08</span>
+    </div>
+    <p class="foot-legal">
+      Your Launch Monitor is an independent project and is not affiliated with, endorsed by, or
+      sponsored by Square Golf or TrackMan. "Square Golf" and "Omni" are trademarks of their
+      respective owners. All session numbers on this page are illustrative examples, not
+      measurements. PGA Tour benchmark profiles are derived from publicly published TrackMan
+      averages. Simulated values are computed by the app's documented flight model and are
+      estimates, not measurements.
+    </p>
+  </div>
+</footer>
+
+<script>
+  // Placeholder sign-up: distribution isn't decided yet, so the form only
+  // acknowledges. Replace with a real mailing-list action before publishing.
+  document.querySelectorAll('form.notify').forEach(function(form){
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var note = form.parentElement.querySelector('.notify-note');
+      var btn = form.querySelector('button');
+      btn.textContent = 'Noted ✓';
+      btn.disabled = true;
+      if (note) note.textContent = 'Sign-up isn’t wired to a list yet — this is a placeholder.';
+    });
+  });
+</script>
+</body>
+</html>
