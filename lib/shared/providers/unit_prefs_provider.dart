@@ -126,6 +126,10 @@ class UnitPrefs {
   /// down-the-line and a face-on camera each reopen on their own settings.
   final List<CameraSlotPref> cameraSlots;
 
+  /// Where clip exports land; empty means the default Documents/clips
+  /// folder. Only the desktop export sheet offers to set it.
+  final String exportDirectory;
+
   const UnitPrefs({
     this.distance = DistanceUnit.meters,
     this.speed = SpeedUnit.mph,
@@ -138,6 +142,7 @@ class UnitPrefs {
     this.splitThirdPane = 'optimizer',
     this.splitFourthPane = 'cameraFo',
     this.cameraSlots = const [CameraSlotPref(), CameraSlotPref()],
+    this.exportDirectory = '',
   });
 
   UnitPrefs copyWith({
@@ -152,6 +157,7 @@ class UnitPrefs {
     String? splitThirdPane,
     String? splitFourthPane,
     List<CameraSlotPref>? cameraSlots,
+    String? exportDirectory,
   }) => UnitPrefs(
     distance: distance ?? this.distance,
     speed: speed ?? this.speed,
@@ -164,6 +170,7 @@ class UnitPrefs {
     splitThirdPane: splitThirdPane ?? this.splitThirdPane,
     splitFourthPane: splitFourthPane ?? this.splitFourthPane,
     cameraSlots: cameraSlots ?? this.cameraSlots,
+    exportDirectory: exportDirectory ?? this.exportDirectory,
   );
 
   /// Display label for distance values.
@@ -195,6 +202,7 @@ class UnitPrefs {
     'splitThirdPane': splitThirdPane,
     'splitFourthPane': splitFourthPane,
     'cameraSlots': cameraSlots.map((slot) => slot.toJson()).toList(),
+    'exportDirectory': exportDirectory,
   };
 
   factory UnitPrefs.fromJson(Map<String, dynamic> j) => UnitPrefs(
@@ -221,6 +229,7 @@ class UnitPrefs {
     splitThirdPane: j['splitThirdPane'] as String? ?? 'optimizer',
     splitFourthPane: j['splitFourthPane'] as String? ?? 'cameraFo',
     cameraSlots: _slotsFromJson(j),
+    exportDirectory: j['exportDirectory'] as String? ?? '',
   );
 
   /// Reads the slot list, padding to two entries; a prefs file written
@@ -344,6 +353,13 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
 
   void setSpeed(SpeedUnit unit) {
     state = state.copyWith(speed: unit);
+    _save();
+  }
+
+  /// Remembers where clip exports should land; an empty path returns to the
+  /// default Documents/clips folder.
+  void setExportDirectory(String path) {
+    state = state.copyWith(exportDirectory: path);
     _save();
   }
 

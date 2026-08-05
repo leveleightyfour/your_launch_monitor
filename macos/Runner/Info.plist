@@ -30,5 +30,7 @@
 	<string>NSApplication</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>This app connects to your golf launch monitor via Bluetooth to receive shot data.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app records swing video from your cameras when a shot is detected.</string>
 </dict>
 </plist>

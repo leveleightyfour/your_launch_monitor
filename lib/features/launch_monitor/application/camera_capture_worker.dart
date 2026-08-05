@@ -36,6 +36,12 @@ const capAny = 0;
 /// default would pick Media Foundation, which is the stack that fails.
 const capDshow = 700;
 
+/// `cv::CAP_AVFOUNDATION` — the native capture stack on macOS and iOS. It is
+/// the only camera backend in an Apple OpenCV build, but naming it keeps the
+/// backend in play a statement rather than a guess, as CAP_DSHOW does on
+/// Windows.
+const capAvfoundation = 1200;
+
 const propFrameWidth = 3; // cv::CAP_PROP_FRAME_WIDTH
 const propFrameHeight = 4; // cv::CAP_PROP_FRAME_HEIGHT
 const propFps = 5; // cv::CAP_PROP_FPS

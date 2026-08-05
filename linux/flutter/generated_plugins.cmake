@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  file_selector_linux
   restart_app
   sqlite3_flutter_libs
   url_launcher_linux

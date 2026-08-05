@@ -6,13 +6,15 @@ import 'package:omni_sniffer/shared/services/shorebird_update_service.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 /// Home-screen Shorebird update control: manual check, download progress, and
-/// a restart prompt once a patch is ready.
+/// a restart prompt once a patch is ready. Renders nothing where OTA patching
+/// isn't possible — a check button that can only no-op is clutter.
 class UpdateCheckCta extends ConsumerWidget {
   const UpdateCheckCta({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final service = ref.watch(shorebirdUpdateProvider);
+    if (!service.isAvailable) return const SizedBox.shrink();
     return ListenableBuilder(
       listenable: service,
       builder: (context, _) {

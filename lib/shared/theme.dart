@@ -306,6 +306,15 @@ bool get isDesktopPlatform =>
         defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.linux);
 
+/// Platforms whose Camera view can run the OpenCV capture pipeline: the
+/// desktops (DirectShow / AVFoundation), plus iPhone and iPad, where
+/// AVFoundation backs the same code path. A separate question from
+/// [isDesktopPlatform], which is about windowed-app layout — Android stays
+/// out until its backend exists.
+bool get isCameraCapturePlatform =>
+    isDesktopPlatform ||
+    (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS);
+
 /// A pane narrower than this can't hold a dispersion plot or a table's
 /// columns legibly, so three of them need at least three times as much.
 const _minPaneWidth = 360.0;

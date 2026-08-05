@@ -47,15 +47,15 @@ enum _ActivePaneView {
   camera,
 }
 
-/// The camera feed needs a desktop camera backend, so it is offered only
-/// there — in the nav bar, in the pane picker, and when restoring a stored
-/// pane choice (prefs travel between a desktop and a phone via the same
-/// account).
+/// The camera feed needs a capture backend, so it is offered only where one
+/// exists — in the nav bar, in the pane picker, and when restoring a stored
+/// pane choice (prefs travel between devices via the same account, so a
+/// choice stored on a desktop can arrive on a platform without one).
 bool _viewAvailable(_ActiveView v) =>
-    v != _ActiveView.camera || isDesktopPlatform;
+    v != _ActiveView.camera || isCameraCapturePlatform;
 
 bool _paneAvailable(_ActivePaneView v) =>
-    v != _ActivePaneView.camera || isDesktopPlatform;
+    v != _ActivePaneView.camera || isCameraCapturePlatform;
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 

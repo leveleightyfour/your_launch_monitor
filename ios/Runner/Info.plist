@@ -28,10 +28,14 @@
 		<false/>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
+		<key>LSSupportsOpeningDocumentsInPlace</key>
+		<true/>
 		<key>NSBluetoothAlwaysUsageDescription</key>
 		<string>This app connects to your golf launch monitor via Bluetooth to receive shot data.</string>
 		<key>NSBluetoothPeripheralUsageDescription</key>
 		<string>This app connects to your golf launch monitor via Bluetooth to receive shot data.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>This app records swing video from your cameras when a shot is detected.</string>
 		<key>NSBonjourServices</key>
 		<array>
 			<string>_dartobservatory._tcp</string>
@@ -65,6 +69,8 @@
 		<array>
 			<string>bluetooth-central</string>
 		</array>
+		<key>UIFileSharingEnabled</key>
+		<true/>
 		<key>UILaunchStoryboardName</key>
 		<string>LaunchScreen</string>
 		<key>UIMainStoryboardFile</key>

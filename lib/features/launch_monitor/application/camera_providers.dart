@@ -18,6 +18,11 @@
 ///
 /// `camera`'s `availableCameras()` is still used, for device *names* only —
 /// OpenCV addresses cameras by bare integer index and has no enumeration API.
+/// On the Apple platforms the Runner serves the name list over a method
+/// channel instead (macOS MainFlutterWindow.swift, iOS AppDelegate.swift):
+/// the `camera` plugin has no macOS implementation at all, and on iOS it
+/// names devices by internal identifier rather than anything a golfer would
+/// recognise. Capture itself is OpenCV either way.
 library;
 
 import 'dart:async';
@@ -27,6 +32,7 @@ import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart' show availableCameras;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 
@@ -44,8 +50,27 @@ const _probeOvershoot = 2;
 /// are not.
 const _previewInterval = Duration(milliseconds: 66);
 
-int get _backend =>
-    defaultTargetPlatform == TargetPlatform.windows ? capDshow : capAny;
+int get _backend => switch (defaultTargetPlatform) {
+      TargetPlatform.windows => capDshow,
+      TargetPlatform.macOS || TargetPlatform.iOS => capAvfoundation,
+      _ => capAny,
+    };
+
+/// The Runner-side AVFoundation device list (macOS MainFlutterWindow.swift,
+/// iOS AppDelegate.swift).
+const _appleCameras = MethodChannel('omni_sniffer/apple_cameras');
+
+/// Device names in index order, from whichever side of the fence can name
+/// them on this platform.
+Future<List<String>> _deviceNames() async {
+  if (defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.iOS) {
+    final names =
+        await _appleCameras.invokeListMethod<String>('listCameraNames');
+    return names ?? const [];
+  }
+  return (await availableCameras()).map((d) => d.name).toList();
+}
 
 // ── Camera slots ─────────────────────────────────────────────────────────────
 
@@ -423,7 +448,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
     // Names are a nicety — an unnamed camera is still perfectly openable.
     List<String> names = const [];
     try {
-      names = (await availableCameras()).map((d) => d.name).toList();
+      names = await _deviceNames();
     } catch (error) {
       debugPrint('[camera] name enumeration unavailable: $error');
     }

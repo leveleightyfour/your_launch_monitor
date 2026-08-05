@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:file_selector/file_selector.dart' show getDirectoryPath;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,7 +14,8 @@ import 'package:omni_sniffer/shared/services/clip_export_service.dart';
 import 'package:omni_sniffer/shared/services/event_loop_watchdog.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
-/// Desktop-only tab that streams an attached camera into the window.
+/// Streams an attached camera into the window, on the platforms with a
+/// capture backend (see isCameraCapturePlatform): desktops, iPhone, iPad.
 ///
 /// The device list comes from whatever the OS enumerates, so any driverless
 /// (UVC) camera plugged into the rig shows up alongside a built-in webcam
@@ -825,7 +827,15 @@ class _CameraBody extends ConsumerWidget {
         return _Message(
           icon: Icons.usb_off,
           title: 'No camera detected',
-          detail: 'Plug in a USB camera, then rescan.',
+          // On a device with built-in cameras, nothing found almost always
+          // means camera access was denied, not absent hardware.
+          detail: defaultTargetPlatform == TargetPlatform.iOS
+              ? 'Check this app is allowed to use the camera in Settings, '
+                    'then rescan.'
+              : defaultTargetPlatform == TargetPlatform.macOS
+              ? 'Check this app is allowed under System Settings → '
+                    'Privacy & Security → Camera, then rescan.'
+              : 'Plug in a USB camera, then rescan.',
           action: (
             'Rescan',
             () => ref
@@ -878,6 +888,8 @@ String _deviceLabel(CameraDevice device) {
 /// show, never what the code does.
 String _failureHint(String? error) {
   final text = (error ?? '').toLowerCase();
+  final mac = defaultTargetPlatform == TargetPlatform.macOS;
+  final ios = defaultTargetPlatform == TargetPlatform.iOS;
   if (text.contains('native function') || text.contains('symbol')) {
     // Build-time, not runtime: dartcv leaves videoio out of the native
     // library unless pubspec asks for it, and the Dart bindings compile
@@ -897,15 +909,29 @@ String _failureHint(String? error) {
         'different port.';
   }
   if (text.contains('holding') || text.contains('refused to open')) {
-    return 'Close anything else using the camera — Teams, Zoom, OBS or the '
-        'Windows Camera app will each hold it exclusively.';
+    if (ios) {
+      return 'Close anything else using the camera, and check this app is '
+          'allowed to use it in Settings.';
+    }
+    return mac
+        ? 'Close anything else using the camera, and check this app is '
+              'allowed under System Settings → Privacy & Security → Camera.'
+        : 'Close anything else using the camera — Teams, Zoom, OBS or the '
+              'Windows Camera app will each hold it exclusively.';
   }
   if (text.contains('stopped sending')) {
     return 'The camera went quiet mid-session. If it was unplugged, plug it '
         'back in and rescan.';
   }
-  return 'Check the camera still appears in the Windows Camera app, and that '
-      'no other app is holding it.';
+  if (ios) {
+    return 'Check this app is allowed to use the camera in Settings, then '
+        'try again.';
+  }
+  return mac
+      ? 'Check the camera works in Photo Booth, and that this app is allowed '
+            'under System Settings → Privacy & Security → Camera.'
+      : 'Check the camera still appears in the Windows Camera app, and that '
+            'no other app is holding it.';
 }
 
 /// The live feed. Listens to frames directly rather than going through the
@@ -1181,6 +1207,17 @@ class _ShotExportFlow {
           if (!shot.angles[slot]!.isEmpty) slot,
       ];
 
+  /// Prefs access without a WidgetRef — the flow is launched from plain
+  /// StatefulWidgets, and the container is reachable from any context.
+  ProviderContainer get _prefs =>
+      ProviderScope.containerOf(context, listen: false);
+
+  String get _exportDirectory =>
+      _prefs.read(unitPrefsProvider).exportDirectory;
+
+  void _setExportDirectory(String path) =>
+      _prefs.read(unitPrefsProvider.notifier).setExportDirectory(path);
+
   static void start({
     required BuildContext context,
     required ShotClips shot,
@@ -1310,6 +1347,59 @@ class _ShotExportFlow {
               },
             );
           }),
+          // Where the file lands. Desktop only: the folder picker has no
+          // mobile implementation, and on iPad the app's Documents folder
+          // is already the reachable place (visible in Files).
+          if (isDesktopPlatform) ...[
+            const Divider(height: 1, color: AppColors.border),
+            StatefulBuilder(
+              builder: (tileCtx, setTileState) {
+                final dir = _exportDirectory;
+                return ListTile(
+                  leading: const Icon(
+                    Icons.folder_outlined,
+                    size: 18,
+                    color: AppColors.textMuted,
+                  ),
+                  title: Text(
+                    dir.isEmpty ? 'Saving to Documents/clips' : 'Saving to $dir',
+                    style: AppTextStyles.sans(
+                      size: 12,
+                      color: AppColors.textMuted,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: dir.isEmpty
+                      ? const Icon(
+                          Icons.edit_outlined,
+                          size: 14,
+                          color: AppColors.textDimmed,
+                        )
+                      : IconButton(
+                          icon: const Icon(
+                            Icons.restart_alt,
+                            size: 16,
+                            color: AppColors.textDimmed,
+                          ),
+                          tooltip: 'Back to Documents/clips',
+                          onPressed: () {
+                            _setExportDirectory('');
+                            setTileState(() {});
+                          },
+                        ),
+                  tileColor: Colors.transparent,
+                  onTap: () async {
+                    final picked = await getDirectoryPath();
+                    if (picked != null && picked.isNotEmpty) {
+                      _setExportDirectory(picked);
+                      setTileState(() {});
+                    }
+                  },
+                );
+              },
+            ),
+          ],
           const SizedBox(height: 8),
         ],
       ),
@@ -1329,6 +1419,7 @@ class _ShotExportFlow {
     onBusy?.call(true);
     final messenger = ScaffoldMessenger.of(context);
     final at = speed == 1.0 ? '' : ' at $speedLabel';
+    final directory = _exportDirectory.isEmpty ? null : _exportDirectory;
     try {
       if (choice.layout != null) {
         final result = await ClipExportService.exportComposite(
@@ -1336,6 +1427,7 @@ class _ShotExportFlow {
           layout: choice.layout!,
           baseName: 'impact',
           speed: speed,
+          directory: directory,
         );
         _showResult(messenger, result, at);
       } else if (choice.separate) {
@@ -1345,6 +1437,7 @@ class _ShotExportFlow {
             clip: shot.angles[slot]!,
             baseName: _soloBaseName(slot),
             speed: speed,
+            directory: directory,
           );
           paths.add(result.path);
         }
@@ -1362,6 +1455,7 @@ class _ShotExportFlow {
           clip: shot.angles[slot]!,
           baseName: _soloBaseName(slot),
           speed: speed,
+          directory: directory,
         );
         _showResult(messenger, result, at);
       }

@@ -37,6 +37,12 @@ class ShorebirdUpdateService extends ChangeNotifier {
   int? get nextPatchNumber => _nextPatchNumber;
   bool get updateReady => _phase == UpdatePhase.readyToRestart;
 
+  /// Whether this build can receive OTA patches at all. False on platforms
+  /// Shorebird does not patch (desktop, web) and in non-Shorebird builds
+  /// (debug runs, plain `flutter build` releases) — every check would no-op,
+  /// so update UI should not render.
+  bool get isAvailable => _updater.isAvailable;
+
   /// Call ONCE at app start. Starts the poll + does an immediate boot check.
   /// No-ops in debug / non-Shorebird builds ([ShorebirdUpdater.isAvailable]).
   void start() {

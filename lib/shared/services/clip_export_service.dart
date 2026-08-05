@@ -1,11 +1,12 @@
 /// Writes a captured impact clip to disk.
 ///
-/// Works down a ladder of containers: H.264 MP4 through Windows Media
-/// Foundation, then an MJPG AVI through OpenCV's own RIFF muxer, then a
-/// numbered frame folder. The ladder exists because dartcv ships without
-/// FFMPEG, so each writer's availability is an open question per machine —
-/// MSMF is a Windows component and its H.264 encoder is ordinarily present,
-/// but nothing here assumes it. The result names the rung that worked.
+/// Works down a ladder of containers: H.264 MP4 through the OS's own encoder
+/// (Media Foundation on Windows, AVFoundation on macOS), then an MJPG AVI
+/// through OpenCV's own RIFF muxer, then a numbered frame folder. The ladder
+/// exists because dartcv ships without FFMPEG, so each writer's availability
+/// is an open question per machine — the OS H.264 encoder is ordinarily
+/// present, but nothing here assumes it. The result names the rung that
+/// worked.
 library;
 
 import 'dart:io';
@@ -23,6 +24,10 @@ const _imreadColor = 1;
 /// `cv::CAP_MSMF` — Media Foundation, whose sink writer muxes H.264 into MP4
 /// natively on Windows, no FFMPEG involved.
 const _capMsmf = 1400;
+
+/// `cv::CAP_AVFOUNDATION` — AVFoundation, macOS's Media Foundation
+/// equivalent: AVAssetWriter muxes H.264 into MP4 natively, no FFMPEG.
+const _capAvfoundation = 1200;
 
 /// A container header alone is a few kB. A writer that opened but had no
 /// working encoder behind it still lays that down and then silently drops
@@ -45,6 +50,10 @@ const _attempts = [
   // H.264 in MP4 via Media Foundation. The backend is named explicitly —
   // left to choose, OpenCV would only reach MSMF by accident.
   _VideoAttempt('H.264 MP4', '.mp4', 'H264', _capMsmf),
+  // The same rung for macOS. 'avc1' rather than 'H264': it is the FOURCC
+  // AVFoundation's writer actually registers. On Windows this rung fails to
+  // open and the ladder moves on, exactly as the MSMF rung does on macOS.
+  _VideoAttempt('H.264 MP4', '.mp4', 'avc1', _capAvfoundation),
   // OpenCV's built-in RIFF muxer; needs no OS encoder at all, since the
   // frames are already JPEGs and MJPG is just JPEGs in an AVI.
   _VideoAttempt('MJPG AVI', '.avi', 'MJPG'),
@@ -108,8 +117,38 @@ class ClipExportResult {
 class ClipExportService {
   ClipExportService._();
 
-  /// Writes [clip] under the app's documents directory and returns where it
-  /// landed.
+  /// The folder exports land in: [directory] when one was chosen and is
+  /// still writable, else the default Documents/clips. Writability is proved
+  /// with a throwaway file up front, because a denied folder would otherwise
+  /// surface as every writer rung failing with encoder-shaped errors. Going
+  /// stale is a real state, not just corruption: the macOS sandbox grants
+  /// access to a picked folder only until the process exits, so a remembered
+  /// choice can stop working on the next launch.
+  static Future<Directory> _exportRoot(String? directory) async {
+    if (directory != null && directory.isNotEmpty) {
+      try {
+        final dir = Directory(directory);
+        await dir.create(recursive: true);
+        final probe = File('${dir.path}/.write-probe');
+        await probe.writeAsString('');
+        await probe.delete();
+        return dir;
+      } catch (error) {
+        debugPrint(
+          '[export] chosen folder "$directory" unusable ($error) — '
+          'falling back to Documents/clips',
+        );
+      }
+    }
+    final root = Directory(
+      '${(await getApplicationDocumentsDirectory()).path}/clips',
+    );
+    await root.create(recursive: true);
+    return root;
+  }
+
+  /// Writes [clip] under [directory] — or the app's documents directory when
+  /// none is set — and returns where it landed.
   ///
   /// Documents rather than a temp file and a share sheet — the convention the
   /// CSV export follows — because these run to tens of megabytes and are
@@ -118,6 +157,7 @@ class ClipExportService {
     required ImpactClip clip,
     required String baseName,
     double speed = 1.0,
+    String? directory,
   }) async {
     if (clip.isEmpty) {
       throw StateError('Nothing to export: the clip holds no frames.');
@@ -126,10 +166,7 @@ class ClipExportService {
       throw ArgumentError.value(speed, 'speed', 'must be positive');
     }
 
-    final root = Directory(
-      '${(await getApplicationDocumentsDirectory()).path}/clips',
-    );
-    await root.create(recursive: true);
+    final root = await _exportRoot(directory);
     final stem = _stem(baseName, clip.shotIndex, clip.capturedAt, speed);
 
     final probe = cv.imdecode(clip.frames.first.jpeg, _imreadColor);
@@ -285,6 +322,7 @@ class ClipExportService {
     required CompositeLayout layout,
     required String baseName,
     double speed = 1.0,
+    String? directory,
   }) async {
     if (speed <= 0) {
       throw ArgumentError.value(speed, 'speed', 'must be positive');
@@ -308,10 +346,7 @@ class ClipExportService {
       '${plan.tickCount} frames',
     );
 
-    final root = Directory(
-      '${(await getApplicationDocumentsDirectory()).path}/clips',
-    );
-    await root.create(recursive: true);
+    final root = await _exportRoot(directory);
     final stem = _stem(
       baseName,
       shot.shotIndex,
