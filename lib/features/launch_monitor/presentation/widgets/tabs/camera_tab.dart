@@ -627,11 +627,14 @@ class _CameraBar extends ConsumerWidget {
                     .setRotation(current + 1);
               },
             ),
-            _BarButton(
-              icon: AppIcons.aspectRatio,
-              label: 'Capture resolution',
-              onTap: () => _showModePicker(context, ref, slot),
-            ),
+            // On iOS a size request crashes OpenCV's backend and couldn't
+            // be honoured anyway — see captureModeSelectable.
+            if (captureModeSelectable)
+              _BarButton(
+                icon: AppIcons.aspectRatio,
+                label: 'Capture resolution',
+                onTap: () => _showModePicker(context, ref, slot),
+              ),
             _BarButton(
               icon: AppIcons.stop,
               label: 'Stop camera',

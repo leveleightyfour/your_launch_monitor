@@ -296,6 +296,17 @@ class CaptureMode {
   int get hashCode => Object.hash(width, height, fps);
 }
 
+/// Whether asking the camera for a specific size and rate is safe here.
+///
+/// On iOS it is fatal: OpenCV's backend answers CAP_PROP_FRAME_WIDTH/HEIGHT
+/// by pushing pixel-buffer Width/Height keys into the running
+/// AVCaptureVideoDataOutput's videoSettings, and iOS accepts only the pixel
+/// format key there — the call raises NSInvalidArgumentException, which no
+/// Dart catch can survive. The request could not be honoured anyway: that
+/// backend pins the session preset to Medium (480×360). So on iOS every
+/// open runs on [CaptureMode.auto] and the resolution picker stays hidden.
+bool get captureModeSelectable => defaultTargetPlatform != TargetPlatform.iOS;
+
 // ── Devices ──────────────────────────────────────────────────────────────────
 
 @immutable
@@ -628,6 +639,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
   }
 
   CaptureMode _preferredMode() {
+    if (!captureModeSelectable) return CaptureMode.auto;
     final pref = _slotPref();
     return CaptureMode(pref.width, pref.height, pref.fps);
   }
