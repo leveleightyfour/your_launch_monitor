@@ -9,6 +9,7 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tag_pi
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/services/csv_export_service.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 // ── Shot list metric ──────────────────────────────────────────────────────────
 
@@ -247,7 +248,7 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                                 ),
                                 const SizedBox(width: 4),
                                 const Icon(
-                                  Icons.keyboard_arrow_down,
+                                  AppIcons.chevronDown,
                                   size: 14,
                                   color: AppColors.textMuted,
                                 ),
@@ -271,7 +272,7 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                                 width: 44,
                                 height: 44,
                                 child: Icon(
-                                  Icons.checklist,
+                                  AppIcons.checklist,
                                   size: 18,
                                   color: AppColors.textMuted,
                                 ),
@@ -496,7 +497,7 @@ class _ShotListPanelState extends ConsumerState<ShotListPanel> {
                 style: AppTextStyles.sans(size: 14),
               ),
               trailing: m == widget.metric
-                  ? Icon(Icons.check, color: context.accent, size: 18)
+                  ? Icon(AppIcons.check, color: context.accent, size: 18)
                   : null,
               onTap: () {
                 widget.onMetricChanged(m);
@@ -666,8 +667,8 @@ class ShotListClubSection extends ConsumerWidget {
                 onTap: onToggleCollapse,
                 child: Icon(
                   collapsed
-                      ? Icons.keyboard_arrow_down
-                      : Icons.keyboard_arrow_up,
+                      ? AppIcons.chevronDown
+                      : AppIcons.chevronUp,
                   size: 16,
                   color: AppColors.textMuted,
                 ),
@@ -764,7 +765,7 @@ class ShotListClubSection extends ConsumerWidget {
                         ),
                         child: isChecked
                             ? const Icon(
-                                Icons.check,
+                                AppIcons.check,
                                 size: 11,
                                 color: Colors.black,
                               )

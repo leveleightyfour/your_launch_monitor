@@ -15,6 +15,7 @@ import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/services/csv_export_service.dart';
 import 'package:omni_sniffer/shared/snackbars.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 class SessionListScreen extends ConsumerWidget {
   const SessionListScreen({super.key});
@@ -80,7 +81,7 @@ class SessionListScreen extends ConsumerWidget {
                     ),
                   ),
                   onPressed: () => _startSession(context),
-                  icon: const Icon(Icons.play_arrow, size: 18),
+                  icon: const Icon(AppIcons.play, size: 18),
                   label: Text(
                     'New session',
                     style: AppTextStyles.sans(
@@ -127,7 +128,7 @@ class SessionListScreen extends ConsumerWidget {
                               border: Border.all(color: AppColors.border2),
                             ),
                             child: const Icon(
-                              Icons.sports_golf,
+                              AppIcons.golf,
                               size: 28,
                               color: AppColors.textDimmed,
                             ),
@@ -281,7 +282,7 @@ class _ActiveSessionTile extends StatelessWidget {
               ),
               child: Center(
                 child: Icon(
-                  Icons.bolt_rounded,
+                  AppIcons.sessions,
                   size: 18,
                   color: context.accent,
                 ),
@@ -331,7 +332,7 @@ class _ActiveSessionTile extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, size: 18, color: context.accent),
+            Icon(AppIcons.chevronRight, size: 18, color: context.accent),
           ],
         ),
       ),
@@ -379,7 +380,7 @@ class _SessionTile extends ConsumerWidget {
               ),
               child: const Center(
                 child: Icon(
-                  Icons.sports_golf,
+                  AppIcons.golf,
                   size: 18,
                   color: AppColors.textDimmed,
                 ),
@@ -589,7 +590,7 @@ class _SessionActionsMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<_SessionAction>(
-      icon: const Icon(Icons.more_vert, size: 18, color: AppColors.textDimmed),
+      icon: const Icon(AppIcons.more, size: 18, color: AppColors.textDimmed),
       tooltip: 'Session actions',
       color: AppColors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -616,7 +617,7 @@ class _SessionActionsMenu extends StatelessWidget {
             value: _SessionAction.resume,
             child: Row(
               children: [
-                Icon(Icons.play_arrow, size: 16, color: context.accent),
+                Icon(AppIcons.play, size: 16, color: context.accent),
                 const SizedBox(width: 10),
                 Text('Resume', style: AppTextStyles.sans(size: 13)),
               ],
@@ -626,7 +627,7 @@ class _SessionActionsMenu extends StatelessWidget {
           value: _SessionAction.rename,
           child: Row(
             children: [
-              Icon(Icons.edit_outlined, size: 16, color: context.accent),
+              Icon(AppIcons.edit, size: 16, color: context.accent),
               const SizedBox(width: 10),
               Text('Rename', style: AppTextStyles.sans(size: 13)),
             ],
@@ -637,7 +638,7 @@ class _SessionActionsMenu extends StatelessWidget {
           enabled: session.shots.isNotEmpty,
           child: Row(
             children: [
-              Icon(Icons.ios_share, size: 16, color: context.accent),
+              Icon(AppIcons.share, size: 16, color: context.accent),
               const SizedBox(width: 10),
               Text('Export CSV', style: AppTextStyles.sans(size: 13)),
             ],
@@ -648,7 +649,7 @@ class _SessionActionsMenu extends StatelessWidget {
           child: Row(
             children: [
               const Icon(
-                Icons.delete_outline,
+                AppIcons.delete,
                 size: 16,
                 color: Color(0xFFEF4444),
               ),

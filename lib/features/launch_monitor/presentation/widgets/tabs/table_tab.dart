@@ -10,6 +10,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.d
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/services/csv_export_service.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 const _fCol = 3;
 const _shotColW = 28.0;
@@ -305,13 +306,13 @@ class _TableTabState extends ConsumerState<TableTab> {
             mainAxisSize: MainAxisSize.min,
             children: [
               _FloatingChip(
-                icon: Icons.ios_share,
+                icon: AppIcons.share,
                 label: 'Export',
                 onTap: () => _startExport(context),
               ),
               const SizedBox(width: 8),
               _FloatingChip(
-                icon: Icons.tune,
+                icon: AppIcons.optimizer,
                 label: 'Customize',
                 onTap: () => _showCustomizeSheet(context, ref, columns),
               ),
@@ -349,7 +350,7 @@ class _TableTabState extends ConsumerState<TableTab> {
               ),
               const Divider(height: 1, color: AppColors.border),
               ListTile(
-                leading: Icon(Icons.table_rows, size: 18, color: ctx.accent),
+                leading: Icon(AppIcons.table, size: 18, color: ctx.accent),
                 title: Text(
                   'All shots (${all.length})',
                   style: AppTextStyles.sans(size: 14),
@@ -357,7 +358,7 @@ class _TableTabState extends ConsumerState<TableTab> {
                 onTap: () => Navigator.pop(ctx, all),
               ),
               ListTile(
-                leading: Icon(Icons.filter_alt, size: 18, color: ctx.accent),
+                leading: Icon(AppIcons.filter, size: 18, color: ctx.accent),
                 title: Text(
                   '${club.shortName} only (${filtered.length})',
                   style: AppTextStyles.sans(size: 14),
@@ -452,8 +453,8 @@ class _ClubHeaderBar extends StatelessWidget {
                 const SizedBox(width: 4),
                 Icon(
                   showStats
-                      ? Icons.keyboard_arrow_up
-                      : Icons.keyboard_arrow_down,
+                      ? AppIcons.chevronUp
+                      : AppIcons.chevronDown,
                   size: 16,
                   color: AppColors.textMuted,
                 ),

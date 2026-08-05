@@ -6,6 +6,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/terrain.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/hole_builder.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 // The app defaults to metres, so that is the default fixture too.
 const _prefs = UnitPrefs();
@@ -236,7 +237,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     expect(state.currentGrid, isNot(original));
 
-    await tester.tap(find.byIcon(Icons.undo));
+    await tester.tap(find.byIcon(AppIcons.undo));
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(state.currentGrid, original);

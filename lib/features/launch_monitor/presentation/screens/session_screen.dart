@@ -23,6 +23,7 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/t
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/tiles_tab.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 // ── View enums ─────────────────────────────────────────────────────────────────
 
@@ -630,7 +631,7 @@ class _ActiveSessionTopBar extends StatelessWidget {
             onTap: onClose,
             label: 'Finish session',
             child: const Icon(
-              Icons.close,
+              AppIcons.close,
               size: 14,
               color: AppColors.textMuted,
             ),
@@ -678,7 +679,7 @@ class _ActiveSessionTopBar extends StatelessWidget {
                 onTap: null,
                 label: 'Capacitor charging',
                 child: Icon(
-                  Icons.battery_charging_full,
+                  AppIcons.batteryCharging,
                   size: 14,
                   color: Colors.orange,
                 ),
@@ -690,7 +691,7 @@ class _ActiveSessionTopBar extends StatelessWidget {
               onTap: onToggleArm,
               label: detecting ? 'Stop ball detection' : 'Start ball detection',
               child: Icon(
-                detecting ? Icons.gps_fixed : Icons.gps_not_fixed,
+                detecting ? AppIcons.locateFixed : AppIcons.locate,
                 size: 14,
                 color: !capacitorReady
                     ? AppColors.textDimmed
@@ -712,7 +713,7 @@ class _ActiveSessionTopBar extends StatelessWidget {
             _CircleButton(
               onTap: onSimulateShot,
               label: 'Add test shot',
-              child: Icon(Icons.bolt, size: 14, color: context.accent),
+              child: Icon(AppIcons.sessions, size: 14, color: context.accent),
             ),
             const SizedBox(width: 8),
           ],
@@ -728,7 +729,7 @@ class _ActiveSessionTopBar extends StatelessWidget {
                 'Disconnected. Tap to connect',
             },
             child: Icon(
-              Icons.circle,
+              AppIcons.dot,
               size: 10,
               color: switch (status) {
                 LaunchMonitorStatus.connected => Colors.green,
@@ -840,14 +841,14 @@ class _ActiveNavBar extends StatelessWidget {
   const _ActiveNavBar({required this.view, required this.onChanged});
 
   static const _items = [
-    (_ActiveView.split, Icons.view_column, 'Split view'),
-    (_ActiveView.tiles, Icons.grid_view_rounded, 'Tiles'),
-    (_ActiveView.dispersion, Icons.scatter_plot, 'Dispersion'),
-    (_ActiveView.flight, Icons.view_in_ar, '3D Flight'),
-    (_ActiveView.club, Icons.sports_golf, 'Club'),
-    (_ActiveView.table, Icons.table_rows, 'Table'),
-    (_ActiveView.optimizer, Icons.tune, 'Optimizer'),
-    (_ActiveView.camera, Icons.videocam, 'Camera'),
+    (_ActiveView.split, AppIcons.columns, 'Split view'),
+    (_ActiveView.tiles, AppIcons.tiles, 'Tiles'),
+    (_ActiveView.dispersion, AppIcons.dispersion, 'Dispersion'),
+    (_ActiveView.flight, AppIcons.flight3d, '3D Flight'),
+    (_ActiveView.club, AppIcons.golf, 'Club'),
+    (_ActiveView.table, AppIcons.table, 'Table'),
+    (_ActiveView.optimizer, AppIcons.optimizer, 'Optimizer'),
+    (_ActiveView.camera, AppIcons.video, 'Camera'),
   ];
 
   /// Below this the labels start colliding, so the bar scrolls instead.
@@ -1169,15 +1170,15 @@ class _ActivePaneHeader extends StatelessWidget {
   const _ActivePaneHeader({required this.current, required this.onChanged});
 
   static const _options = [
-    (_ActivePaneView.tiles, Icons.grid_view_rounded, 'Tiles'),
-    (_ActivePaneView.dispersion, Icons.scatter_plot, 'Dispersion'),
-    (_ActivePaneView.flight, Icons.view_in_ar, '3D Flight'),
-    (_ActivePaneView.club, Icons.sports_golf, 'Club'),
-    (_ActivePaneView.table, Icons.table_rows, 'Table'),
-    (_ActivePaneView.optimizer, Icons.tune, 'Optimizer'),
+    (_ActivePaneView.tiles, AppIcons.tiles, 'Tiles'),
+    (_ActivePaneView.dispersion, AppIcons.dispersion, 'Dispersion'),
+    (_ActivePaneView.flight, AppIcons.flight3d, '3D Flight'),
+    (_ActivePaneView.club, AppIcons.golf, 'Club'),
+    (_ActivePaneView.table, AppIcons.table, 'Table'),
+    (_ActivePaneView.optimizer, AppIcons.optimizer, 'Optimizer'),
     // One entry for any number of angles: the camera pane carries every
     // configured feed itself and widens when a second one arrives.
-    (_ActivePaneView.camera, Icons.videocam, 'Camera'),
+    (_ActivePaneView.camera, AppIcons.video, 'Camera'),
   ];
 
   String get _label => _options.firstWhere((o) => o.$1 == current).$3;
@@ -1213,7 +1214,7 @@ class _ActivePaneHeader extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 const Icon(
-                  Icons.keyboard_arrow_down,
+                  AppIcons.chevronDown,
                   size: 16,
                   color: AppColors.textMuted,
                 ),
@@ -1270,7 +1271,7 @@ class _ActivePaneHeader extends StatelessWidget {
                   ),
                 ),
                 trailing: isSel
-                    ? Icon(Icons.check, color: context.accent, size: 18)
+                    ? Icon(AppIcons.check, color: context.accent, size: 18)
                     : null,
                 tileColor: Colors.transparent,
                 onTap: () {
@@ -1380,7 +1381,7 @@ class _ActiveBottomBar extends StatelessWidget {
                               ),
                             ),
                             child: Icon(
-                              Icons.menu,
+                              AppIcons.menu,
                               size: 16,
                               color: showShotList
                                   ? context.accent
@@ -1459,7 +1460,7 @@ class _ActiveBottomBar extends StatelessWidget {
                       const SizedBox(width: 6),
                     ] else ...[
                       const Icon(
-                        Icons.sports_golf,
+                        AppIcons.golf,
                         size: 14,
                         color: AppColors.textMuted,
                       ),
@@ -1475,7 +1476,7 @@ class _ActiveBottomBar extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     const Icon(
-                      Icons.keyboard_arrow_down,
+                      AppIcons.chevronDown,
                       size: 14,
                       color: AppColors.textMuted,
                     ),
@@ -1633,10 +1634,10 @@ class _BatteryChip extends StatelessWidget {
         ? Colors.orange
         : AppColors.textMuted;
     final icon = percent <= 15
-        ? Icons.battery_alert
+        ? AppIcons.batteryAlert
         : percent >= 95
-        ? Icons.battery_full
-        : Icons.battery_std;
+        ? AppIcons.batteryFull
+        : AppIcons.battery;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -2174,7 +2175,7 @@ class _ClubPickerSheet extends StatelessWidget {
                       )
                     : null,
                 trailing: isSelected
-                    ? Icon(Icons.check, color: context.accent, size: 18)
+                    ? Icon(AppIcons.check, color: context.accent, size: 18)
                     : null,
                 tileColor: Colors.transparent,
                 onTap: () => onSelect(club),

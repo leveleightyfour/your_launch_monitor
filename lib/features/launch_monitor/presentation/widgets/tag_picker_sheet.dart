@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/tag.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 /// Opens the tag picker bottom sheet.
 ///
@@ -199,7 +200,7 @@ class _TagPickerSheetState extends ConsumerState<TagPickerSheet> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.add, size: 16, color: context.accent),
+                      Icon(AppIcons.add, size: 16, color: context.accent),
                       const SizedBox(width: 6),
                       Text(
                         'New tag',
@@ -257,7 +258,7 @@ class _TagRow extends StatelessWidget {
               child: Text(tag.name, style: AppTextStyles.sans(size: 14)),
             ),
             if (active)
-              Icon(Icons.check, size: 18, color: context.accent)
+              Icon(AppIcons.check, size: 18, color: context.accent)
             else
               GestureDetector(
                 onTap: onDelete,
@@ -265,7 +266,7 @@ class _TagRow extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(14),
                   child: Icon(
-                    Icons.close,
+                    AppIcons.close,
                     size: 16,
                     color: AppColors.textMuted,
                   ),
@@ -353,7 +354,7 @@ class _NewTagForm extends StatelessWidget {
                         : null,
                   ),
                   child: isSelected
-                      ? const Icon(Icons.check, size: 14, color: Colors.white)
+                      ? const Icon(AppIcons.check, size: 14, color: Colors.white)
                       : null,
                 ),
               );

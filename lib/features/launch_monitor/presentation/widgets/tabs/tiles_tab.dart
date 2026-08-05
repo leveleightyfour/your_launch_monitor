@@ -8,6 +8,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.d
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/split_flap_text.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 class TilesTab extends ConsumerWidget {
   final List<ShotData> shots;
@@ -160,8 +161,8 @@ class TilesTab extends ConsumerWidget {
                       ),
                       child: Icon(
                         onExitFullscreen != null
-                            ? Icons.fullscreen_exit
-                            : Icons.fullscreen,
+                            ? AppIcons.fullscreenExit
+                            : AppIcons.fullscreen,
                         size: 16,
                         color: AppColors.textMuted,
                       ),
@@ -184,7 +185,7 @@ class TilesTab extends ConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Icon(
-                            Icons.tune,
+                            AppIcons.optimizer,
                             size: 14,
                             color: AppColors.textMuted,
                           ),
@@ -878,7 +879,7 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
             child: const Padding(
               padding: EdgeInsets.symmetric(horizontal: 4),
               child: Icon(
-                Icons.drag_handle,
+                AppIcons.dragHandle,
                 size: 18,
                 color: AppColors.textDimmed,
               ),
@@ -908,7 +909,7 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
             onTap: () => _remove(m),
             child: const Padding(
               padding: EdgeInsets.all(10),
-              child: Icon(Icons.close, size: 16, color: AppColors.textDimmed),
+              child: Icon(AppIcons.close, size: 16, color: AppColors.textDimmed),
             ),
           ),
         ],
@@ -945,7 +946,7 @@ class _AvailableChips extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.add, size: 12, color: AppColors.textMuted),
+                    const Icon(AppIcons.add, size: 12, color: AppColors.textMuted),
                     const SizedBox(width: 4),
                     Text(
                       m.label,

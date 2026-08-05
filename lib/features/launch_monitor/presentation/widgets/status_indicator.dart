@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 class StatusIndicator extends StatelessWidget {
   final LaunchMonitorStatus status;
@@ -17,7 +18,7 @@ class StatusIndicator extends StatelessWidget {
 
     return Row(
       children: [
-        Icon(Icons.circle, color: color, size: 10),
+        Icon(AppIcons.dot, color: color, size: 10),
         const SizedBox(width: 4),
         Text(label, style: const TextStyle(fontSize: 12)),
       ],

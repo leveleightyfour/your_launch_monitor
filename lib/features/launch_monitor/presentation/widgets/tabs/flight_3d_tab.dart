@@ -14,15 +14,16 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/hole_b
 import 'package:omni_sniffer/shared/providers/hole_setup_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 /// Camera positions offered by the view chips.
 enum FlightCamera {
-  behind('Behind', Icons.arrow_upward),
-  side('Side', Icons.arrow_forward),
-  angled('Angled', Icons.filter_hdr),
-  top('Top', Icons.vertical_align_top),
-  follow('Follow', Icons.videocam),
-  hole('Hole', Icons.golf_course);
+  behind('Behind', AppIcons.up),
+  side('Side', AppIcons.forward),
+  angled('Angled', AppIcons.mountain),
+  top('Top', AppIcons.topView),
+  follow('Follow', AppIcons.video),
+  hole('Hole', AppIcons.hole);
 
   final String label;
   final IconData icon;
@@ -542,7 +543,7 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
                 ),
               ),
               trailing: choice == current
-                  ? Icon(Icons.check, color: ctx.accent, size: 18)
+                  ? Icon(AppIcons.check, color: ctx.accent, size: 18)
                   : null,
               onTap: () {
                 ref.read(unitPrefsProvider.notifier).setSkyScene(choice);
@@ -566,7 +567,7 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
         Expanded(child: _cameraChips(density)),
         const SizedBox(width: 6),
         _RoundAction(
-          icon: _showTrails ? Icons.layers : Icons.layers_outlined,
+          icon: AppIcons.layers,
           active: _showTrails,
           size: buttonSize,
           tooltip: 'Previous shots with this club',
@@ -574,7 +575,7 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
         ),
         const SizedBox(width: 6),
         _RoundAction(
-          icon: Icons.filter_hdr,
+          icon: AppIcons.mountain,
           active: false,
           size: buttonSize,
           tooltip: 'Sky',
@@ -583,7 +584,7 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
         if (widget.canEditHole) ...[
           const SizedBox(width: 6),
           _RoundAction(
-            icon: Icons.golf_course,
+            icon: AppIcons.hole,
             active: _holeIsSet,
             size: buttonSize,
             tooltip: 'Hole builder',
@@ -592,7 +593,7 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
         ],
         const SizedBox(width: 6),
         _RoundAction(
-          icon: Icons.replay,
+          icon: AppIcons.replay,
           active: false,
           size: buttonSize,
           tooltip: 'Replay',

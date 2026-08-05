@@ -14,6 +14,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/terrain.dar
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/saved_holes_sheet.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 /// Opens the builder and returns the hole that was painted, or null if the
 /// player backed out.
@@ -221,7 +222,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
         // and these glyphs are already in the shipped release's icon
         // font, so the control renders on Shorebird-patched installs.
         _stepButton(
-          Icons.remove,
+          AppIcons.remove,
           label: 'Narrow hole',
           _grid.cols <= HoleGrid.minCols
               ? null
@@ -241,7 +242,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
         ),
         const SizedBox(width: 10),
         _stepButton(
-          Icons.add,
+          AppIcons.add,
           label: 'Widen hole',
           _grid.cols >= HoleGrid.maxCols
               ? null
@@ -313,7 +314,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
     child: Row(
       children: [
         _stepButton(
-          Icons.remove,
+          AppIcons.remove,
           label: 'Shorten hole',
           _grid.rows <= HoleGrid.minRows
               ? null
@@ -333,7 +334,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
         ),
         const SizedBox(width: 10),
         _stepButton(
-          Icons.add,
+          AppIcons.add,
           label: 'Extend hole',
           _grid.rows >= HoleGrid.maxRows
               ? null
@@ -365,7 +366,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
           style: AppTextStyles.mono(size: 11, color: AppColors.textDimmed),
         ),
         IconButton(
-          icon: const Icon(Icons.undo, size: 18),
+          icon: const Icon(AppIcons.undo, size: 18),
           color: _history.isEmpty ? AppColors.textDimmed : AppColors.textMuted,
           onPressed: _history.isEmpty
               ? null
@@ -439,7 +440,7 @@ class HoleBuilderSheetState extends State<HoleBuilderSheet> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.flag, size: 13, color: AppColors.pinFlag),
+                  const Icon(AppIcons.flag, size: 13, color: AppColors.pinFlag),
                   const SizedBox(width: 6),
                   Text('Pin', style: AppTextStyles.sans(size: 12)),
                 ],

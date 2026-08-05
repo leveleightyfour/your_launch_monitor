@@ -9,6 +9,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.d
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/split_flap_text.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 class DispersionTab extends ConsumerStatefulWidget {
   final List<ShotData> allShots;
@@ -492,7 +493,7 @@ class _ZoomControls extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _ZoomButton(icon: Icons.add, onTap: canZoomIn ? onZoomIn : null),
+          _ZoomButton(icon: AppIcons.add, onTap: canZoomIn ? onZoomIn : null),
           Container(height: 1, width: 28, color: AppColors.border2),
           GestureDetector(
             onTap: isDefault ? null : onReset,
@@ -501,14 +502,14 @@ class _ZoomControls extends StatelessWidget {
               height: 28,
               alignment: Alignment.center,
               child: Icon(
-                Icons.my_location,
+                AppIcons.recenter,
                 size: 14,
                 color: isDefault ? AppColors.textDimmed : context.accent,
               ),
             ),
           ),
           Container(height: 1, width: 28, color: AppColors.border2),
-          _ZoomButton(icon: Icons.remove, onTap: canZoomOut ? onZoomOut : null),
+          _ZoomButton(icon: AppIcons.remove, onTap: canZoomOut ? onZoomOut : null),
         ],
       ),
     );

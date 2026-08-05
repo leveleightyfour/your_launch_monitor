@@ -12,6 +12,7 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/d
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/snackbars.dart';
 import 'package:omni_sniffer/shared/theme.dart';
+import 'package:omni_sniffer/shared/app_icons.dart';
 
 class MyBagScreen extends ConsumerStatefulWidget {
   const MyBagScreen({super.key});
@@ -24,9 +25,9 @@ class _MyBagScreenState extends ConsumerState<MyBagScreen> {
   int _tab = 0;
 
   static const _tabs = [
-    (Icons.sports_golf, 'Clubs'),
-    (Icons.straighten, 'Distances'),
-    (Icons.scatter_plot, 'Dispersion'),
+    (AppIcons.golf, 'Clubs'),
+    (AppIcons.ruler, 'Distances'),
+    (AppIcons.dispersion, 'Dispersion'),
   ];
 
   @override
@@ -237,7 +238,7 @@ class _ClubsTab extends ConsumerWidget {
                       alignment: Alignment.centerRight,
                       padding: const EdgeInsets.only(right: 20),
                       child: const Icon(
-                        Icons.delete_outline,
+                        AppIcons.delete,
                         size: 18,
                         color: AppColors.errorText,
                       ),
@@ -458,7 +459,7 @@ class _ClubTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (isSelected) Icon(Icons.check, color: context.accent, size: 16),
+          if (isSelected) Icon(AppIcons.check, color: context.accent, size: 16),
           Tooltip(
             message: 'Edit club',
             child: Semantics(
@@ -470,7 +471,7 @@ class _ClubTile extends StatelessWidget {
                 child: const SizedBox(
                   width: 40,
                   height: 40,
-                  child: Icon(Icons.edit, size: 16, color: AppColors.textMuted),
+                  child: Icon(AppIcons.edit, size: 16, color: AppColors.textMuted),
                 ),
               ),
             ),
@@ -487,7 +488,7 @@ class _ClubTile extends StatelessWidget {
                   width: 40,
                   height: 40,
                   child: Icon(
-                    Icons.delete_outline,
+                    AppIcons.delete,
                     size: 16,
                     color: AppColors.textMuted,
                   ),
@@ -599,7 +600,7 @@ class _DistancesTab extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(
-                    Icons.straighten,
+                    AppIcons.ruler,
                     size: 40,
                     color: AppColors.textDimmed,
                   ),
@@ -1099,7 +1100,7 @@ class _DispersionTabWrapper extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(
-                        Icons.blur_on,
+                        AppIcons.dispersion,
                         size: 40,
                         color: AppColors.textDimmed,
                       ),
@@ -1229,7 +1230,7 @@ class _AddClubsScreenState extends ConsumerState<AddClubsScreen> {
                   GestureDetector(
                     onTap: () => context.pop(),
                     child: const Icon(
-                      Icons.arrow_back_ios,
+                      AppIcons.chevronLeft,
                       size: 18,
                       color: Colors.white,
                     ),
@@ -1269,7 +1270,7 @@ class _AddClubsScreenState extends ConsumerState<AddClubsScreen> {
                           ),
                           const SizedBox(width: 4),
                           const Icon(
-                            Icons.arrow_forward,
+                            AppIcons.forward,
                             size: 16,
                             color: Colors.black,
                           ),
@@ -1386,7 +1387,7 @@ class _ClubCircle extends StatelessWidget {
                           ),
                         ),
                         const Icon(
-                          Icons.check,
+                          AppIcons.check,
                           size: 10,
                           color: AppColors.textDimmed,
                         ),
