@@ -326,18 +326,26 @@ const _minPaneWidth = 360.0;
 /// the window is long enough, and two panes across that much glass leaves each
 /// one absurdly letterboxed.
 ///
-/// A desktop window is any shape the user drags it to, so it has to earn the
-/// third pane on [availableWidth] — the room the split itself gets, which on
-/// ultra-wide excludes the pinned shot list. Dragged below three readable
-/// panes, it folds back to two.
+/// Otherwise the third pane is earned on [availableWidth] alone — the room
+/// the split itself gets, which on ultra-wide excludes the pinned shot
+/// list. Width, not platform: a desktop window dragged wide and an iPad in
+/// landscape both qualify. Dragged or rotated below three readable panes,
+/// it folds back to two.
 bool supportsThirdSplitPane(BuildContext context, double availableWidth) {
   if (isUltraWide(context)) return true;
-  return isDesktopPlatform && availableWidth >= _minPaneWidth * 3;
+  return availableWidth >= _minPaneWidth * 3;
 }
 
 /// A pane shorter than this can't show a chart plus its header usefully, so
 /// two stacked rows need at least twice as much.
 const _minPaneHeight = 280.0;
+
+/// Returns true when the split view can show the 2×2 grid: room for four
+/// legal panes, two across and two down. Shared by [resolveSplitLayout]
+/// and the layout toggle, so an option on offer is always one that will
+/// actually be honoured.
+bool supportsGridSplitPanes(double availableWidth, double availableHeight) =>
+    availableWidth >= _minPaneWidth * 2 && availableHeight >= _minPaneHeight * 2;
 
 /// Whether a camera pane holding two angles should take a full-width row of
 /// its own — the two data panes sharing the other row — instead of a
@@ -389,9 +397,7 @@ SplitLayoutMode resolveSplitLayout(
   double availableHeight,
 ) {
   final threeLegal = supportsThirdSplitPane(context, availableWidth);
-  final gridLegal =
-      availableWidth >= _minPaneWidth * 2 &&
-      availableHeight >= _minPaneHeight * 2;
+  final gridLegal = supportsGridSplitPanes(availableWidth, availableHeight);
   switch (choice) {
     case SplitLayoutMode.two:
       return SplitLayoutMode.two;
