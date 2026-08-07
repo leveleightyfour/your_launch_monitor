@@ -18,11 +18,22 @@
 ///
 /// `camera`'s `availableCameras()` is still used, for device *names* only —
 /// OpenCV addresses cameras by bare integer index and has no enumeration API.
-/// On the Apple platforms the Runner serves the name list over a method
-/// channel instead (macOS MainFlutterWindow.swift, iOS AppDelegate.swift):
-/// the `camera` plugin has no macOS implementation at all, and on iOS it
-/// names devices by internal identifier rather than anything a golfer would
-/// recognise. Capture itself is OpenCV either way.
+/// On macOS the Runner serves the name list over a method channel instead
+/// (MainFlutterWindow.swift): the `camera` plugin has no macOS
+/// implementation at all. Capture itself is OpenCV on both desktops.
+///
+/// **iOS is the exception: capture is native AVFoundation** (the
+/// NativeCameraController in the Runner's AppDelegate.swift). OpenCV's iOS
+/// backend is pinned to 480×360 with no property that raises it, and it
+/// dies on any attempt to ask — setting CAP_PROP_FRAME_WIDTH/HEIGHT pushes
+/// pixel-buffer size keys into AVCaptureVideoDataOutput.videoSettings,
+/// which iOS rejects with an NSInvalidArgumentException nothing on this
+/// side can catch. The native module keeps this file's contract — JPEG
+/// frames with wall-clock timestamps for the ring buffer, a throttled
+/// preview — but picks a real device format, so resolution and rate
+/// requests are honoured. The worker-isolate path survives on iOS only as
+/// a fallback for a code-pushed Dart side running on a Runner older than
+/// the native module, and then only on the camera's default mode.
 library;
 
 import 'dart:async';
@@ -32,7 +43,8 @@ import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart' show availableCameras;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show MethodChannel;
+import 'package:flutter/services.dart'
+    show EventChannel, MethodChannel, MissingPluginException, PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 
@@ -56,9 +68,33 @@ int get _backend => switch (defaultTargetPlatform) {
       _ => capAny,
     };
 
-/// The Runner-side AVFoundation device list (macOS MainFlutterWindow.swift,
-/// iOS AppDelegate.swift).
+/// The Runner-side AVFoundation device list and permission request (macOS
+/// MainFlutterWindow.swift, iOS AppDelegate.swift).
 const _appleCameras = MethodChannel('omni_sniffer/apple_cameras');
+
+/// Settles camera authorization before anything opens a device, on the
+/// platforms that gate capture behind consent. OpenCV's open never asks —
+/// with the decision undetermined it would race the system prompt, fail
+/// every index, and report "no cameras" while the dialog is still on
+/// screen. True means capture may proceed; false means the user has denied
+/// access (now or previously) and opening devices is pointless.
+Future<bool> _ensureCameraAccess() async {
+  if (defaultTargetPlatform != TargetPlatform.macOS &&
+      defaultTargetPlatform != TargetPlatform.iOS) {
+    return true;
+  }
+  try {
+    return await _appleCameras.invokeMethod<bool>('requestCameraAccess') ??
+        true;
+  } on MissingPluginException {
+    // A Runner from before this method existed — code push updates only the
+    // Dart side. The old behaviour (open and hope) is the best available.
+    return true;
+  } on PlatformException catch (error) {
+    debugPrint('[camera] permission request failed: ${error.message}');
+    return true;
+  }
+}
 
 /// Device names in index order, from whichever side of the fence can name
 /// them on this platform.
@@ -271,15 +307,43 @@ class CaptureMode {
   int get hashCode => Object.hash(width, height, fps);
 }
 
+// ── Native capture (iOS) ─────────────────────────────────────────────────────
+
+/// The Runner's native AVFoundation capture module (AppDelegate.swift).
+const _nativeCamera = MethodChannel('omni_sniffer/native_camera');
+
+/// Frames and errors from every native feed, tagged by slot. One broadcast
+/// stream shared by both notifiers; each filters for its own slot.
+const _nativeFrames = EventChannel('omni_sniffer/native_camera/frames');
+Stream<Object?>? _nativeFrameBroadcast;
+Stream<Object?> get _nativeFrameEvents =>
+    _nativeFrameBroadcast ??= _nativeFrames.receiveBroadcastStream();
+
+/// Set when the native channel turns out not to exist at runtime: a
+/// code-pushed Dart side running on a Runner built before the module.
+/// From then on this session uses the OpenCV worker fallback.
+bool _nativeCaptureMissing = false;
+
+bool get _useNativeCapture =>
+    !_nativeCaptureMissing &&
+    !kIsWeb &&
+    defaultTargetPlatform == TargetPlatform.iOS;
+
 // ── Devices ──────────────────────────────────────────────────────────────────
 
 @immutable
 class CameraDevice {
-  /// The index OpenCV opens this camera by.
+  /// The index OpenCV opens this camera by. Under native capture it is the
+  /// device's position in the scan, kept so the cross-slot registry and the
+  /// UI treat both backends identically.
   final int index;
 
   /// The OS's name for it, or `Camera <index>` when enumeration gave nothing.
   final String name;
+
+  /// AVFoundation's stable identifier, set only under native capture —
+  /// that backend opens devices by this rather than by index.
+  final String? uniqueId;
 
   /// Frame size last seen from this camera. Zero when the driver declined to
   /// say before a frame was pulled.
@@ -289,6 +353,7 @@ class CameraDevice {
   const CameraDevice({
     required this.index,
     required this.name,
+    this.uniqueId,
     this.width = 0,
     this.height = 0,
   });
@@ -412,6 +477,14 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
   /// Device index this slot is currently streaming, for the shared registry.
   int? _liveIndex;
 
+  /// Native-capture state: the event subscription for this slot's frames,
+  /// whether a native feed is live, and the last preview decode's time —
+  /// the native path throttles preview on this side, where the worker path
+  /// throttles in the worker.
+  StreamSubscription<Object?>? _nativeSub;
+  bool _nativeActive = false;
+  DateTime _lastNativePreview = DateTime.fromMillisecondsSinceEpoch(0);
+
   late final _watchdog = EventLoopWatchdog('ui-cam$slot');
 
   /// Which camera slot this instance drives.
@@ -425,6 +498,12 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
       _watchdog.stop();
       _link?.shutdown();
       _link = null;
+      _nativeSub?.cancel();
+      _nativeSub = null;
+      if (_nativeActive) {
+        _nativeActive = false;
+        unawaited(_nativeCamera.invokeMethod<void>('stop', {'slot': arg}));
+      }
       _frame.value?.dispose();
       _retired?.dispose();
       _frame.dispose();
@@ -437,7 +516,8 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
   /// to know an index actually yields a camera.
   Future<void> refreshDevices({bool autoOpen = true, bool force = false}) async {
     if (_disposed) return;
-    if (_link != null) return; // Already streaming; nothing to re-probe.
+    // Already streaming; nothing to re-probe.
+    if (_link != null || _nativeActive) return;
 
     state = CameraFeedState(
       status: CameraFeedStatus.listing,
@@ -445,27 +525,72 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
       selected: state.selected,
     );
 
-    // Names are a nicety — an unnamed camera is still perfectly openable.
-    List<String> names = const [];
-    try {
-      names = await _deviceNames();
-    } catch (error) {
-      debugPrint('[camera] name enumeration unavailable: $error');
-    }
-    if (_disposed) return;
-
-    final List<CameraDevice> found;
-    try {
-      found = await _probe(names, force: force);
-    } catch (error, stack) {
-      // Logged as well as surfaced: a failure on the very first probe means
-      // no per-index line ever prints, which reads as total silence.
-      debugPrint('[camera] probe failed: $error\n$stack');
+    if (!await _ensureCameraAccess()) {
       if (_disposed) return;
-      state = CameraFeedState(status: CameraFeedStatus.failed, error: '$error');
+      state = CameraFeedState(
+        status: CameraFeedStatus.failed,
+        devices: state.devices,
+        error: 'Camera access is turned off for this app. Allow it in the '
+            'system privacy settings, then rescan.',
+      );
       return;
     }
     if (_disposed) return;
+
+    // Native capture enumerates by identifier — no open-to-confirm probe
+    // needed, and none of the driver-wedge machinery either.
+    List<CameraDevice>? found;
+    if (_useNativeCapture) {
+      try {
+        final raw =
+            await _nativeCamera.invokeListMethod<Object?>('listDevices') ??
+                const [];
+        found = [
+          for (final (i, entry) in raw.indexed)
+            if (entry is Map)
+              CameraDevice(
+                index: i,
+                name: entry['name'] as String? ?? 'Camera $i',
+                uniqueId: entry['id'] as String?,
+              ),
+        ];
+      } on MissingPluginException {
+        // Runner predates the native module; the probe below still works,
+        // on the camera's default mode.
+        _nativeCaptureMissing = true;
+      } catch (error) {
+        debugPrint('[camera] native device list failed: $error');
+        if (_disposed) return;
+        state =
+            CameraFeedState(status: CameraFeedStatus.failed, error: '$error');
+        return;
+      }
+      if (_disposed) return;
+    }
+
+    if (found == null) {
+      // Names are a nicety — an unnamed camera is still perfectly openable.
+      List<String> names = const [];
+      try {
+        names = await _deviceNames();
+      } catch (error) {
+        debugPrint('[camera] name enumeration unavailable: $error');
+      }
+      if (_disposed) return;
+
+      try {
+        found = await _probe(names, force: force);
+      } catch (error, stack) {
+        // Logged as well as surfaced: a failure on the very first probe means
+        // no per-index line ever prints, which reads as total silence.
+        debugPrint('[camera] probe failed: $error\n$stack');
+        if (_disposed) return;
+        state =
+            CameraFeedState(status: CameraFeedStatus.failed, error: '$error');
+        return;
+      }
+      if (_disposed) return;
+    }
 
     if (found.isEmpty) {
       state = const CameraFeedState(status: CameraFeedStatus.noDevices);
@@ -607,7 +732,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
           fps: mode.fps,
         );
     final device = state.selected;
-    if (device == null || _link == null) return;
+    if (device == null || (_link == null && !_nativeActive)) return;
     await select(device);
   }
 
@@ -643,7 +768,163 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
 
     // Behind the ops queue, held until the device answers: DirectShow must
     // never see this open and a probe (or the other slot's open) at once.
-    await _serialized(() => _spawnWorker(device, generation));
+    // The native path queues too — its opens are quick, and one open at a
+    // time is a property worth keeping uniform.
+    await _serialized(
+      () => _useNativeCapture
+          ? _startNative(device, generation)
+          : _spawnWorker(device, generation),
+    );
+  }
+
+  /// Opens [device] through the Runner's native capture module and wires
+  /// its frames into the same places the worker's messages go: every frame
+  /// to the impact-clip ring, a throttled decode to the live preview.
+  Future<void> _startNative(CameraDevice device, int generation) async {
+    if (_disposed || generation != _openGeneration) return;
+
+    // Same recheck as the worker path, for the same startup race.
+    if (_liveByIndex.containsKey(device.index) && _liveIndex != device.index) {
+      debugPrint(
+        '[camera] slot $slot refused index ${device.index} at open time: '
+        'held by the other slot',
+      );
+      state = CameraFeedState(
+        status: CameraFeedStatus.failed,
+        devices: state.devices,
+        selected: device,
+        error: 'This camera is already streaming on the other slot. Pick a '
+            'different device for this angle.',
+      );
+      return;
+    }
+
+    debugPrint(
+      '[camera] slot $slot opening "${device.name}" natively '
+      '(${device.uniqueId ?? "no id"})',
+    );
+    final requested = _preferredMode();
+
+    // Subscribed before start so the first frames land, not vanish.
+    await _nativeSub?.cancel();
+    _nativeSub = _nativeFrameEvents.listen(_onNativeEvent);
+
+    Map<String, Object?>? granted;
+    try {
+      granted = await _nativeCamera.invokeMapMethod<String, Object?>('start', {
+        'slot': slot,
+        'deviceId': device.uniqueId ?? '',
+        'width': requested.width,
+        'height': requested.height,
+        'fps': requested.fps,
+        'rotation': _slotPref().rotationQuarterTurns,
+      });
+    } on MissingPluginException {
+      // Runner predates the native module. The worker fallback opens the
+      // same device by index — its scan order matches listDevices' only
+      // roughly, but this path exists for one code-push generation.
+      _nativeCaptureMissing = true;
+      await _nativeSub?.cancel();
+      _nativeSub = null;
+      return _spawnWorker(device, generation);
+    } on PlatformException catch (error) {
+      await _nativeSub?.cancel();
+      _nativeSub = null;
+      if (_disposed || generation != _openGeneration) return;
+      _fail(device, error.message ?? '$error', generation);
+      return;
+    }
+
+    if (_disposed || generation != _openGeneration) {
+      await _nativeSub?.cancel();
+      _nativeSub = null;
+      unawaited(_nativeCamera.invokeMethod<void>('stop', {'slot': slot}));
+      return;
+    }
+
+    _nativeActive = true;
+    final width = (granted?['width'] as num?)?.toInt() ?? 0;
+    final height = (granted?['height'] as num?)?.toInt() ?? 0;
+    final fps = (granted?['fps'] as num?)?.toDouble() ?? 0;
+    debugPrint(
+      '[camera] slot $slot opened "${device.name}" natively — requested '
+      '${requested.label}, got ${width}x$height @ ${fps.toStringAsFixed(1)}fps',
+    );
+    _watchdog.start();
+    ref.read(impactClipProvider.notifier).setArmed(slot, true);
+    final grantedDevice = CameraDevice(
+      index: device.index,
+      name: device.name,
+      uniqueId: device.uniqueId,
+      width: width,
+      height: height,
+    );
+    _liveByIndex[device.index] = grantedDevice;
+    _liveIndex = device.index;
+    state = CameraFeedState(
+      status: CameraFeedStatus.streaming,
+      devices: state.devices,
+      selected: grantedDevice,
+      frames: _frame,
+    );
+    ref
+        .read(unitPrefsProvider.notifier)
+        .setCameraSlot(slot, deviceName: device.name);
+  }
+
+  /// One event off the shared native stream. Frames for other slots pass
+  /// through untouched.
+  void _onNativeEvent(Object? message) {
+    if (_disposed || message is! Map) return;
+    if (message['slot'] != slot) return;
+
+    switch (message['type']) {
+      case 'frame':
+        final jpeg = message['jpeg'] as Uint8List;
+        ref.read(impactClipProvider.notifier).offer(
+              slot,
+              jpeg,
+              DateTime.fromMicrosecondsSinceEpoch(message['us'] as int),
+            );
+        if (_previewPaused) return;
+        final now = DateTime.now();
+        if (now.difference(_lastNativePreview) >= _previewInterval) {
+          _lastNativePreview = now;
+          unawaited(_publishJpegPreview(jpeg));
+        }
+
+      case 'error':
+        debugPrint('[camera] slot $slot native error: ${message['message']}');
+        final device = state.selected;
+        if (device != null) {
+          _fail(device, '${message['message']}', _openGeneration);
+        }
+        _releaseWorker();
+    }
+  }
+
+  /// Decodes one JPEG for the preview. Same drop-if-busy policy as the RGBA
+  /// path: for a live view, newest beats complete.
+  Future<void> _publishJpegPreview(Uint8List jpeg) async {
+    if (_uploadBusy) return;
+    _uploadBusy = true;
+    try {
+      final codec = await ui.instantiateImageCodec(jpeg);
+      final frameInfo = await codec.getNextFrame();
+      codec.dispose();
+      if (_disposed) {
+        frameInfo.image.dispose();
+        return;
+      }
+      final previous = _frame.value;
+      _frame.value = frameInfo.image;
+      _retired?.dispose();
+      _retired = previous;
+    } catch (error) {
+      debugPrint('[camera] preview decode failed: $error');
+    } finally {
+      _uploadBusy = false;
+    }
   }
 
   Future<void> _spawnWorker(CameraDevice device, int generation) async {
@@ -674,7 +955,13 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
     debugPrint(
       '[camera] slot $slot opening "${device.name}" index ${device.index}',
     );
-    final requested = _preferredMode();
+    // On iOS this worker is only ever the fallback for a Runner without the
+    // native module, and there a size request is fatal: OpenCV's backend
+    // pushes pixel-buffer size keys into videoSettings, which iOS rejects
+    // with an uncatchable NSInvalidArgumentException. Default mode only.
+    final requested = defaultTargetPlatform == TargetPlatform.iOS
+        ? CaptureMode.auto
+        : _preferredMode();
     final link = _WorkerLink(generation, ReceivePort());
     link.fromWorker.listen(
       (message) => _onWorkerMessage(link, device, requested, message),
@@ -883,8 +1170,17 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
     ref
         .read(unitPrefsProvider.notifier)
         .setCameraSlot(slot, rotationQuarterTurns: turns);
-    if (_link == null) return;
-    _link?.send({'cmd': 'rotation', 'value': turns});
+    if (_link == null && !_nativeActive) return;
+    if (_nativeActive) {
+      unawaited(
+        _nativeCamera.invokeMethod<void>('setRotation', {
+          'slot': slot,
+          'turns': turns,
+        }),
+      );
+    } else {
+      _link?.send({'cmd': 'rotation', 'value': turns});
+    }
     final recorder = ref.read(impactClipProvider.notifier);
     recorder.setArmed(slot, false);
     recorder.setArmed(slot, true);
@@ -952,6 +1248,13 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
     final link = _link;
     _link = null;
     link?.shutdown();
+    final sub = _nativeSub;
+    _nativeSub = null;
+    unawaited(sub?.cancel());
+    if (_nativeActive) {
+      _nativeActive = false;
+      unawaited(_nativeCamera.invokeMethod<void>('stop', {'slot': slot}));
+    }
     _watchdog.stop();
     final index = _liveIndex;
     _liveIndex = null;

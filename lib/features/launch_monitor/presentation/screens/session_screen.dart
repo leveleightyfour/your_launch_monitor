@@ -1269,6 +1269,16 @@ class _ActiveSplitView extends StatelessWidget {
                 child: _SplitLayoutToggle(
                   choice: layoutChoice,
                   onChanged: onLayoutChanged,
+                  // Computed from the same tests the resolver applies, so
+                  // every option on offer is one that will be honoured.
+                  showThree: supportsThirdSplitPane(
+                    context,
+                    constraints.maxWidth,
+                  ),
+                  showGrid: supportsGridSplitPanes(
+                    constraints.maxWidth,
+                    constraints.maxHeight,
+                  ),
                 ),
               ),
             ],
@@ -1296,7 +1306,18 @@ class _SplitLayoutToggle extends StatelessWidget {
   final SplitLayoutMode choice;
   final ValueChanged<SplitLayoutMode> onChanged;
 
-  const _SplitLayoutToggle({required this.choice, required this.onChanged});
+  /// Whether the room exists for these layouts right now. An option the
+  /// resolver would silently fold back to two panes is not offered at all
+  /// — a chip that does nothing when tapped reads as broken.
+  final bool showThree;
+  final bool showGrid;
+
+  const _SplitLayoutToggle({
+    required this.choice,
+    required this.onChanged,
+    required this.showThree,
+    required this.showGrid,
+  });
 
   static const _options = [
     (SplitLayoutMode.auto, 'Auto', 'Fit the layout to the window'),
@@ -1307,6 +1328,12 @@ class _SplitLayoutToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final options = [
+      for (final option in _options)
+        if ((option.$1 != SplitLayoutMode.three || showThree) &&
+            (option.$1 != SplitLayoutMode.grid || showGrid))
+          option,
+    ];
     return Container(
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
@@ -1317,7 +1344,7 @@ class _SplitLayoutToggle extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final (mode, label, tip) in _options)
+          for (final (mode, label, tip) in options)
             Tooltip(
               message: tip,
               child: GestureDetector(
