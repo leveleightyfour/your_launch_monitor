@@ -119,8 +119,11 @@ FORM: Instrument-grade datasheet — candidate 5 of 7, seed 2a552569
     border-radius:8px;padding:11px 14px;color:#fff;font-family:var(--sans);font-size:14px;
   }
   .notify input::placeholder{color:var(--dimmed)}
-  .notify input:focus{outline:none;border-color:var(--accent-mid)}
+  .notify input:focus{border-color:var(--accent-mid)}
+  .notify input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+  .notify input:user-invalid{border-color:var(--critical)}
   .notify-note{font-size:12.5px;color:var(--dimmed);margin-top:10px}
+  .notify-note.ok{color:var(--accent)}
   .platform-line{display:flex;gap:8px;align-items:center;margin-top:26px;font-family:var(--mono);font-size:12px;color:var(--dimmed);letter-spacing:.4px;flex-wrap:wrap}
   .platform-line .sep{color:var(--border2)}
 
@@ -158,6 +161,7 @@ FORM: Instrument-grade datasheet — candidate 5 of 7, seed 2a552569
   .strip-inner{display:flex;align-items:stretch;overflow-x:auto}
   .strip-head{display:flex;flex-direction:column;justify-content:center;gap:6px;padding:20px 26px 20px 0;border-right:1px solid var(--border);flex:none}
   .strip-item{padding:20px 26px;border-right:1px solid var(--border);flex:1;min-width:130px}
+  .strip-item:last-child{border-right:none}
   .strip-item .mono-label{font-family:var(--mono);font-size:11px;color:var(--dimmed);letter-spacing:.6px;display:block;margin-bottom:6px}
   .strip-item .val{font-weight:600;font-size:15px;color:#fff;white-space:nowrap}
   .strip-item .val span{color:var(--dimmed);font-weight:400;font-size:12.5px}
@@ -319,6 +323,14 @@ FORM: Instrument-grade datasheet — candidate 5 of 7, seed 2a552569
     .plat-grid{grid-template-columns:1fr}
     .data-trio{grid-template-columns:1fr}
     .masthead nav a.navlink{display:none}
+    /* Measured strip: reflow to a 2-up grid instead of an unsignposted
+       horizontal scroller */
+    .strip-inner{display:grid;grid-template-columns:1fr 1fr;overflow:visible}
+    .strip-head{grid-column:1/-1;flex-direction:row;align-items:center;gap:12px;padding:16px 0;border-right:none;border-bottom:1px solid var(--border)}
+    .strip-item{padding:14px 18px;border-right:none;border-bottom:1px solid var(--border);min-width:0}
+    .strip-item:nth-child(even){padding-left:0;border-right:1px solid var(--border)}
+    .strip-item:last-child{border-right:none;border-bottom:none}
+    .strip-item .val{white-space:normal}
   }
   @media (max-width:640px){
     .tiles{grid-template-columns:repeat(2,1fr)}
@@ -335,6 +347,16 @@ FORM: Instrument-grade datasheet — candidate 5 of 7, seed 2a552569
     .doc-ref{display:none}
     .wordmark{white-space:nowrap}
     .masthead-inner{gap:12px}
+    /* Spec table: stack each row so nothing clips behind the wrapper edge */
+    .spec-table thead{display:none}
+    .spec-table,.spec-table tbody,.spec-table tr,.spec-table td{display:block}
+    .spec-table tbody tr{border-bottom:1px solid var(--border);padding:14px 16px}
+    .spec-table tbody tr:last-child{border-bottom:none}
+    .spec-table td{border-bottom:none;padding:0}
+    .spec-table td.p{white-space:normal;margin-bottom:2px}
+    .spec-table td.d{margin-bottom:9px}
+    .spec-table tbody tr.group{background:var(--bg);padding:8px 16px}
+    .spec-table tr.group td{background:transparent;padding:0}
   }
 </style>
 </head>
@@ -365,7 +387,8 @@ FORM: Instrument-grade datasheet — candidate 5 of 7, seed 2a552569
           <h1>Your Omni measures the ball. This tells you <em>what to&nbsp;fix.</em></h1>
           <p class="lede">A companion app for the <strong>Square Golf Omni</strong> launch monitor.
           It connects over Bluetooth, records every shot on your own device, and turns raw
-          launch numbers into a verdict — <strong>what's costing you distance, and how many yards it's worth.</strong></p>
+          launch numbers into a verdict — <strong>what's costing you distance, and how many yards it's worth.</strong>
+          Built for the sim-room PC first — the one place the official app doesn't run.</p>
 
           <!-- PLACEHOLDER: wire this form to a real mailing list before launch -->
           <form class="notify" id="notify" action="#" aria-label="Get notified">
@@ -450,7 +473,7 @@ FORM: Instrument-grade datasheet — candidate 5 of 7, seed 2a552569
           <div class="strip-item"><span class="mono-label">LAUNCH_ANGLE</span><span class="val">Launch angle <span>· deg</span></span></div>
           <div class="strip-item"><span class="mono-label">LAUNCH_DIR</span><span class="val">Direction <span>· deg</span></span></div>
           <div class="strip-item"><span class="mono-label">TOTAL_SPIN</span><span class="val">Total spin <span>· rpm</span></span></div>
-          <div class="strip-item" style="border-right:none"><span class="mono-label">SPIN_AXIS</span><span class="val">Spin axis <span>· deg</span></span></div>
+          <div class="strip-item"><span class="mono-label">SPIN_AXIS</span><span class="val">Spin axis <span>· deg</span></span></div>
         </div>
       </div>
     </div>
@@ -892,15 +915,27 @@ FORM: Instrument-grade datasheet — candidate 5 of 7, seed 2a552569
 
 <script>
   // Placeholder sign-up: distribution isn't decided yet, so the form only
-  // acknowledges. Replace with a real mailing-list action before publishing.
+  // acknowledges. Replace with a real mailing-list action before publishing —
+  // this is a ship gate, not a nice-to-have.
   document.querySelectorAll('form.notify').forEach(function(form){
+    var note = form.parentElement.querySelector('.notify-note');
+    var btn = form.querySelector('button');
+    var input = form.querySelector('input[type="email"]');
+    var idleNote = note ? note.textContent : '';
     form.addEventListener('submit', function(e){
       e.preventDefault();
-      var note = form.parentElement.querySelector('.notify-note');
-      var btn = form.querySelector('button');
       btn.textContent = 'Noted ✓';
-      btn.disabled = true;
-      if (note) note.textContent = 'Sign-up isn’t wired to a list yet — this is a placeholder.';
+      if (note){
+        note.textContent = 'Noted — sign-up isn’t wired to a list yet; this form is a placeholder.';
+        note.classList.add('ok');
+      }
+    });
+    input.addEventListener('input', function(){
+      btn.textContent = 'Get notified';
+      if (note){
+        note.textContent = idleNote;
+        note.classList.remove('ok');
+      }
     });
   });
 </script>
