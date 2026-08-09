@@ -553,6 +553,13 @@ class _CameraBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final notifier = ref.read(cameraFeedProvider(slot).notifier);
     final canPick = feed.devices.isNotEmpty && !feed.isBusy;
+    // Watched, not read: the flip button lights up while the mirror is on, so
+    // "why is my swing backwards" has an answer visible in the bar.
+    final mirrored = ref.watch(
+      unitPrefsProvider.select(
+        (p) => slot < p.cameraSlots.length && p.cameraSlots[slot].mirrored,
+      ),
+    );
 
     return Container(
       decoration: const BoxDecoration(
@@ -626,6 +633,18 @@ class _CameraBar extends ConsumerWidget {
                     .read(cameraFeedProvider(slot).notifier)
                     .setRotation(current + 1);
               },
+            ),
+            _BarButton(
+              icon: AppIcons.flip,
+              // A camera shooting across the ball records the swing from
+              // behind the mirror, so a right-hander reads as a left-hander.
+              label: mirrored
+                  ? 'Un-flip view (currently mirrored)'
+                  : 'Flip view left to right',
+              active: mirrored,
+              onTap: () => ref
+                  .read(cameraFeedProvider(slot).notifier)
+                  .setMirrored(!mirrored),
             ),
             _BarButton(
               icon: AppIcons.aspectRatio,
@@ -781,7 +800,16 @@ class _BarButton extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
 
-  const _BarButton({required this.icon, required this.label, this.onTap});
+  /// Marks a toggle that is currently on — the icon takes the accent colour,
+  /// so a persistent transform like the mirror can't be left running unseen.
+  final bool active;
+
+  const _BarButton({
+    required this.icon,
+    required this.label,
+    this.onTap,
+    this.active = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -790,6 +818,7 @@ class _BarButton extends StatelessWidget {
       child: Semantics(
         button: true,
         enabled: onTap != null,
+        toggled: active,
         label: label,
         child: GestureDetector(
           onTap: onTap,
@@ -800,7 +829,11 @@ class _BarButton extends StatelessWidget {
             child: Icon(
               icon,
               size: 18,
-              color: onTap == null ? AppColors.textDimmed : AppColors.textMuted,
+              color: onTap == null
+                  ? AppColors.textDimmed
+                  : active
+                  ? context.accent
+                  : AppColors.textMuted,
             ),
           ),
         ),
@@ -1219,6 +1252,18 @@ class _ShotExportFlow {
   void _setExportDirectory(String path) =>
       _prefs.read(unitPrefsProvider.notifier).setExportDirectory(path);
 
+  /// What the app's own storage is called on this platform. On the desktops
+  /// it's a folder in Finder or Explorer; on iPhone and iPad it's the app's
+  /// entry in Files (file sharing is on, so it's browsable); on Android it's
+  /// app-private and nothing else can open it.
+  String get _localDestinationName => switch (defaultTargetPlatform) {
+    TargetPlatform.iOS => 'Your LM in the Files app',
+    TargetPlatform.android => 'app storage',
+    _ => 'Documents/clips',
+  };
+
+  String get _localDestinationLabel => 'Saving to $_localDestinationName';
+
   static void start({
     required BuildContext context,
     required ShotClips shot,
@@ -1348,59 +1393,63 @@ class _ShotExportFlow {
               },
             );
           }),
-          // Where the file lands. Desktop only: the folder picker has no
-          // mobile implementation, and on iPad the app's Documents folder
-          // is already the reachable place (visible in Files).
-          if (isDesktopPlatform) ...[
-            const Divider(height: 1, color: AppColors.border),
-            StatefulBuilder(
-              builder: (tileCtx, setTileState) {
-                final dir = _exportDirectory;
-                return ListTile(
-                  leading: const Icon(
-                    Icons.folder_outlined,
-                    size: 18,
+          // Where the file lands, on every platform. A golfer on an iPad gets
+          // no picker — the folder chooser has no mobile implementation — but
+          // still needs to be told the clip went to the app's own folder
+          // rather than nowhere. Only the desktops can change it.
+          const Divider(height: 1, color: AppColors.border),
+          StatefulBuilder(
+            builder: (tileCtx, setTileState) {
+              final dir = _exportDirectory;
+              final isLocal = dir.isEmpty;
+              return ListTile(
+                leading: const Icon(
+                  Icons.folder_outlined,
+                  size: 18,
+                  color: AppColors.textMuted,
+                ),
+                title: Text(
+                  isLocal ? _localDestinationLabel : 'Saving to $dir',
+                  style: AppTextStyles.sans(
+                    size: 12,
                     color: AppColors.textMuted,
                   ),
-                  title: Text(
-                    dir.isEmpty ? 'Saving to Documents/clips' : 'Saving to $dir',
-                    style: AppTextStyles.sans(
-                      size: 12,
-                      color: AppColors.textMuted,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: dir.isEmpty
-                      ? const Icon(
-                          Icons.edit_outlined,
-                          size: 14,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: !isDesktopPlatform
+                    ? null
+                    : isLocal
+                    ? const Icon(
+                        Icons.edit_outlined,
+                        size: 14,
+                        color: AppColors.textDimmed,
+                      )
+                    : IconButton(
+                        icon: const Icon(
+                          Icons.restart_alt,
+                          size: 16,
                           color: AppColors.textDimmed,
-                        )
-                      : IconButton(
-                          icon: const Icon(
-                            Icons.restart_alt,
-                            size: 16,
-                            color: AppColors.textDimmed,
-                          ),
-                          tooltip: 'Back to Documents/clips',
-                          onPressed: () {
-                            _setExportDirectory('');
-                            setTileState(() {});
-                          },
                         ),
-                  tileColor: Colors.transparent,
-                  onTap: () async {
-                    final picked = await getDirectoryPath();
-                    if (picked != null && picked.isNotEmpty) {
-                      _setExportDirectory(picked);
-                      setTileState(() {});
-                    }
-                  },
-                );
-              },
-            ),
-          ],
+                        tooltip: 'Back to $_localDestinationName',
+                        onPressed: () {
+                          _setExportDirectory('');
+                          setTileState(() {});
+                        },
+                      ),
+                tileColor: Colors.transparent,
+                onTap: !isDesktopPlatform
+                    ? null
+                    : () async {
+                        final picked = await getDirectoryPath();
+                        if (picked != null && picked.isNotEmpty) {
+                          _setExportDirectory(picked);
+                          setTileState(() {});
+                        }
+                      },
+              );
+            },
+          ),
           const SizedBox(height: 8),
         ],
       ),
@@ -1433,6 +1482,7 @@ class _ShotExportFlow {
         _showResult(messenger, result, at);
       } else if (choice.separate) {
         final paths = <String>[];
+        String? directoryFallback;
         for (final slot in slots) {
           final result = await ClipExportService.export(
             clip: shot.angles[slot]!,
@@ -1441,11 +1491,13 @@ class _ShotExportFlow {
             directory: directory,
           );
           paths.add(result.path);
+          directoryFallback ??= result.directoryFallback;
         }
         messenger.showSnackBar(
           SnackBar(
             duration: const Duration(seconds: 8),
             content: Text(
+              '${_fallbackPrefix(directoryFallback)}'
               'Exported ${paths.length} files$at\n${paths.join('\n')}',
             ),
           ),
@@ -1467,6 +1519,12 @@ class _ShotExportFlow {
     }
   }
 
+  /// Leads the snackbar when the chosen folder was passed over, so the golfer
+  /// finds out from the app rather than from an empty folder later.
+  String _fallbackPrefix(String? directoryFallback) => directoryFallback == null
+      ? ''
+      : '$directoryFallback — saved to $_localDestinationName instead\n';
+
   void _showResult(
     ScaffoldMessengerState messenger,
     ClipExportResult result,
@@ -1476,14 +1534,15 @@ class _ShotExportFlow {
       SnackBar(
         duration: const Duration(seconds: 8),
         content: Text(
-          result.format == ClipExportFormat.video
+          '${_fallbackPrefix(result.directoryFallback)}'
+          '${result.format == ClipExportFormat.video
               ? 'Exported ${result.videoLabel}$at · '
                     '${result.dimensionsLabel} · ${result.sizeLabel}'
                     '\n${result.path}'
               : 'No video writer available '
                     '(${result.fallbackReason}). Exported '
                     '${result.frameCount} frames · '
-                    '${result.sizeLabel}\n${result.path}',
+                    '${result.sizeLabel}\n${result.path}'}',
         ),
       ),
     );

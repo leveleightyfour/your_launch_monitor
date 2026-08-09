@@ -52,6 +52,7 @@ abstract final class AppIcons {
   static const IconData refresh = LucideIcons.refreshCw;
   static const IconData replay = LucideIcons.rotateCcw;
   static const IconData rotate = LucideIcons.rotateCwSquare;
+  static const IconData flip = LucideIcons.flipHorizontal2;
   static const IconData swap = LucideIcons.arrowLeftRight;
   static const IconData share = LucideIcons.share;
   static const IconData download = LucideIcons.download;

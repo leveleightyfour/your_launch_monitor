@@ -818,6 +818,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
         'height': requested.height,
         'fps': requested.fps,
         'rotation': _slotPref().rotationQuarterTurns,
+        'mirrored': _slotPref().mirrored,
       });
     } on MissingPluginException {
       // Runner predates the native module. The worker fallback opens the
@@ -979,6 +980,7 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
           requestFps: requested.fps,
           previewIntervalMs: _previewInterval.inMilliseconds,
           rotationQuarterTurns: _slotPref().rotationQuarterTurns,
+          mirrored: _slotPref().mirrored,
         ),
         // Uncaught worker errors arrive on the same port as a List rather
         // than dying silently.
@@ -1180,6 +1182,31 @@ class CameraFeedNotifier extends FamilyNotifier<CameraFeedState, int> {
       );
     } else {
       _link?.send({'cmd': 'rotation', 'value': turns});
+    }
+    final recorder = ref.read(impactClipProvider.notifier);
+    recorder.setArmed(slot, false);
+    recorder.setArmed(slot, true);
+  }
+
+  /// Mirrors the live feed left-to-right and remembers it — the fix for a
+  /// camera that shows a right-handed swing as a left-handed one.
+  ///
+  /// Takes effect on the next frame, and restarts the ring buffer for the
+  /// same reason [setRotation] does: the frames already buffered face the old
+  /// way, and a clip that flipped halfway through would read as a glitch.
+  Future<void> setMirrored(bool mirrored) async {
+    if (_disposed) return;
+    ref.read(unitPrefsProvider.notifier).setCameraSlot(slot, mirrored: mirrored);
+    if (_link == null && !_nativeActive) return;
+    if (_nativeActive) {
+      unawaited(
+        _nativeCamera.invokeMethod<void>('setMirrored', {
+          'slot': slot,
+          'mirrored': mirrored,
+        }),
+      );
+    } else {
+      _link?.send({'cmd': 'mirror', 'value': mirrored});
     }
     final recorder = ref.read(impactClipProvider.notifier);
     recorder.setArmed(slot, false);

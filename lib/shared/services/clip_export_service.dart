@@ -98,6 +98,12 @@ class ClipExportResult {
   /// Why the video rungs were abandoned, when they all were.
   final String? fallbackReason;
 
+  /// Why the file didn't land in the chosen folder, when one was chosen and
+  /// couldn't be written to. Null whenever [path] is where the golfer asked
+  /// for — a fallback the caller can't see is a file reported as saved
+  /// somewhere it isn't.
+  final String? directoryFallback;
+
   const ClipExportResult({
     required this.format,
     required this.path,
@@ -107,6 +113,7 @@ class ClipExportResult {
     this.height = 0,
     this.videoLabel,
     this.fallbackReason,
+    this.directoryFallback,
   });
 
   String get sizeLabel => '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
@@ -120,11 +127,16 @@ class ClipExportService {
   /// The folder exports land in: [directory] when one was chosen and is
   /// still writable, else the default Documents/clips. Writability is proved
   /// with a throwaway file up front, because a denied folder would otherwise
-  /// surface as every writer rung failing with encoder-shaped errors. Going
-  /// stale is a real state, not just corruption: the macOS sandbox grants
-  /// access to a picked folder only until the process exits, so a remembered
-  /// choice can stop working on the next launch.
-  static Future<Directory> _exportRoot(String? directory) async {
+  /// surface as every writer rung failing with encoder-shaped errors. A folder
+  /// can still go bad between sessions — renamed, unmounted, permissions
+  /// changed — so the check runs every export, not once at pick time.
+  ///
+  /// The second value says why the chosen folder was passed over, and is null
+  /// when it wasn't. It rides all the way out to the snackbar: this fallback
+  /// used to be a debugPrint, which meant the sheet could promise one folder
+  /// while the file went to another and nothing on screen ever said so.
+  static Future<(Directory, String?)> _exportRoot(String? directory) async {
+    String? fallback;
     if (directory != null && directory.isNotEmpty) {
       try {
         final dir = Directory(directory);
@@ -132,11 +144,13 @@ class ClipExportService {
         final probe = File('${dir.path}/.write-probe');
         await probe.writeAsString('');
         await probe.delete();
-        return dir;
+        return (dir, null);
       } catch (error) {
+        // The phrase, not the raw error: this is snackbar text. The error
+        // itself stays in the log, where a stack-shaped message belongs.
+        fallback = '$directory could not be written to';
         debugPrint(
-          '[export] chosen folder "$directory" unusable ($error) — '
-          'falling back to Documents/clips',
+          '[export] $fallback ($error) — falling back to Documents/clips',
         );
       }
     }
@@ -144,7 +158,7 @@ class ClipExportService {
       '${(await getApplicationDocumentsDirectory()).path}/clips',
     );
     await root.create(recursive: true);
-    return root;
+    return (root, fallback);
   }
 
   /// Writes [clip] under [directory] — or the app's documents directory when
@@ -166,7 +180,7 @@ class ClipExportService {
       throw ArgumentError.value(speed, 'speed', 'must be positive');
     }
 
-    final root = await _exportRoot(directory);
+    final (root, directoryFallback) = await _exportRoot(directory);
     final stem = _stem(baseName, clip.shotIndex, clip.capturedAt, speed);
 
     final probe = cv.imdecode(clip.frames.first.jpeg, _imreadColor);
@@ -191,6 +205,7 @@ class ClipExportService {
           frameCount: clip.frameCount,
           width: frameWidth,
           height: frameHeight,
+          directoryFallback: directoryFallback,
         );
       }
       debugPrint('[export] ${attempt.label} unavailable — $reason');
@@ -206,6 +221,7 @@ class ClipExportService {
       bytes: bytes,
       frameCount: clip.frameCount,
       fallbackReason: reasons.join('; '),
+      directoryFallback: directoryFallback,
     );
   }
 
@@ -346,7 +362,7 @@ class ClipExportService {
       '${plan.tickCount} frames',
     );
 
-    final root = await _exportRoot(directory);
+    final (root, directoryFallback) = await _exportRoot(directory);
     final stem = _stem(
       baseName,
       shot.shotIndex,
@@ -373,6 +389,7 @@ class ClipExportService {
           frameCount: plan.tickCount,
           width: plan.outWidth,
           height: plan.outHeight,
+          directoryFallback: directoryFallback,
         );
       }
       debugPrint('[export] ${attempt.label} composite unavailable — $reason');
@@ -388,6 +405,7 @@ class ClipExportService {
       bytes: bytes,
       frameCount: plan.tickCount,
       fallbackReason: reasons.join('; '),
+      directoryFallback: directoryFallback,
     );
   }
 

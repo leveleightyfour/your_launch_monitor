@@ -32,5 +32,11 @@
 	<string>This app connects to your golf launch monitor via Bluetooth to receive shot data.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>This app records swing video from your cameras when a shot is detected.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Your session history and exported swing clips are saved in your Documents folder.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Swing clips are exported here when you choose your Downloads folder.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Swing clips are exported here when you choose your Desktop folder.</string>
 </dict>
 </plist>

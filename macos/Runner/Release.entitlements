@@ -1,9 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
+<!--
+	The sandbox is off. Under it, a folder the golfer picks for clip exports is
+	reachable only until the process exits — the remembered path came back dead
+	on the next launch and exports silently landed in the container's
+	Documents/clips instead. Keeping it would mean security-scoped bookmarks and
+	native plumbing for a build that ships direct rather than through the Mac App
+	Store. The sandbox-only keys below are left in place so turning it back on is
+	a one-line change; they do nothing while it is false.
+-->
 <dict>
 	<key>com.apple.security.app-sandbox</key>
-	<true/>
+	<false/>
 	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
 	<true/>
 	<key>com.apple.security.device.bluetooth</key>

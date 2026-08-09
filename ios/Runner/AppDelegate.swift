@@ -114,7 +114,8 @@ private final class NativeCameraFeed: NSObject, AVCaptureVideoDataOutputSampleBu
   /// 1280×720@60 — high enough rate to be worth scrubbing, small enough
   /// that six seconds of clip doesn't menace the memory ceiling.
   func start(
-    deviceId: String, width: Int, height: Int, fps: Int, rotationQuarterTurns: Int
+    deviceId: String, width: Int, height: Int, fps: Int, rotationQuarterTurns: Int,
+    mirrored: Bool
   ) throws -> [String: Any] {
     guard !deviceId.isEmpty, let device = AVCaptureDevice(uniqueID: deviceId) else {
       throw StartError(
@@ -194,6 +195,7 @@ private final class NativeCameraFeed: NSObject, AVCaptureVideoDataOutputSampleBu
     }
 
     applyRotation(rotationQuarterTurns)
+    applyMirror(mirrored)
 
     errorObserver = NotificationCenter.default.addObserver(
       forName: .AVCaptureSessionRuntimeError, object: session, queue: nil
@@ -225,6 +227,19 @@ private final class NativeCameraFeed: NSObject, AVCaptureVideoDataOutputSampleBu
       .landscapeRight, .portrait, .landscapeLeft, .portraitUpsideDown,
     ]
     connection.videoOrientation = orientations[((quarterTurns % 4) + 4) % 4]
+  }
+
+  /// Left-to-right mirror, carried by the connection like the rotation above,
+  /// so it costs nothing per frame and lands on the recorded buffers rather
+  /// than only on what's displayed. The automatic adjustment has to be turned
+  /// off first — left on, AVFoundation overwrites the value with its own
+  /// front/back-camera default.
+  func applyMirror(_ mirrored: Bool) {
+    guard let connection = output.connection(with: .video),
+      connection.isVideoMirroringSupported
+    else { return }
+    connection.automaticallyAdjustsVideoMirroring = false
+    connection.isVideoMirrored = mirrored
   }
 
   func stop() {
@@ -296,6 +311,7 @@ final class NativeCameraController: NSObject, FlutterStreamHandler {
       let height = args["height"] as? Int ?? 0
       let fps = args["fps"] as? Int ?? 0
       let rotation = args["rotation"] as? Int ?? 0
+      let mirrored = args["mirrored"] as? Bool ?? false
       sessionQueue.async { [weak self] in
         guard let self = self else { return }
         // A replaced feed stops before its successor starts; two sessions
@@ -307,7 +323,7 @@ final class NativeCameraController: NSObject, FlutterStreamHandler {
         do {
           let granted = try feed.start(
             deviceId: deviceId, width: width, height: height, fps: fps,
-            rotationQuarterTurns: rotation)
+            rotationQuarterTurns: rotation, mirrored: mirrored)
           self.feeds[slot] = feed
           DispatchQueue.main.async { result(granted) }
         } catch let error as NativeCameraFeed.StartError {
@@ -334,6 +350,14 @@ final class NativeCameraController: NSObject, FlutterStreamHandler {
       let turns = args["turns"] as? Int ?? 0
       sessionQueue.async { [weak self] in
         self?.feeds[slot]?.applyRotation(turns)
+        DispatchQueue.main.async { result(nil) }
+      }
+
+    case "setMirrored":
+      let slot = args["slot"] as? Int ?? 0
+      let mirrored = args["mirrored"] as? Bool ?? false
+      sessionQueue.async { [weak self] in
+        self?.feeds[slot]?.applyMirror(mirrored)
         DispatchQueue.main.async { result(nil) }
       }
 

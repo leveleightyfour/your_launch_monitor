@@ -9,11 +9,16 @@ import 'package:omni_sniffer/features/launch_monitor/data/last_device_provider.d
 import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
 import 'package:omni_sniffer/shared/providers/router.dart';
 import 'package:omni_sniffer/shared/providers/shorebird_update_provider.dart';
+import 'package:omni_sniffer/shared/services/macos_data_migration.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 import 'package:riverpod_devtools/riverpod_devtools.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Before anything reads a preference or opens the database: on macOS both
+  // roots moved when the sandbox came off, and this carries the old container's
+  // contents forward. No-ops everywhere else and after the first run.
+  await MacosDataMigration.run();
   if (!Platform.isWindows) {
     FlutterBluePlus.setLogLevel(LogLevel.warning);
     // Trigger the BT/Location permission prompt at app load instead of on

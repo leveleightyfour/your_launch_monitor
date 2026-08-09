@@ -517,7 +517,13 @@ class _MetricTile extends StatelessWidget {
                         },
                       ),
               ),
-              if (!compact && !isImpact && unit.isNotEmpty)
+              // The unit line is laid out even when the metric hasn't got one
+              // (smash factor, impact location). Dropping the row handed its
+              // height to the Expanded above, so those tiles sized their digits
+              // against a taller box and came out bigger and lower than every
+              // neighbour — the shared digit size is measured off this box.
+              // An empty string still occupies exactly one line of the style.
+              if (!compact && !isImpact)
                 Text(
                   unit,
                   textAlign: TextAlign.center,

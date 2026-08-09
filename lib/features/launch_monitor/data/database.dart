@@ -14,6 +14,10 @@ import 'dart:ui' show Color;
 
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:path_provider/path_provider.dart'
+    show getApplicationSupportDirectory;
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dart'
     as domain;
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
@@ -397,5 +401,19 @@ class AppDatabase extends _$AppDatabase {
 
 QueryExecutor _openConnection() {
   // drift_flutter picks the right SQLite backend per platform automatically.
+  // Its default home is the documents directory, which is right everywhere but
+  // macOS: there the app runs unsandboxed, so that resolves to the real
+  // ~/Documents — a folder behind a TCC prompt the golfer can decline, which
+  // would take every recorded session down with it. Application Support has no
+  // such gate and is where app-private state belongs anyway. iOS keeps
+  // Documents deliberately: it's the folder the Files app exposes.
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+    return driftDatabase(
+      name: 'omni_sniffer',
+      native: DriftNativeOptions(
+        databaseDirectory: getApplicationSupportDirectory,
+      ),
+    );
+  }
   return driftDatabase(name: 'omni_sniffer');
 }

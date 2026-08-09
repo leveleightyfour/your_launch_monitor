@@ -65,12 +65,19 @@ class CameraSlotPref {
   /// preview, clips and exports alike.
   final int rotationQuarterTurns;
 
+  /// Mirrors every frame left-to-right, applied after [rotationQuarterTurns].
+  /// A camera shooting the golfer from the far side of the ball records a
+  /// right-hander as a left-hander; flipping it puts the swing back the way
+  /// the eye expects, and does it at the source so review and exports agree.
+  final bool mirrored;
+
   const CameraSlotPref({
     this.deviceName = '',
     this.width = 0,
     this.height = 0,
     this.fps = 0,
     this.rotationQuarterTurns = 0,
+    this.mirrored = false,
   });
 
   bool get isEmpty => deviceName.isEmpty;
@@ -81,6 +88,7 @@ class CameraSlotPref {
     'height': height,
     'fps': fps,
     'rotation': rotationQuarterTurns,
+    'mirrored': mirrored,
   };
 
   factory CameraSlotPref.fromJson(Map<String, dynamic> j) => CameraSlotPref(
@@ -89,6 +97,7 @@ class CameraSlotPref {
     height: j['height'] as int? ?? 0,
     fps: j['fps'] as int? ?? 0,
     rotationQuarterTurns: (j['rotation'] as int? ?? 0) % 4,
+    mirrored: j['mirrored'] as bool? ?? false,
   );
 }
 
@@ -341,6 +350,7 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
     int? height,
     int? fps,
     int? rotationQuarterTurns,
+    bool? mirrored,
   }) {
     if (slot < 0) return;
     final slots = [...state.cameraSlots];
@@ -355,6 +365,7 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
       fps: fps ?? current.fps,
       rotationQuarterTurns:
           (rotationQuarterTurns ?? current.rotationQuarterTurns) % 4,
+      mirrored: mirrored ?? current.mirrored,
     );
     state = state.copyWith(cameraSlots: List.unmodifiable(slots));
     _save();

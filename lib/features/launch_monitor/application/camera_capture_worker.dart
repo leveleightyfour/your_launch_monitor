@@ -64,6 +64,10 @@ const _rotateCodes = [
   2, // ROTATE_90_COUNTERCLOCKWISE
 ];
 
+/// `cv::flip` code for a left-to-right mirror. Zero would flip vertically and
+/// negative would do both.
+const _flipHorizontal = 1;
+
 // ── Spawn configuration ──────────────────────────────────────────────────────
 
 /// Everything the worker needs, all of it sendable across an isolate spawn.
@@ -86,6 +90,10 @@ class CameraWorkerConfig {
   /// worker, so preview, ring buffer and exports all agree on orientation.
   final int rotationQuarterTurns;
 
+  /// Mirrors every frame left-to-right, after the rotation above, so a camera
+  /// facing the golfer stops reporting a right-hander as a left-hander.
+  final bool mirrored;
+
   const CameraWorkerConfig({
     required this.toMain,
     required this.deviceIndex,
@@ -95,6 +103,7 @@ class CameraWorkerConfig {
     required this.previewIntervalMs,
     this.requestFps = 0,
     this.rotationQuarterTurns = 0,
+    this.mirrored = false,
   });
 }
 
@@ -121,6 +130,7 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
   var stop = false;
   var previewPaused = false;
   var rotation = config.rotationQuarterTurns % 4;
+  var mirrored = config.mirrored;
   commands.listen((message) {
     if (message is! Map) return;
     switch (message['cmd']) {
@@ -130,6 +140,8 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
         previewPaused = message['value'] == true;
       case 'rotation':
         rotation = ((message['value'] as int?) ?? 0) % 4;
+      case 'mirror':
+        mirrored = message['value'] == true;
     }
   });
 
@@ -257,11 +269,19 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
     // Rotation happens here, once, at the source: every consumer — the ring
     // buffer, the preview, review, every export — then agrees on orientation
     // for free, instead of each applying (or forgetting) its own transform.
+    // The mirror follows the rotation rather than preceding it, so the flip
+    // is always left-to-right as seen on screen whichever way the camera is
+    // mounted.
     cv.Mat oriented = frame;
     cv.Mat? rotated;
+    cv.Mat? flipped;
     if (rotation != 0) {
       rotated = cv.rotate(frame, _rotateCodes[rotation - 1]);
       oriented = rotated;
+    }
+    if (mirrored) {
+      flipped = cv.flip(oriented, _flipHorizontal);
+      oriented = flipped;
     }
 
     try {
@@ -303,6 +323,7 @@ Future<void> cameraWorkerMain(CameraWorkerConfig config) async {
         });
       }
     } finally {
+      flipped?.dispose();
       rotated?.dispose();
       frame.dispose();
     }
