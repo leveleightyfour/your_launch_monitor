@@ -6,7 +6,7 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dar
 import 'package:omni_sniffer/features/launch_monitor/presentation/screens/app_shell.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/screens/my_bag_screen.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/screens/session_detail_screen.dart';
-import 'package:omni_sniffer/features/launch_monitor/presentation/screens/session_screen.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/screens/session_screen_v2.dart';
 
 final appRouter = GoRouter(
   routes: [
@@ -16,8 +16,10 @@ final appRouter = GoRouter(
       routes: [
         GoRoute(
           path: 'session/new',
+          // The gate opens whichever session screen the Profile toggle
+          // selects (classic or the rethink layout).
           builder: (_, state) =>
-              SessionScreen(initialName: state.extra as String?),
+              SessionScreenGate(initialName: state.extra as String?),
         ),
         GoRoute(
           path: 'session/:id',

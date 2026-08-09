@@ -141,6 +141,15 @@ class ProfileScreen extends ConsumerWidget {
               onSelect: (i) => notifier.setAutoReconnect(i == 1),
             ),
             _UnitToggleRow(
+              icon: AppIcons.columns,
+              label: 'Session screen',
+              options: SessionScreenLayout.values.map((l) => l.label).toList(),
+              selected: prefs.sessionLayout.index,
+              onSelect: (i) => notifier.setSessionScreenLayout(
+                SessionScreenLayout.values[i],
+              ),
+            ),
+            _UnitToggleRow(
               icon: AppIcons.sessions,
               label: 'Test shots',
               options: const ['Off', 'On'],
@@ -329,7 +338,11 @@ class _AccentPickerRow extends StatelessWidget {
           // Header row — mirrors the other Preferences rows visually.
           Row(
             children: [
-              const Icon(AppIcons.palette, size: 18, color: AppColors.textMuted),
+              const Icon(
+                AppIcons.palette,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
               const SizedBox(width: 12),
               Text('Accent colour', style: AppTextStyles.sans(size: 14)),
             ],
@@ -358,7 +371,11 @@ class _AccentPickerRow extends StatelessWidget {
                           : null,
                     ),
                     child: isSelected
-                        ? const Icon(AppIcons.check, size: 11, color: Colors.white)
+                        ? const Icon(
+                            AppIcons.check,
+                            size: 11,
+                            color: Colors.white,
+                          )
                         : null,
                   ),
                 );
