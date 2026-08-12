@@ -5,4 +5,4 @@
 /// be dead code until the next full store release.
 ///
 /// KEEP IN SYNC with `version:` in pubspec.yaml when cutting a release.
-const String appVersion = '1.0.18+20';
+const String appVersion = '1.0.19+21';
