@@ -214,21 +214,25 @@ class TilesTab extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     List<TileMetric> current,
-  ) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => _CustomizeSheet(
-        current: current,
-        onApply: (updated) =>
-            ref.read(selectedTilesProvider.notifier).state = updated,
-      ),
-    );
-  }
+  ) => showTilesCustomizeSheet(context, ref);
+}
+
+/// Opens the tile-customize sheet over [context]. Shared with the rethink
+/// session screen's rail, so every surface edits the one tile list.
+void showTilesCustomizeSheet(BuildContext context, WidgetRef ref) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.surface,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (_) => _CustomizeSheet(
+      current: ref.read(selectedTilesProvider),
+      onApply: (updated) =>
+          ref.read(selectedTilesProvider.notifier).state = updated,
+    ),
+  );
 }
 
 // ── Fullscreen tiles page ─────────────────────────────────────────────────────
@@ -915,7 +919,11 @@ class _CustomizeSheetState extends ConsumerState<_CustomizeSheet> {
             onTap: () => _remove(m),
             child: const Padding(
               padding: EdgeInsets.all(10),
-              child: Icon(AppIcons.close, size: 16, color: AppColors.textDimmed),
+              child: Icon(
+                AppIcons.close,
+                size: 16,
+                color: AppColors.textDimmed,
+              ),
             ),
           ),
         ],
@@ -952,7 +960,11 @@ class _AvailableChips extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(AppIcons.add, size: 12, color: AppColors.textMuted),
+                    const Icon(
+                      AppIcons.add,
+                      size: 12,
+                      color: AppColors.textMuted,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       m.label,

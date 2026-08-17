@@ -31,6 +31,17 @@ enum DispersionStandard {
   );
 }
 
+/// Which session screen `/session/new` opens: the classic tabbed screen or
+/// the stage-based "Rethink" layout ported from the updated HTML design.
+enum SessionScreenLayout {
+  classic('Classic'),
+  rethink('Rethink');
+
+  const SessionScreenLayout(this.label);
+
+  final String label;
+}
+
 // ── UnitPrefs ─────────────────────────────────────────────────────────────────
 
 /// The 3D flight view's sky, picked from curated scenes rather than a free
@@ -143,6 +154,10 @@ class UnitPrefs {
   /// 'auto' hands the decision to resolveSplitLayout.
   final String splitLayout;
 
+  /// Which session screen `/session/new` opens, by [SessionScreenLayout]
+  /// name. Toggled from the Profile screen.
+  final String sessionScreenLayout;
+
   const UnitPrefs({
     this.distance = DistanceUnit.meters,
     this.speed = SpeedUnit.mph,
@@ -157,7 +172,15 @@ class UnitPrefs {
     this.cameraSlots = const [CameraSlotPref(), CameraSlotPref()],
     this.exportDirectory = '',
     this.splitLayout = 'auto',
+    this.sessionScreenLayout = 'classic',
   });
+
+  /// The layout choice as its enum, unknown names falling back to classic.
+  SessionScreenLayout get sessionLayout =>
+      SessionScreenLayout.values.firstWhere(
+        (l) => l.name == sessionScreenLayout,
+        orElse: () => SessionScreenLayout.classic,
+      );
 
   UnitPrefs copyWith({
     DistanceUnit? distance,
@@ -173,6 +196,7 @@ class UnitPrefs {
     List<CameraSlotPref>? cameraSlots,
     String? exportDirectory,
     String? splitLayout,
+    String? sessionScreenLayout,
   }) => UnitPrefs(
     distance: distance ?? this.distance,
     speed: speed ?? this.speed,
@@ -187,6 +211,7 @@ class UnitPrefs {
     cameraSlots: cameraSlots ?? this.cameraSlots,
     exportDirectory: exportDirectory ?? this.exportDirectory,
     splitLayout: splitLayout ?? this.splitLayout,
+    sessionScreenLayout: sessionScreenLayout ?? this.sessionScreenLayout,
   );
 
   /// Display label for distance values.
@@ -220,6 +245,7 @@ class UnitPrefs {
     'cameraSlots': cameraSlots.map((slot) => slot.toJson()).toList(),
     'exportDirectory': exportDirectory,
     'splitLayout': splitLayout,
+    'sessionScreenLayout': sessionScreenLayout,
   };
 
   factory UnitPrefs.fromJson(Map<String, dynamic> j) => UnitPrefs(
@@ -248,6 +274,7 @@ class UnitPrefs {
     cameraSlots: _slotsFromJson(j),
     exportDirectory: j['exportDirectory'] as String? ?? '',
     splitLayout: j['splitLayout'] as String? ?? 'auto',
+    sessionScreenLayout: j['sessionScreenLayout'] as String? ?? 'classic',
   );
 
   /// Reads the slot list, padding to two entries; a prefs file written
@@ -386,6 +413,11 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
   /// Remembers the split view's layout choice by SplitLayoutMode name.
   void setSplitLayout(String name) {
     state = state.copyWith(splitLayout: name);
+    _save();
+  }
+
+  void setSessionScreenLayout(SessionScreenLayout layout) {
+    state = state.copyWith(sessionScreenLayout: layout.name);
     _save();
   }
 

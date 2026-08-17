@@ -29,6 +29,9 @@ const _capMsmf = 1400;
 /// equivalent: AVAssetWriter muxes H.264 into MP4 natively, no FFMPEG.
 const _capAvfoundation = 1200;
 
+/// `cv::CAP_OPENCV_MJPEG` — OpenCV's built-in MotionJPEG muxer.
+const _capOpencvMjpeg = 2200;
+
 /// A container header alone is a few kB. A writer that opened but had no
 /// working encoder behind it still lays that down and then silently drops
 /// every frame, so a file this small means failure however healthy the API
@@ -42,21 +45,42 @@ class _VideoAttempt {
   final String codec;
   final int? apiPreference;
 
-  const _VideoAttempt(this.label, this.extension, this.codec,
-      [this.apiPreference]);
+  const _VideoAttempt(
+    this.label,
+    this.extension,
+    this.codec, [
+    this.apiPreference,
+  ]);
 }
 
-const _attempts = [
+final _attempts = [
   // H.264 in MP4 via Media Foundation. The backend is named explicitly —
   // left to choose, OpenCV would only reach MSMF by accident.
-  _VideoAttempt('H.264 MP4', '.mp4', 'H264', _capMsmf),
-  // The same rung for macOS. 'avc1' rather than 'H264': it is the FOURCC
-  // AVFoundation's writer actually registers. On Windows this rung fails to
-  // open and the ladder moves on, exactly as the MSMF rung does on macOS.
-  _VideoAttempt('H.264 MP4', '.mp4', 'avc1', _capAvfoundation),
+  const _VideoAttempt('H.264 MP4', '.mp4', 'H264', _capMsmf),
+  // The same rung for macOS — and deliberately NOT iOS. 'avc1' rather than
+  // 'H264': it is the FOURCC AVFoundation's writer actually registers. On
+  // Windows this rung fails to open and the ladder moves on, exactly as the
+  // MSMF rung does on macOS.
+  //
+  // iOS is excluded because OpenCV's iOS writer (cap_avfoundation.mm) tears
+  // down with an asynchronous `finishWritingWithCompletionHandler:` whose
+  // block reads members through the C++ `this` — which `release()` has
+  // already deleted by the time AVAssetWriter's internal NSOperation KVO
+  // fires the block on a GCD queue. The resulting use-after-free crashes
+  // iPad exports inside objc_msgSend. The macOS writer lives in a separate
+  // file (cap_avfoundation_mac.mm) that already waits on a semaphore for
+  // exactly this race, so it stays on the ladder.
+  if (!Platform.isIOS)
+    const _VideoAttempt('H.264 MP4', '.mp4', 'avc1', _capAvfoundation),
   // OpenCV's built-in RIFF muxer; needs no OS encoder at all, since the
-  // frames are already JPEGs and MJPG is just JPEGs in an AVI.
-  _VideoAttempt('MJPG AVI', '.avi', 'MJPG'),
+  // frames are already JPEGs and MJPG is just JPEGs in an AVI. On iOS the
+  // backend is pinned: left to auto-select, OpenCV probes the AVFoundation
+  // writer first, and that writer accepts ANY extension and FOURCC (both
+  // default rather than reject), which would put the crashing teardown
+  // above right back into the path.
+  Platform.isIOS
+      ? const _VideoAttempt('MJPG AVI', '.avi', 'MJPG', _capOpencvMjpeg)
+      : const _VideoAttempt('MJPG AVI', '.avi', 'MJPG'),
 ];
 
 enum ClipExportFormat { video, frames }
@@ -423,19 +447,14 @@ class ClipExportService {
     final tracks = plan.newTracks();
     try {
       writer = attempt.apiPreference == null
-          ? cv.VideoWriter.fromFile(
-              path,
-              attempt.codec,
-              fps,
-              (plan.outWidth, plan.outHeight),
-            )
-          : cv.VideoWriter.fromFile(
-              path,
-              attempt.codec,
-              fps,
-              (plan.outWidth, plan.outHeight),
-              apiPreference: attempt.apiPreference,
-            );
+          ? cv.VideoWriter.fromFile(path, attempt.codec, fps, (
+              plan.outWidth,
+              plan.outHeight,
+            ))
+          : cv.VideoWriter.fromFile(path, attempt.codec, fps, (
+              plan.outWidth,
+              plan.outHeight,
+            ), apiPreference: attempt.apiPreference);
       if (!writer.isOpened) {
         return 'OpenCV would not open a ${attempt.codec} writer';
       }
@@ -493,8 +512,7 @@ class ClipExportService {
           if (!encoded) continue;
           final number = tick.toString().padLeft(4, '0');
           final suffix = isTrigger ? '_packet' : '';
-          await File('${dir.path}/frame_$number$suffix.jpg')
-              .writeAsBytes(jpeg);
+          await File('${dir.path}/frame_$number$suffix.jpg').writeAsBytes(jpeg);
           bytes += jpeg.lengthInBytes;
           manifest.writeln('$number,${offset.inMilliseconds},$isTrigger');
         } finally {
@@ -658,8 +676,7 @@ class _CompositePlan {
 
   static int _even(int value) => value < 2 ? 2 : value - (value % 2);
 
-  Duration get _tick =>
-      Duration(microseconds: (1000000 / masterFps).round());
+  Duration get _tick => Duration(microseconds: (1000000 / masterFps).round());
 
   int get tickCount =>
       (windowEnd - windowStart).inMicroseconds ~/ _tick.inMicroseconds + 1;
