@@ -43,8 +43,11 @@ States it can be in:
 
 - **WAITING FOR IPHONE** — nothing has ever arrived.
 - **PHONE OUT OF RANGE** — tap to retry; the last received screen stays up.
-- **DISCONNECTED / SCANNING / CONNECTING** — the launch monitor's state, from
-  the phone. Tap to refresh.
+- **MONITOR DISCONNECTED / SCANNING FOR MONITOR / CONNECTING TO MONITOR** —
+  the launch monitor's state, relayed from the phone. Reported, not offered as
+  an action: nothing the watch can do will connect an Omni that is switched
+  off. Two links meet on this screen — phone to watch, and phone to Omni — and
+  every message names which one it means.
 
 ## 2. How the data travels
 

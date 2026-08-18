@@ -86,15 +86,18 @@ class WatchTag {
   Map<String, Object> toMap() => {'id': id, 'name': name, 'color': color};
 }
 
-/// Device connection as the watch understands it. Mirrors
+/// The launch monitor's connection, as the watch understands it. Mirrors
 /// `LaunchMonitorStatus`, kept as its own type so the watch protocol doesn't
 /// move every time the BLE layer gains a state.
-enum WatchConnection { disconnected, scanning, connecting, connected }
+///
+/// Named for the monitor, not the watch: there are two links on that screen —
+/// phone to watch, and phone to Omni — and this is only ever the second.
+enum MonitorConnection { disconnected, scanning, connecting, connected }
 
 /// A complete watch screen. Immutable; the sync layer sends a fresh one on
 /// every change.
 class WatchTilePayload {
-  final WatchConnection connection;
+  final MonitorConnection connection;
 
   /// The tiles, in the order the golfer arranged them on the phone.
   final List<WatchTile> tiles;

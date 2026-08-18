@@ -103,7 +103,7 @@ void main() {
   group('WatchTilePayload', () {
     WatchTilePayload payload({int sentAtMs = 0, int shotCount = 2}) =>
         WatchTilePayload(
-          connection: WatchConnection.connected,
+          connection: MonitorConnection.connected,
           tiles: [watchTileFor(TileMetric.carry, _shot, null, _yards)],
           shotCount: shotCount,
           shotIndex: 1,
@@ -134,7 +134,7 @@ void main() {
 
     test('an unknown battery is omitted rather than sent as null', () {
       const noBattery = WatchTilePayload(
-        connection: WatchConnection.disconnected,
+        connection: MonitorConnection.disconnected,
         tiles: [],
         shotCount: 0,
         shotIndex: 0,
@@ -157,7 +157,7 @@ void main() {
 
     test('a tag applied on the phone reaches the watch', () {
       const tagged = WatchTilePayload(
-        connection: WatchConnection.connected,
+        connection: MonitorConnection.connected,
         tiles: [],
         shotCount: 1,
         shotIndex: 1,
@@ -184,7 +184,7 @@ void main() {
 
       // Tagging has to move the signature, or the watch would never be told.
       const untagged = WatchTilePayload(
-        connection: WatchConnection.connected,
+        connection: MonitorConnection.connected,
         tiles: [],
         shotCount: 1,
         shotIndex: 1,
@@ -203,7 +203,7 @@ void main() {
 
     test('an unpersisted shot reports as untaggable', () {
       const fresh = WatchTilePayload(
-        connection: WatchConnection.connected,
+        connection: MonitorConnection.connected,
         tiles: [],
         shotCount: 1,
         shotIndex: 1,

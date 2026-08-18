@@ -96,15 +96,23 @@ struct WatchTag: Identifiable, Equatable {
   }
 }
 
-enum WatchConnection: String {
+/// The *launch monitor's* connection, not the watch's.
+///
+/// The distinction is the whole point of the name: on a wrist, an unqualified
+/// "DISCONNECTED" reads as the watch having lost the phone, when what it
+/// actually means is that the Omni is off or out of range — while the phone
+/// link it appears to be describing is working perfectly.
+enum MonitorConnection: String {
   case disconnected, scanning, connecting, connected
 
+  /// Always names the subject. There are two links in play on this screen and
+  /// the golfer can only see one of them.
   var label: String {
     switch self {
-    case .disconnected: return "DISCONNECTED"
-    case .scanning: return "SCANNING"
-    case .connecting: return "CONNECTING"
-    case .connected: return "CONNECTED"
+    case .disconnected: return "MONITOR DISCONNECTED"
+    case .scanning: return "SCANNING FOR MONITOR"
+    case .connecting: return "CONNECTING TO MONITOR"
+    case .connected: return "MONITOR CONNECTED"
     }
   }
 
@@ -112,7 +120,7 @@ enum WatchConnection: String {
 }
 
 struct WatchTilePayload: Equatable {
-  let connection: WatchConnection
+  let connection: MonitorConnection
   let tiles: [WatchTile]
   let shotCount: Int
   let shotIndex: Int
@@ -137,7 +145,7 @@ struct WatchTilePayload: Equatable {
     guard let rawTiles = dictionary["tiles"] as? [[String: Any]] else { return nil }
     self.tiles = rawTiles.compactMap(WatchTile.init(dictionary:))
     self.connection =
-      WatchConnection(rawValue: dictionary["connection"] as? String ?? "") ?? .disconnected
+      MonitorConnection(rawValue: dictionary["connection"] as? String ?? "") ?? .disconnected
     // Numbers arrive as NSNumber whichever side sent them, so they are read
     // through it rather than cast straight to Int/Double.
     self.shotCount = (dictionary["shotCount"] as? NSNumber)?.intValue ?? 0
@@ -156,7 +164,7 @@ struct WatchTilePayload: Equatable {
   }
 
   init(
-    connection: WatchConnection, tiles: [WatchTile], shotCount: Int, shotIndex: Int,
+    connection: MonitorConnection, tiles: [WatchTile], shotCount: Int, shotIndex: Int,
     club: String, accent: Color = WatchTheme.defaultAccent, battery: Int? = nil,
     ballReady: Bool = false, tags: [WatchTag] = [], shotTags: Set<Int> = [],
     shotId: Int = 0, sentAt: Date = Date()

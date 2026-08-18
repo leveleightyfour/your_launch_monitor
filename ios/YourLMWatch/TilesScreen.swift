@@ -245,10 +245,14 @@ private struct LinkFooter: View {
     }
   }
 
+  /// Only the phone link is something a tap can mend, so only it says "tap".
+  /// The monitor's state is reported, not offered as an action — no amount of
+  /// refreshing from the wrist will connect a launch monitor that is switched
+  /// off, and inviting the golfer to try is worse than saying nothing.
   private var message: String? {
     if store.isRequesting { return "SYNCING…" }
     if !store.phoneReachable { return "PHONE OUT OF RANGE · TAP TO RETRY" }
-    if !payload.connection.isLive { return "\(payload.connection.label) · TAP TO REFRESH" }
+    if !payload.connection.isLive { return payload.connection.label }
     return nil
   }
 }

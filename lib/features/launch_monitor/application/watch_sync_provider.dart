@@ -76,11 +76,11 @@ final watchTilePayloadProvider = Provider<WatchTilePayload>((ref) {
   );
 });
 
-WatchConnection _connectionOf(LaunchMonitorStatus status) => switch (status) {
-  LaunchMonitorStatus.disconnected => WatchConnection.disconnected,
-  LaunchMonitorStatus.scanning => WatchConnection.scanning,
-  LaunchMonitorStatus.connecting => WatchConnection.connecting,
-  LaunchMonitorStatus.connected => WatchConnection.connected,
+MonitorConnection _connectionOf(LaunchMonitorStatus status) => switch (status) {
+  LaunchMonitorStatus.disconnected => MonitorConnection.disconnected,
+  LaunchMonitorStatus.scanning => MonitorConnection.scanning,
+  LaunchMonitorStatus.connecting => MonitorConnection.connecting,
+  LaunchMonitorStatus.connected => MonitorConnection.connected,
 };
 
 /// Which club produced the shot on screen. Falls back to the club being hit
