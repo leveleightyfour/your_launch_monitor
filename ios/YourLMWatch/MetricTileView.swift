@@ -32,22 +32,28 @@ struct MetricTileView: View {
         value
       }
 
-      if !tile.unit.isEmpty {
-        Text(tile.unit)
-          .font(WatchTheme.unit(expanded ? 11 : 8))
-          .foregroundStyle(WatchTheme.textDimmed)
-      }
+      // The unit line is laid out even for a metric that hasn't got one —
+      // smash factor is the only one today. Dropping the row shortens the
+      // whole card, and one card a line shorter than its neighbours reads
+      // as broken rather than as tidy. A single space occupies exactly one
+      // line of the style. The phone's tiles keep this same rule, and for
+      // the same reason.
+      Text(tile.unit.isEmpty ? " " : tile.unit)
+        .font(WatchTheme.unit(expanded ? 11 : 8))
+        .foregroundStyle(WatchTheme.textDimmed)
 
-      if !tile.footer.isEmpty {
-        Text(tile.footer)
-          .font(WatchTheme.footer(expanded ? 10 : 8))
-          .foregroundStyle(WatchTheme.textMuted)
-          .lineLimit(1)
-          .minimumScaleFactor(0.6)
-          .padding(.horizontal, 6)
-          .padding(.vertical, 2)
-          .background(WatchTheme.surface, in: Capsule())
-      }
+      // Likewise the average pill: hidden rather than removed, so a metric
+      // with nothing to compare against yet still stands as tall as the
+      // rest of the grid.
+      Text(tile.footer.isEmpty ? " " : tile.footer)
+        .font(WatchTheme.footer(expanded ? 10 : 8))
+        .foregroundStyle(WatchTheme.textMuted)
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(WatchTheme.surface, in: Capsule())
+        .opacity(tile.footer.isEmpty ? 0 : 1)
     }
     .frame(maxWidth: .infinity)
     .padding(.horizontal, 5)
