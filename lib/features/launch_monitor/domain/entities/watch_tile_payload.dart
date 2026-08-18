@@ -72,6 +72,20 @@ class WatchTile {
   };
 }
 
+/// One of the golfer's tags, as the watch needs it: something to show and
+/// something to send back when they tap it.
+class WatchTag {
+  final int id;
+  final String name;
+
+  /// `#RRGGBB`, so the watch can draw the same dot the phone does.
+  final String color;
+
+  const WatchTag({required this.id, required this.name, required this.color});
+
+  Map<String, Object> toMap() => {'id': id, 'name': name, 'color': color};
+}
+
 /// Device connection as the watch understands it. Mirrors
 /// `LaunchMonitorStatus`, kept as its own type so the watch protocol doesn't
 /// move every time the BLE layer gains a state.
@@ -103,6 +117,18 @@ class WatchTilePayload {
   /// Whether the Omni currently sees a ball in a hittable position.
   final bool ballReady;
 
+  /// Every tag the golfer has, so the watch can offer the same list the
+  /// phone's tag picker does.
+  final List<WatchTag> tags;
+
+  /// The tags already on the shot being shown.
+  final List<int> shotTags;
+
+  /// Database id of that shot — the handle the watch sends back when it
+  /// tags something. Zero when there is no shot, or when the shot hasn't
+  /// been persisted yet and so cannot be tagged from the wrist.
+  final int shotId;
+
   /// Milliseconds since epoch — lets the watch show how stale the data is
   /// after the phone goes out of range.
   final int sentAtMs;
@@ -116,6 +142,9 @@ class WatchTilePayload {
     required this.accent,
     required this.ballReady,
     required this.sentAtMs,
+    this.tags = const [],
+    this.shotTags = const [],
+    this.shotId = 0,
     this.battery,
   });
 
@@ -128,6 +157,9 @@ class WatchTilePayload {
     'accent': accent,
     'ballReady': ballReady,
     'sentAtMs': sentAtMs,
+    'tags': [for (final t in tags) t.toMap()],
+    'shotTags': shotTags,
+    'shotId': shotId,
     if (battery != null) 'battery': battery!,
   };
 
@@ -137,7 +169,9 @@ class WatchTilePayload {
   String get signature {
     final b = StringBuffer()
       ..write(connection.name)
-      ..write('|$shotCount|$shotIndex|$club|$accent|$battery|$ballReady');
+      ..write('|$shotCount|$shotIndex|$club|$accent|$battery|$ballReady')
+      ..write('|$shotId|${shotTags.join(',')}')
+      ..write('|${tags.map((t) => '${t.id}:${t.name}:${t.color}').join(',')}');
     for (final t in tiles) {
       b.write(
         '|${t.id};${t.value};${t.suffix};${t.unit};'

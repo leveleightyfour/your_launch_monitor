@@ -9,6 +9,7 @@ import SwiftUI
 struct TilesScreen: View {
   @EnvironmentObject private var store: WatchLinkStore
   @State private var focus: FocusSelection?
+  @State private var taggingShot: Bool = false
 
   var body: some View {
     ZStack {
@@ -19,6 +20,12 @@ struct TilesScreen: View {
     .fullScreenCover(item: $focus) { selection in
       FocusPager(startID: selection.id)
         .environmentObject(store)
+    }
+    .sheet(isPresented: $taggingShot) {
+      if let payload = store.payload {
+        TagSheet(payload: payload)
+          .environmentObject(store)
+      }
     }
   }
 
@@ -48,6 +55,10 @@ struct TilesScreen: View {
       ScrollView {
         VStack(spacing: 6) {
           SessionHeader(payload: payload)
+
+          if payload.hasShot {
+            TagBar(payload: payload) { taggingShot = true }
+          }
 
           LazyVGrid(
             columns: Array(
@@ -135,6 +146,64 @@ private struct SessionHeader: View {
     case .connecting, .scanning: return WatchTheme.warning
     case .disconnected: return WatchTheme.textDimmed
     }
+  }
+}
+
+// MARK: - Tags
+
+/// What the shot on screen is tagged with, and the way to change it.
+///
+/// It earns its line of the screen by being a read-out as well as a button:
+/// between swings the question is usually "did I tag that one" rather than
+/// "let me tag it", and the answer is visible without opening anything.
+private struct TagBar: View {
+  @EnvironmentObject private var store: WatchLinkStore
+  let payload: WatchTilePayload
+  let onTap: () -> Void
+
+  var body: some View {
+    let selectedIds = store.tags(for: payload)
+    let selected = payload.tags.filter { selectedIds.contains($0.id) }
+
+    Button(action: onTap) {
+      HStack(spacing: 5) {
+        if selected.isEmpty {
+          Image(systemName: "tag")
+            .font(.system(size: 9))
+            .foregroundStyle(WatchTheme.textDimmed)
+          Text("TAG SHOT")
+            .font(WatchTheme.label(9))
+            .tracking(1)
+            .foregroundStyle(WatchTheme.textDimmed)
+        } else {
+          ForEach(selected.prefix(3)) { tag in
+            Circle()
+              .fill(tag.color)
+              .frame(width: 7, height: 7)
+          }
+          Text(label(for: selected))
+            .font(WatchTheme.label(9))
+            .tracking(0.8)
+            .foregroundStyle(WatchTheme.textMuted)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+        }
+        Spacer(minLength: 2)
+      }
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      .frame(maxWidth: .infinity)
+      .background(WatchTheme.surface, in: Capsule())
+    }
+    .buttonStyle(.plain)
+  }
+
+  /// The first tag by name, and a count for the rest — a 45mm screen has no
+  /// room for a list, and the dots already say how many there are.
+  private func label(for selected: [WatchTag]) -> String {
+    guard let first = selected.first else { return "" }
+    if selected.count == 1 { return first.name.uppercased() }
+    return "\(first.name.uppercased()) +\(selected.count - 1)"
   }
 }
 

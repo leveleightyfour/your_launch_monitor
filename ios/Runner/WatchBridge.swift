@@ -168,6 +168,28 @@ extension WatchBridge: WCSessionDelegate {
     _ session: WCSession, didReceiveMessage message: [String: Any],
     replyHandler: @escaping ([String: Any]) -> Void
   ) {
+    // A command — tagging the shot on screen, so far. Dart owns the session,
+    // so the answer has to come from there; the watch waits on this reply to
+    // know whether what it drew optimistically actually happened.
+    if message["command"] is String {
+      DispatchQueue.main.async { [weak self] in
+        guard let channel = self?.channel else {
+          replyHandler(["ok": false, "reason": "The phone app isn't running."])
+          return
+        }
+        channel.invokeMethod("command", arguments: message) { result in
+          if let reply = result as? [String: Any] {
+            replyHandler(reply)
+          } else {
+            // FlutterError, FlutterMethodNotImplemented, or a Dart side too
+            // old to know this command. All the same thing to the watch.
+            replyHandler(["ok": false, "reason": "The phone couldn't do that."])
+          }
+        }
+      }
+      return
+    }
+
     guard message["request"] as? String == "sync" else {
       replyHandler([:])
       return
@@ -181,6 +203,10 @@ extension WatchBridge: WCSessionDelegate {
   }
 
   func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+    if message["command"] is String {
+      notifyDart("command", message)
+      return
+    }
     guard message["request"] as? String == "sync" else { return }
     notifyDart("requestSync", nil)
   }

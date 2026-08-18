@@ -154,6 +154,118 @@ void main() {
         isNot(payload(shotCount: 3).signature),
       );
     });
+
+    test('a tag applied on the phone reaches the watch', () {
+      const tagged = WatchTilePayload(
+        connection: WatchConnection.connected,
+        tiles: [],
+        shotCount: 1,
+        shotIndex: 1,
+        club: '7i',
+        accent: '#2dd4b0',
+        ballReady: false,
+        sentAtMs: 0,
+        tags: [
+          WatchTag(id: 4, name: 'Draw', color: '#22c55e'),
+          WatchTag(id: 7, name: 'Thin', color: '#f97316'),
+        ],
+        shotTags: [4],
+        shotId: 42,
+      );
+
+      final map = tagged.toMap();
+      expect(map['shotId'], 42);
+      expect(map['shotTags'], [4]);
+      expect(
+        (map['tags']! as List).first,
+        {'id': 4, 'name': 'Draw', 'color': '#22c55e'},
+      );
+      expect(_isPropertyList(map), isTrue);
+
+      // Tagging has to move the signature, or the watch would never be told.
+      const untagged = WatchTilePayload(
+        connection: WatchConnection.connected,
+        tiles: [],
+        shotCount: 1,
+        shotIndex: 1,
+        club: '7i',
+        accent: '#2dd4b0',
+        ballReady: false,
+        sentAtMs: 0,
+        tags: [
+          WatchTag(id: 4, name: 'Draw', color: '#22c55e'),
+          WatchTag(id: 7, name: 'Thin', color: '#f97316'),
+        ],
+        shotId: 42,
+      );
+      expect(tagged.signature, isNot(untagged.signature));
+    });
+
+    test('an unpersisted shot reports as untaggable', () {
+      const fresh = WatchTilePayload(
+        connection: WatchConnection.connected,
+        tiles: [],
+        shotCount: 1,
+        shotIndex: 1,
+        club: '7i',
+        accent: '#2dd4b0',
+        ballReady: false,
+        sentAtMs: 0,
+      );
+
+      expect(fresh.toMap()['shotId'], 0);
+    });
+  });
+
+  group('nextTagIds', () {
+    test('adds and removes without disturbing the order', () {
+      expect(nextTagIds(const [3, 1], 7, on: true), [3, 1, 7]);
+      expect(nextTagIds(const [3, 1, 7], 1, on: false), [3, 7]);
+    });
+
+    test('is idempotent, so a repeated command cannot duplicate a tag', () {
+      expect(nextTagIds(const [3], 3, on: true), [3]);
+      expect(nextTagIds(const [3], 9, on: false), [3]);
+    });
+  });
+
+  group('WatchCommand', () {
+    test('reads a toggle off the wire', () {
+      final command = WatchCommand.parse(const {
+        'command': 'toggleTag',
+        'shotId': 42,
+        'tagId': 7,
+        'on': true,
+      });
+
+      expect(command, isNotNull);
+      expect(command!.action, 'toggleTag');
+      expect(command.shotId, 42);
+      expect(command.tagId, 7);
+      expect(command.on, isTrue);
+    });
+
+    test('refuses anything that is not a command', () {
+      // It arrives from another device; nothing about its shape is assumed.
+      expect(WatchCommand.parse(null), isNull);
+      expect(WatchCommand.parse('toggleTag'), isNull);
+      expect(WatchCommand.parse(const {'shotId': 42}), isNull);
+      expect(WatchCommand.parse(const {'command': ''}), isNull);
+    });
+
+    test('missing ids read as zero rather than throwing', () {
+      final command = WatchCommand.parse(const {'command': 'toggleTag'});
+
+      expect(command!.shotId, 0);
+      expect(command.tagId, 0);
+      expect(command.on, isFalse);
+    });
+
+    test('replies carry an outcome the watch can show', () {
+      expect(WatchCommand.success()['ok'], isTrue);
+      expect(WatchCommand.failure('Gone')['ok'], isFalse);
+      expect(WatchCommand.failure('Gone')['reason'], 'Gone');
+    });
   });
 
   group('WatchLinkState', () {

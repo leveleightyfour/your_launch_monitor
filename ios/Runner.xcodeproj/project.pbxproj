@@ -7,34 +7,28 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		043CAF3692C3948BB1CB3087 /* WatchLinkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61588D678DF0885693F2A43C /* WatchLinkStore.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
+		334AECF3CCDB0C05058CCD05 /* WatchTilePayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC49BD1601B27CD598AF3F69 /* WatchTilePayload.swift */; };
+		335FD1F74BD4008AE9B97699 /* YourLMWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 18BDD81C6B3997350A7A7EE1 /* YourLMWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
+		4752D473C8CB8D834A8AD44C /* YourLMWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D27F63AED76FCA5D86B01AC /* YourLMWatchApp.swift */; };
 		5C1AE12A8DBA243DD85C9FE6 /* WatchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9B501E6E4C339A20247A86 /* WatchBridge.swift */; };
-		6BDA2AD909509F588AB7188B /* WatchTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 241812F8942344BAE07665F6 /* WatchTheme.swift */; };
-		73B30ED4717D66BDFE1F384C /* WatchLinkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09E68DA64D62CFE97CD58556 /* WatchLinkStore.swift */; };
+		65DEE5F526A80AAFA3F8CB62 /* TagSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FABAAF8B54436883BB841B0 /* TagSheet.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
-		797443F1C768A455238FE2A2 /* MetricTileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B646B50B55B8F2FE5EBAF161 /* MetricTileView.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
-		9FDD37DE9C98D6C9F5C7DB4A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D36B784F8F7B8383B1DA34B5 /* Assets.xcassets */; };
-		A96866169154ED7C8D1184C2 /* FocusPager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AC067F6962DBE895B558BCF /* FocusPager.swift */; };
-		BFCDD9F719655DCE5A1EEF1B /* YourLMWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 034CA59514337E8A19BCA964 /* YourLMWatchApp.swift */; };
-		D837EF8ED1BB1C57E19D7CEE /* YourLMWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 443D14FF90070AAA9D06C535 /* YourLMWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		F05D2A65626DE7EC3186F36D /* WatchTilePayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95FDCEC3EB01DB8581ADA1F6 /* WatchTilePayload.swift */; };
-		F0A034554B3D3532D76A97CD /* TilesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3306C0FFEAC17F6A9E2535A /* TilesScreen.swift */; };
+		9EDD02E7080AB0A3C9D5103F /* FocusPager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 645FDF2046595D1FC1348E29 /* FocusPager.swift */; };
+		AC35085CA204F44BB6A7CA0F /* WatchTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 950EB50A3AEE3EEFC502E94F /* WatchTheme.swift */; };
+		E439EA3FB328E92E6A5DEDF5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6BCA6C08844765A3E6438063 /* Assets.xcassets */; };
+		E53EEAE28DF6980487FE1C22 /* TilesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C088DEFBD9DE9D65B624CFE /* TilesScreen.swift */; };
+		E7A40FFCA37F66F0331B89C9 /* MetricTileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D897C7D4CB0E7C08B8EE6F /* MetricTileView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		13CA3A9E227B69BC62DEE72D /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 6FC5E1E11E25BE65A57960EA;
-			remoteInfo = YourLMWatch;
-		};
 		331C8085294A63A400263BE5 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
@@ -42,16 +36,23 @@
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
 		};
+		EA89C958E0F1471F80480EBF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F37250EE63165FBC2C5FB603;
+			remoteInfo = YourLMWatch;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		59702CD1CE8CC4BE13627B94 /* Embed Watch Content */ = {
+		7E8F92477AA1D3C15C276F20 /* Embed Watch Content */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
 			dstSubfolderSpec = 16;
 			files = (
-				D837EF8ED1BB1C57E19D7CEE /* YourLMWatch.app in Embed Watch Content */,
+				335FD1F74BD4008AE9B97699 /* YourLMWatch.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -69,21 +70,24 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		034CA59514337E8A19BCA964 /* YourLMWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = YourLMWatchApp.swift; sourceTree = "<group>"; };
-		09E68DA64D62CFE97CD58556 /* WatchLinkStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchLinkStore.swift; sourceTree = "<group>"; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
-		241812F8942344BAE07665F6 /* WatchTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchTheme.swift; sourceTree = "<group>"; };
+		18BDD81C6B3997350A7A7EE1 /* YourLMWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YourLMWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
-		443D14FF90070AAA9D06C535 /* YourLMWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YourLMWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		5AC067F6962DBE895B558BCF /* FocusPager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FocusPager.swift; sourceTree = "<group>"; };
+		3C088DEFBD9DE9D65B624CFE /* TilesScreen.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TilesScreen.swift; sourceTree = "<group>"; };
+		4FABAAF8B54436883BB841B0 /* TagSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TagSheet.swift; sourceTree = "<group>"; };
+		61588D678DF0885693F2A43C /* WatchLinkStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchLinkStore.swift; sourceTree = "<group>"; };
+		645FDF2046595D1FC1348E29 /* FocusPager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FocusPager.swift; sourceTree = "<group>"; };
+		6BCA6C08844765A3E6438063 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		72211030809E73E40BFCCB85 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		78E0A7A72DC9AD7400C4905E /* FlutterGeneratedPluginSwiftPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = FlutterGeneratedPluginSwiftPackage; path = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
-		95FDCEC3EB01DB8581ADA1F6 /* WatchTilePayload.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchTilePayload.swift; sourceTree = "<group>"; };
+		7D27F63AED76FCA5D86B01AC /* YourLMWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = YourLMWatchApp.swift; sourceTree = "<group>"; };
+		950EB50A3AEE3EEFC502E94F /* WatchTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchTheme.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
 		97C146EE1CF9000F007C117D /* Runner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Runner.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -91,11 +95,9 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		B646B50B55B8F2FE5EBAF161 /* MetricTileView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MetricTileView.swift; sourceTree = "<group>"; };
-		C3306C0FFEAC17F6A9E2535A /* TilesScreen.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TilesScreen.swift; sourceTree = "<group>"; };
+		C1D897C7D4CB0E7C08B8EE6F /* MetricTileView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MetricTileView.swift; sourceTree = "<group>"; };
 		CD9B501E6E4C339A20247A86 /* WatchBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchBridge.swift; sourceTree = "<group>"; };
-		D36B784F8F7B8383B1DA34B5 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		D6DE4BBA02C346E5AD970BB7 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		DC49BD1601B27CD598AF3F69 /* WatchTilePayload.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchTilePayload.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -114,7 +116,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		C8BB0CE9D8963147CB1F7E99 /* Frameworks */ = {
+		D6940F1F68C544A28416299B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -130,23 +132,6 @@
 				331C807B294A618700263BE5 /* RunnerTests.swift */,
 			);
 			path = RunnerTests;
-			sourceTree = "<group>";
-		};
-		7E8471EB3DA3FDED8306AD08 /* YourLMWatch */ = {
-			isa = PBXGroup;
-			children = (
-				5AC067F6962DBE895B558BCF /* FocusPager.swift */,
-				B646B50B55B8F2FE5EBAF161 /* MetricTileView.swift */,
-				C3306C0FFEAC17F6A9E2535A /* TilesScreen.swift */,
-				09E68DA64D62CFE97CD58556 /* WatchLinkStore.swift */,
-				241812F8942344BAE07665F6 /* WatchTheme.swift */,
-				95FDCEC3EB01DB8581ADA1F6 /* WatchTilePayload.swift */,
-				034CA59514337E8A19BCA964 /* YourLMWatchApp.swift */,
-				D36B784F8F7B8383B1DA34B5 /* Assets.xcassets */,
-				D6DE4BBA02C346E5AD970BB7 /* Info.plist */,
-			);
-			name = YourLMWatch;
-			path = YourLMWatch;
 			sourceTree = "<group>";
 		};
 		9740EEB11CF90186004384FC /* Flutter */ = {
@@ -168,7 +153,7 @@
 				97C146F01CF9000F007C117D /* Runner */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
-				7E8471EB3DA3FDED8306AD08 /* YourLMWatch */,
+				A0B765E8F1DBD2367C7EF016 /* YourLMWatch */,
 			);
 			sourceTree = "<group>";
 		};
@@ -177,7 +162,7 @@
 			children = (
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
-				443D14FF90070AAA9D06C535 /* YourLMWatch.app */,
+				18BDD81C6B3997350A7A7EE1 /* YourLMWatch.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -196,6 +181,24 @@
 				CD9B501E6E4C339A20247A86 /* WatchBridge.swift */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		A0B765E8F1DBD2367C7EF016 /* YourLMWatch */ = {
+			isa = PBXGroup;
+			children = (
+				645FDF2046595D1FC1348E29 /* FocusPager.swift */,
+				C1D897C7D4CB0E7C08B8EE6F /* MetricTileView.swift */,
+				4FABAAF8B54436883BB841B0 /* TagSheet.swift */,
+				3C088DEFBD9DE9D65B624CFE /* TilesScreen.swift */,
+				61588D678DF0885693F2A43C /* WatchLinkStore.swift */,
+				950EB50A3AEE3EEFC502E94F /* WatchTheme.swift */,
+				DC49BD1601B27CD598AF3F69 /* WatchTilePayload.swift */,
+				7D27F63AED76FCA5D86B01AC /* YourLMWatchApp.swift */,
+				6BCA6C08844765A3E6438063 /* Assets.xcassets */,
+				72211030809E73E40BFCCB85 /* Info.plist */,
+			);
+			name = YourLMWatch;
+			path = YourLMWatch;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -219,23 +222,6 @@
 			productReference = 331C8081294A63A400263BE5 /* RunnerTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		6FC5E1E11E25BE65A57960EA /* YourLMWatch */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 9785A690E5201BA85572663C /* Build configuration list for PBXNativeTarget "YourLMWatch" */;
-			buildPhases = (
-				6C849369D96C740C5A32F1DC /* Sources */,
-				C8BB0CE9D8963147CB1F7E99 /* Frameworks */,
-				711BADE80F9CD44652C11F2F /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = YourLMWatch;
-			productName = YourLMWatch;
-			productReference = 443D14FF90070AAA9D06C535 /* YourLMWatch.app */;
-			productType = "com.apple.product-type.application";
-		};
 		97C146ED1CF9000F007C117D /* Runner */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
@@ -245,13 +231,13 @@
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
-				59702CD1CE8CC4BE13627B94 /* Embed Watch Content */,
+				7E8F92477AA1D3C15C276F20 /* Embed Watch Content */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				860B98E63470578EAA49CC78 /* PBXTargetDependency */,
+				A692A2705AEE38BFB334817D /* PBXTargetDependency */,
 			);
 			name = Runner;
 			packageProductDependencies = (
@@ -259,6 +245,23 @@
 			);
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
+			productType = "com.apple.product-type.application";
+		};
+		F37250EE63165FBC2C5FB603 /* YourLMWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C053233726A8A9E2131461AD /* Build configuration list for PBXNativeTarget "YourLMWatch" */;
+			buildPhases = (
+				F835E927150D6A28F262B9E2 /* Sources */,
+				D6940F1F68C544A28416299B /* Frameworks */,
+				4A4BAE7E3C231E885677045F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = YourLMWatch;
+			productName = YourLMWatch;
+			productReference = 18BDD81C6B3997350A7A7EE1 /* YourLMWatch.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -299,7 +302,7 @@
 			targets = (
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
-				6FC5E1E11E25BE65A57960EA /* YourLMWatch */,
+				F37250EE63165FBC2C5FB603 /* YourLMWatch */,
 			);
 		};
 /* End PBXProject section */
@@ -312,11 +315,11 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		711BADE80F9CD44652C11F2F /* Resources */ = {
+		4A4BAE7E3C231E885677045F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				9FDD37DE9C98D6C9F5C7DB4A /* Assets.xcassets in Resources */,
+				E439EA3FB328E92E6A5DEDF5 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -376,20 +379,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		6C849369D96C740C5A32F1DC /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				A96866169154ED7C8D1184C2 /* FocusPager.swift in Sources */,
-				797443F1C768A455238FE2A2 /* MetricTileView.swift in Sources */,
-				F0A034554B3D3532D76A97CD /* TilesScreen.swift in Sources */,
-				73B30ED4717D66BDFE1F384C /* WatchLinkStore.swift in Sources */,
-				6BDA2AD909509F588AB7188B /* WatchTheme.swift in Sources */,
-				F05D2A65626DE7EC3186F36D /* WatchTilePayload.swift in Sources */,
-				BFCDD9F719655DCE5A1EEF1B /* YourLMWatchApp.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		97C146EA1CF9000F007C117D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -397,6 +386,21 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				5C1AE12A8DBA243DD85C9FE6 /* WatchBridge.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F835E927150D6A28F262B9E2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9EDD02E7080AB0A3C9D5103F /* FocusPager.swift in Sources */,
+				E7A40FFCA37F66F0331B89C9 /* MetricTileView.swift in Sources */,
+				65DEE5F526A80AAFA3F8CB62 /* TagSheet.swift in Sources */,
+				E53EEAE28DF6980487FE1C22 /* TilesScreen.swift in Sources */,
+				043CAF3692C3948BB1CB3087 /* WatchLinkStore.swift in Sources */,
+				AC35085CA204F44BB6A7CA0F /* WatchTheme.swift in Sources */,
+				334AECF3CCDB0C05058CCD05 /* WatchTilePayload.swift in Sources */,
+				4752D473C8CB8D834A8AD44C /* YourLMWatchApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -408,11 +412,11 @@
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
 		};
-		860B98E63470578EAA49CC78 /* PBXTargetDependency */ = {
+		A692A2705AEE38BFB334817D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = YourLMWatch;
-			target = 6FC5E1E11E25BE65A57960EA /* YourLMWatch */;
-			targetProxy = 13CA3A9E227B69BC62DEE72D /* PBXContainerItemProxy */;
+			target = F37250EE63165FBC2C5FB603 /* YourLMWatch */;
+			targetProxy = EA89C958E0F1471F80480EBF /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -436,64 +440,6 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
-		15C935D36AFC0F7B86D8A97E /* Debug */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = VGUWC2L7S2;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = YourLMWatch/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.leveleightyfour.YourLaunchMonitor.watchkitapp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
-				SUPPORTED_PLATFORMS = "watchos watchsimulator";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 9.0;
-			};
-			name = Debug;
-		};
-		1709DE0E6D63A00BA25D9DD2 /* Release */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = VGUWC2L7S2;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = YourLMWatch/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.leveleightyfour.YourLaunchMonitor.watchkitapp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
-				SUPPORTED_PLATFORMS = "watchos watchsimulator";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				VALIDATE_PRODUCT = YES;
-				WATCHOS_DEPLOYMENT_TARGET = 9.0;
-			};
-			name = Release;
-		};
 		249021D3217E4FDB00AE95B9 /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -573,6 +519,35 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Profile;
+		};
+		2D0849816D9D7D38EAB1E782 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = VGUWC2L7S2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = YourLMWatch/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.leveleightyfour.YourLaunchMonitor.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+			};
+			name = Debug;
 		};
 		331C8088294A63A400263BE5 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -789,7 +764,7 @@
 			};
 			name = Release;
 		};
-		A03AD52FFFBA1F2B71FC7D9B /* Profile */ = {
+		D467F5AE796685DBC91A96B7 /* Profile */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
@@ -818,6 +793,35 @@
 			};
 			name = Profile;
 		};
+		EAD1AF8747003B6F48422EC4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = VGUWC2L7S2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = YourLMWatch/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.leveleightyfour.YourLaunchMonitor.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -827,16 +831,6 @@
 				331C8088294A63A400263BE5 /* Debug */,
 				331C8089294A63A400263BE5 /* Release */,
 				331C808A294A63A400263BE5 /* Profile */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		9785A690E5201BA85572663C /* Build configuration list for PBXNativeTarget "YourLMWatch" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				1709DE0E6D63A00BA25D9DD2 /* Release */,
-				15C935D36AFC0F7B86D8A97E /* Debug */,
-				A03AD52FFFBA1F2B71FC7D9B /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -857,6 +851,16 @@
 				97C147061CF9000F007C117D /* Debug */,
 				97C147071CF9000F007C117D /* Release */,
 				249021D4217E4FDB00AE95B9 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C053233726A8A9E2131461AD /* Build configuration list for PBXNativeTarget "YourLMWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EAD1AF8747003B6F48422EC4 /* Release */,
+				2D0849816D9D7D38EAB1E782 /* Debug */,
+				D467F5AE796685DBC91A96B7 /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

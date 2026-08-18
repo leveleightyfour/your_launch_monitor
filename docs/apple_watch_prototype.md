@@ -13,12 +13,12 @@ from ever disagreeing about what a shot carried.
 
 | Layer | File | Responsibility |
 |---|---|---|
-| Domain | `lib/features/launch_monitor/domain/entities/watch_tile_payload.dart` | `WatchTilePayload`, `WatchTile` — the wire format |
+| Domain | `lib/features/launch_monitor/domain/entities/watch_tile_payload.dart` | `WatchTilePayload`, `WatchTile`, `WatchTag` — the wire format |
 | Application | `lib/features/launch_monitor/application/tile_formatting.dart` | `metricValue` / `tileUnit` / `splitValueSuffix` — the formatters the phone's tiles use, moved here so the watch can share them |
 | Application | `lib/features/launch_monitor/application/watch_sync_provider.dart` | Builds the payload from session state; throttles and pushes it |
-| Data | `lib/features/launch_monitor/data/watch_connectivity_channel.dart` | The `omni_sniffer/watch` method channel, and `WatchLinkState` |
+| Data | `lib/features/launch_monitor/data/watch_connectivity_channel.dart` | The `omni_sniffer/watch` method channel, `WatchLinkState`, `WatchCommand` |
 | iOS | `ios/Runner/WatchBridge.swift` | `WCSession` on the phone side |
-| watchOS | `ios/YourLMWatch/` | The watch app: SwiftUI tiles, `WatchLinkStore` |
+| watchOS | `ios/YourLMWatch/` | The watch app: SwiftUI tiles, tag sheet, `WatchLinkStore` |
 | Project | `ios/tool/add_watch_target.rb` | Recreates the watch target in `Runner.xcodeproj` |
 | Tests | `test/features/launch_monitor/application/watch_payload_test.dart` | Tile mapping, wire format, link state |
 
@@ -82,7 +82,41 @@ Only property-list types cross the boundary — WatchConnectivity rejects
 anything else, `null` included, so absent values (an unknown battery) are
 omitted rather than sent empty.
 
-## 3. Building and running it
+## 3. Tagging a shot from the wrist
+
+The one thing that travels watch → phone. A bar under the header shows what
+the shot on screen is tagged with — which is usually the question between
+swings, rather than wanting to tag something — and opens the tag list when
+tapped.
+
+```
+watch: toggleTag(shotId, tagId, on)  ──►  WatchBridge  ──►  Dart WatchSync
+                                                                   │
+       optimistic tag drawn immediately                  updateShotTags(...)
+                     ▲                                             │
+                     └────── reply {ok} ◄── fresh payload ◄────────┘
+```
+
+Three things make it behave under real conditions:
+
+- **Tagging is by database id, not by "the current shot."** A shot lands, the
+  golfer tags it a moment later, and by then the phone's selection may have
+  moved on. The id puts the tag on the shot they were looking at. A shot the
+  phone hasn't persisted yet reports `shotId: 0` and the watch treats it as
+  untaggable rather than failing after the tap.
+- **The tap draws immediately** and is corrected only if the phone refuses.
+  Optimistic state is keyed by shot id, so it can never bleed onto the next
+  shot; the phone's follow-up payload replaces it.
+- **The phone is the authority.** It re-checks that the shot is still in the
+  session and the tag still exists, then goes through the same
+  `updateShotTags` path as the phone's own tag picker, so the database and
+  every other surface see one code path. A refusal comes back as a sentence
+  the watch can show.
+
+Commands are a closed set with a named action — the wrist is a remote control
+for the phone's session, not a second author of it.
+
+## 4. Building and running it
 
 The watch target lives in `ios/Runner.xcodeproj` as `YourLMWatch`
 (`com.leveleightyfour.YourLaunchMonitor.watchkitapp`), embedded into
@@ -101,13 +135,14 @@ regeneration, run it again.
 
 **Prototype limits, deliberately left open:**
 
-- The watch app icon is an empty slot. It runs and installs; the App Store
-  will want a 1024px icon in `ios/YourLMWatch/Assets.xcassets/AppIcon.appiconset`.
+- The watch app icon is the iPhone app's 1024px artwork. watchOS masks icons
+  to a circle; this one is centred with clear margins so nothing clips, but
+  the device reads small at 45mm and would carry further as a tighter crop.
 - Signing is Automatic on this target while the iPhone target is Manual. A
   store build needs a provisioning profile for the watch bundle id; without
   one, archiving fails on the watch target rather than the app.
-- Nothing flows watch → phone beyond the sync request: no arming the device,
-  no changing club, no tagging a shot from the wrist.
+- Tagging is the only command the watch can send: no arming the device, no
+  changing club, no starting or finishing a session.
 - No complications, no always-on refresh, no background delivery beyond what
   application context gives for free.
 

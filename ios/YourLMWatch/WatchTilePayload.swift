@@ -73,6 +73,29 @@ struct WatchTile: Identifiable, Equatable {
   }
 }
 
+/// One of the golfer's tags: a coloured dot and a name, plus the id the
+/// watch sends back when it's tapped.
+struct WatchTag: Identifiable, Equatable {
+  let id: Int
+  let name: String
+  let color: Color
+
+  init?(dictionary: [String: Any]) {
+    guard let id = (dictionary["id"] as? NSNumber)?.intValue,
+      let name = dictionary["name"] as? String
+    else { return nil }
+    self.id = id
+    self.name = name
+    self.color = Color(hex: dictionary["color"] as? String ?? "") ?? WatchTheme.textMuted
+  }
+
+  init(id: Int, name: String, color: Color) {
+    self.id = id
+    self.name = name
+    self.color = color
+  }
+}
+
 enum WatchConnection: String {
   case disconnected, scanning, connecting, connected
 
@@ -97,6 +120,15 @@ struct WatchTilePayload: Equatable {
   let accent: Color
   let battery: Int?
   let ballReady: Bool
+
+  /// Every tag the golfer has, and the ones already on the shot on screen.
+  let tags: [WatchTag]
+  let shotTags: Set<Int>
+
+  /// Database id of the shot being shown. Zero means there is nothing the
+  /// watch could tag — no shot yet, or one the phone hasn't persisted.
+  let shotId: Int
+
   let sentAt: Date
 
   init?(dictionary: [String: Any]) {
@@ -114,6 +146,9 @@ struct WatchTilePayload: Equatable {
     self.accent = Color(hex: dictionary["accent"] as? String ?? "") ?? WatchTheme.defaultAccent
     self.battery = (dictionary["battery"] as? NSNumber)?.intValue
     self.ballReady = (dictionary["ballReady"] as? NSNumber)?.boolValue ?? false
+    self.tags = (dictionary["tags"] as? [[String: Any]] ?? []).compactMap(WatchTag.init(dictionary:))
+    self.shotTags = Set((dictionary["shotTags"] as? [NSNumber] ?? []).map { $0.intValue })
+    self.shotId = (dictionary["shotId"] as? NSNumber)?.intValue ?? 0
     let ms =
       (dictionary["sentAtMs"] as? NSNumber)?.doubleValue
       ?? Date().timeIntervalSince1970 * 1000
@@ -123,7 +158,8 @@ struct WatchTilePayload: Equatable {
   init(
     connection: WatchConnection, tiles: [WatchTile], shotCount: Int, shotIndex: Int,
     club: String, accent: Color = WatchTheme.defaultAccent, battery: Int? = nil,
-    ballReady: Bool = false, sentAt: Date = Date()
+    ballReady: Bool = false, tags: [WatchTag] = [], shotTags: Set<Int> = [],
+    shotId: Int = 0, sentAt: Date = Date()
   ) {
     self.connection = connection
     self.tiles = tiles
@@ -133,8 +169,15 @@ struct WatchTilePayload: Equatable {
     self.accent = accent
     self.battery = battery
     self.ballReady = ballReady
+    self.tags = tags
+    self.shotTags = shotTags
+    self.shotId = shotId
     self.sentAt = sentAt
   }
 
   var hasShot: Bool { shotIndex > 0 }
+
+  /// Whether the shot on screen can be tagged from here: it exists on the
+  /// phone, and there are tags to put on it.
+  var canTag: Bool { shotId > 0 && !tags.isEmpty }
 }

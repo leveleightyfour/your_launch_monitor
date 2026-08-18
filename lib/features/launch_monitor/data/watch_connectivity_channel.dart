@@ -96,6 +96,11 @@ class WatchConnectivityChannel {
   /// Reachability changed underneath us.
   ValueChanged<WatchLinkState>? onStateChanged;
 
+  /// The watch asked the phone to *do* something — tag the shot on screen,
+  /// so far. The returned map is handed straight back to the watch as the
+  /// reply to its message, so it must be property-list safe.
+  Future<Map<String, Object>> Function(WatchCommand command)? onCommand;
+
   static bool get isSupported => !kIsWeb && Platform.isIOS;
 
   /// Ships [payload] to the watch. Returns the link state as it was at the
@@ -136,6 +141,16 @@ class WatchConnectivityChannel {
         if (args is Map<Object?, Object?>) {
           onStateChanged?.call(WatchLinkState.fromMap(args));
         }
+      case 'command':
+        final command = WatchCommand.parse(call.arguments);
+        if (command == null) {
+          return WatchCommand.failure('That command was malformed.');
+        }
+        final handler = onCommand;
+        if (handler == null) {
+          return WatchCommand.failure('The phone is not ready for that yet.');
+        }
+        return handler(command);
     }
     return null;
   }
@@ -143,8 +158,61 @@ class WatchConnectivityChannel {
   void dispose() {
     onSyncRequested = null;
     onStateChanged = null;
+    onCommand = null;
     if (isSupported) {
       _channel.setMethodCallHandler(null);
     }
   }
+}
+
+
+/// Something the watch asked the phone to do.
+///
+/// Commands are deliberately a closed set with a named action rather than
+/// anything the watch can dream up: the wrist is a remote control for the
+/// phone's session, not a second author of it.
+@immutable
+class WatchCommand {
+  /// What to do. `toggleTag` is the only action so far.
+  final String action;
+
+  /// Database id of the shot the command applies to.
+  final int shotId;
+
+  /// Tag being toggled, for `toggleTag`.
+  final int tagId;
+
+  /// Whether the tag should end up on (true) or off (false).
+  final bool on;
+
+  const WatchCommand({
+    required this.action,
+    required this.shotId,
+    required this.tagId,
+    required this.on,
+  });
+
+  /// Reads a command off the wire, or null if it isn't one. Everything here
+  /// arrives from another device, so nothing is assumed about its shape.
+  static WatchCommand? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final action = raw['command'];
+    if (action is! String || action.isEmpty) return null;
+    final shotId = raw['shotId'];
+    final tagId = raw['tagId'];
+    return WatchCommand(
+      action: action,
+      shotId: shotId is int ? shotId : 0,
+      tagId: tagId is int ? tagId : 0,
+      on: raw['on'] == true,
+    );
+  }
+
+  /// The reply shape the watch expects: an outcome it can show.
+  static Map<String, Object> success() => const {'ok': true};
+
+  static Map<String, Object> failure(String reason) => {
+    'ok': false,
+    'reason': reason,
+  };
 }

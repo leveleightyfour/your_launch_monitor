@@ -6,11 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/providers.dart';
+import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/tile_formatting.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/watch_connectivity_channel.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/tag.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/watch_tile_payload.dart';
 import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
@@ -36,6 +38,7 @@ final watchTilePayloadProvider = Provider<WatchTilePayload>((ref) {
   final clubs = ref.watch(clubsProvider);
   final activeClub = ref.watch(activeClubProvider);
   final selectedIdx = ref.watch(selectedShotIndexProvider);
+  final tags = ref.watch(tagsProvider).value ?? const <Tag>[];
 
   // Same peer set the tiles average over: everything in the session, or just
   // the filtered club when the golfer has narrowed the view.
@@ -59,6 +62,15 @@ final watchTilePayloadProvider = Provider<WatchTilePayload>((ref) {
     accent: _hex(accent),
     battery: battery,
     ballReady: ballReady,
+    tags: [
+      for (final t in tags)
+        WatchTag(id: t.id, name: t.name, color: _hex(t.color)),
+    ],
+    shotTags: shot?.tagIds ?? const [],
+    // A shot that hasn't reached the database yet has no handle the watch
+    // could send back, so it reports as untaggable rather than as taggable
+    // and then failing.
+    shotId: shot?.dbId ?? 0,
     sentAtMs: DateTime.now().millisecondsSinceEpoch,
   );
 });
@@ -125,6 +137,19 @@ WatchTile watchTileFor(
   );
 }
 
+/// [current] with [tagId] added or removed. Order is preserved so the phone's
+/// tag chips don't reshuffle when the watch touches them, and a repeated
+/// command is a no-op rather than a duplicate.
+List<int> nextTagIds(List<int> current, int tagId, {required bool on}) {
+  if (on) {
+    return current.contains(tagId) ? current : [...current, tagId];
+  }
+  return [
+    for (final id in current)
+      if (id != tagId) id,
+  ];
+}
+
 String _hex(Color c) =>
     '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
 
@@ -162,6 +187,7 @@ class WatchSync extends Notifier<WatchLinkState> {
     // current screen. Bypass the duplicate check: its copy may be stale even
     // though nothing changed on the phone.
     channel.onSyncRequested = () => _send(force: true);
+    channel.onCommand = _handleCommand;
     channel.onStateChanged = (link) {
       state = link;
       // A watch that has only now become reachable never saw the payloads
@@ -183,6 +209,55 @@ class WatchSync extends Notifier<WatchLinkState> {
 
     unawaited(_refreshLink());
     return WatchLinkState.unsupported;
+  }
+
+  /// Runs a command the watch sent. The reply travels back to the wrist, so
+  /// every outcome — including refusal — has to be something worth reading
+  /// on a 45mm screen.
+  Future<Map<String, Object>> _handleCommand(WatchCommand command) async {
+    switch (command.action) {
+      case 'toggleTag':
+        return _toggleTag(command);
+      default:
+        return WatchCommand.failure('The phone does not know that command.');
+    }
+  }
+
+  /// Adds or removes one tag on one shot, by database id.
+  ///
+  /// The id is what makes this safe: a shot arrives on the watch, the golfer
+  /// tags it a moment later, and by then the selection on the phone may have
+  /// moved on. Tagging by identity puts the tag on the shot they were
+  /// looking at, never on whatever is selected now.
+  Future<Map<String, Object>> _toggleTag(WatchCommand command) async {
+    if (command.shotId <= 0 || command.tagId <= 0) {
+      return WatchCommand.failure('That shot cannot be tagged.');
+    }
+
+    final shots = ref.read(launchMonitorProvider).shots;
+    final index = shots.indexWhere((s) => s.dbId == command.shotId);
+    if (index < 0) {
+      return WatchCommand.failure('That shot is no longer in the session.');
+    }
+
+    final tags = ref.read(tagsProvider).value ?? const <Tag>[];
+    if (!tags.any((t) => t.id == command.tagId)) {
+      return WatchCommand.failure('That tag no longer exists.');
+    }
+
+    final next = nextTagIds(
+      shots[index].tagIds,
+      command.tagId,
+      on: command.on,
+    );
+    await ref
+        .read(launchMonitorProvider.notifier)
+        .updateShotTags(index, next);
+
+    // The watch showed the change optimistically the moment it was tapped;
+    // this is what makes it true there as well as here.
+    await _send(force: true);
+    return WatchCommand.success();
   }
 
   Future<void> _refreshLink() async {
