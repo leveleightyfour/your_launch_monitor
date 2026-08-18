@@ -128,6 +128,17 @@ scheme and a paired watch or watch simulator. Run the iPhone app alongside it â€
 the tiles only populate once the phone app is running, since that is where the
 payload comes from.
 
+One trap worth knowing about, since it bites again if the target is ever
+rebuilt by hand: the watch target takes `Generated.xcconfig` as its base
+configuration, for `FLUTTER_BUILD_NAME` and `FLUTTER_BUILD_NUMBER`, so the two
+bundles can't be submitted out of step. But `flutter run` writes
+`CONFIGURATION_BUILD_DIR` into that same file whenever it targets a CoreDevice
+â€” it points at the iPhone products directory so Xcode can find a bundle it was
+asked to launch but didn't build. Inherited by the watch target it flattens the
+platform suffix, and installs fail with "the file doesn't exist" pointing at
+`build/ios/iphoneos/YourLMWatch.app`. The target therefore restates Xcode's own
+default for that setting, which outranks the base configuration.
+
 Xcode is not required to modify the project: `ios/tool/add_watch_target.rb`
 rebuilds the target from scratch and is safe to re-run (`gem install
 xcodeproj` first). If the target is ever lost to a merge or a Flutter

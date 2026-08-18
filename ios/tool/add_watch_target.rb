@@ -116,6 +116,16 @@ watch.build_configurations.each do |config|
     'ASSETCATALOG_COMPILER_APPICON_NAME' => 'AppIcon',
     'ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME' => 'AccentColor',
     'CLANG_ENABLE_MODULES' => 'YES',
+    # Xcode's own default, restated because the base configuration above
+    # cannot be trusted to leave it alone. When `flutter run` targets a
+    # CoreDevice it writes CONFIGURATION_BUILD_DIR into Generated.xcconfig,
+    # pointing at the *iPhone* products directory, so that Xcode can find the
+    # bundle it is asked to launch but did not build. Inherited here it
+    # flattens the platform suffix, and the watch app is then looked for at
+    # build/ios/iphoneos/YourLMWatch.app, where no watchOS product will ever
+    # be. A target-level setting outranks the base configuration, so this
+    # puts the watch app back in its own platform directory.
+    'CONFIGURATION_BUILD_DIR' => '$(BUILD_DIR)/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)',
     # Automatic, unlike the iPhone target: a prototype should install on a
     # paired watch without anyone having to mint a provisioning profile first.
     'CODE_SIGN_STYLE' => 'Automatic',
