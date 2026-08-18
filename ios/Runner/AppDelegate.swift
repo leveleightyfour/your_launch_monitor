@@ -7,6 +7,7 @@ import UIKit
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var nativeCamera: NativeCameraController?
+  private let watchBridge = WatchBridge()
 
   override func application(
     _ application: UIApplication,
@@ -68,6 +69,11 @@ import UIKit
       name: "omni_sniffer/native_camera/frames",
       binaryMessenger: registrar.messenger())
     frameChannel.setStreamHandler(controller)
+
+    // The paired Apple Watch mirrors the session screen's tiles. Activated
+    // here so the watch can be handed the current screen the moment it
+    // launches, whether or not the golfer has opened a session yet.
+    watchBridge.attach(messenger: registrar.messenger())
   }
 }
 
