@@ -8,6 +8,7 @@ import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.
 import 'package:omni_sniffer/features/launch_monitor/application/providers.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/tile_formatting.dart';
+import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/log.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/watch_connectivity_channel.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
@@ -174,6 +175,13 @@ class WatchSync extends Notifier<WatchLinkState> {
   String? _lastSignature;
   bool _sending = false;
 
+  /// A payload changed while a send was in flight. Without this the newer
+  /// one is simply lost: the tag list resolves from the database moments
+  /// after the app starts, which is exactly when the first send is still in
+  /// the air, and nothing would change again until the next shot.
+  bool _resendQueued = false;
+  bool _resendForced = false;
+
   @override
   WatchLinkState build() {
     if (!WatchConnectivityChannel.isSupported) {
@@ -282,7 +290,12 @@ class WatchSync extends Notifier<WatchLinkState> {
 
   Future<void> _send({bool force = false}) async {
     final channel = _channel;
-    if (channel == null || _sending) return;
+    if (channel == null) return;
+    if (_sending) {
+      _resendQueued = true;
+      _resendForced = _resendForced || force;
+      return;
+    }
 
     final payload = ref.read(watchTilePayloadProvider);
     if (!force && payload.signature == _lastSignature) return;
@@ -294,8 +307,27 @@ class WatchSync extends Notifier<WatchLinkState> {
       if (_channel == null) return;
       _lastSignature = payload.signature;
       state = link;
+      lmLog(
+        'watch',
+        'sent ${payload.tiles.length} tiles · ${payload.tags.length} tags · '
+        'shot ${payload.shotId} (${payload.shotTags.length} tagged) · '
+        'paired=${link.paired} installed=${link.appInstalled} '
+        'reachable=${link.reachable}',
+      );
     } finally {
       _sending = false;
+      if (_resendQueued) {
+        _resendQueued = false;
+        final forced = _resendForced;
+        _resendForced = false;
+        // A forced resend is answering the watch and should not wait out the
+        // throttle; an ordinary one rides the next trailing edge.
+        if (forced) {
+          unawaited(_send(force: true));
+        } else {
+          _schedule();
+        }
+      }
     }
   }
 

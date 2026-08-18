@@ -70,8 +70,21 @@ final class WatchBridge: NSObject {
   }
 
   private func deliver(_ payload: [String: Any]) {
-    guard let session = session, session.activationState == .activated else { return }
-    guard session.isPaired, session.isWatchAppInstalled else { return }
+    // Each guard says why it stopped. A payload that silently goes nowhere is
+    // indistinguishable from one the watch ignored, and the difference is the
+    // whole diagnosis.
+    guard let session = session, session.activationState == .activated else {
+      NSLog("watch: not delivered — session not activated")
+      return
+    }
+    guard session.isPaired else {
+      NSLog("watch: not delivered — no watch paired with this iPhone")
+      return
+    }
+    guard session.isWatchAppInstalled else {
+      NSLog("watch: not delivered — the watch app is not installed")
+      return
+    }
 
     do {
       try session.updateApplicationContext(payload)
