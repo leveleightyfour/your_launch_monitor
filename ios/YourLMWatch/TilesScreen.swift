@@ -56,7 +56,11 @@ struct TilesScreen: View {
         VStack(spacing: 6) {
           SessionHeader(payload: payload)
 
-          if payload.hasShot {
+          // Gated on the shot's identity rather than on hasShot: a club
+          // filter can exclude the selected shot from the peer list, which
+          // zeroes its position in the session without making it any less
+          // taggable.
+          if payload.shotId > 0 {
             TagBar(payload: payload) { taggingShot = true }
           }
 
@@ -167,7 +171,17 @@ private struct TagBar: View {
 
     Button(action: onTap) {
       HStack(spacing: 5) {
-        if selected.isEmpty {
+        if payload.tags.isEmpty {
+          // Tags are the golfer's own; the app ships with none. Saying so
+          // here beats a bar that invites a tap and then explains itself.
+          Image(systemName: "tag.slash")
+            .font(.system(size: 9))
+            .foregroundStyle(WatchTheme.textDimmed)
+          Text("NO TAGS ON PHONE")
+            .font(WatchTheme.label(9))
+            .tracking(1)
+            .foregroundStyle(WatchTheme.textDimmed)
+        } else if selected.isEmpty {
           Image(systemName: "tag")
             .font(.system(size: 9))
             .foregroundStyle(WatchTheme.textDimmed)
