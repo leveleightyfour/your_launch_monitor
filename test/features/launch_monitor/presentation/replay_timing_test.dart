@@ -99,6 +99,8 @@ void main() {
     test('a missing or unusable flight time still yields something playable',
         () {
       expect(airborneReplaySeconds(null), 3.0);
+      expect(airborneReplaySeconds(double.nan), 3.0);
+      expect(airborneReplaySeconds(double.infinity), 3.0);
       expect(airborneReplaySeconds(0), 0.3);
       expect(airborneReplaySeconds(999), 12.0);
     });

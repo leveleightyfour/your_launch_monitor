@@ -1,5 +1,9 @@
 # Validating the Flight Model
 
+See [v2 correctness changes](flight_model_changes.md) for the current contact
+and replay implementation. Tables below describe the original fitted baseline;
+use `tool/validate_flight.dart` for independent observations before recalibration.
+
 The Omni measures the ball for a few milliseconds after impact. Everything the
 app shows about the rest of the shot — carry, apex, descent, curve, the bounce,
 the roll, the 3D flight itself — is simulated. So "is the simulation right?" is
@@ -252,10 +256,10 @@ altitude, that one constant is worth more than any amount of coefficient
 tuning.
 
 **Re-validating after a change.** Run
-`flutter test test/features/launch_monitor/domain/entities/` and expect all 120
-tests green. Layers 1–4 must not move at all — they are physics, not
-calibration. If a coefficient change breaks a sensitivity test, the change is
-wrong regardless of what it did to the reference table.
+`flutter test test/features/launch_monitor/domain/entities/`. Analytic checks
+and energy/symmetry invariants must still hold. Sensitivity assertions describe
+the tested input ranges; investigate failures rather than widening tolerances
+to hide them or treating every empirical trend as a universal physical law.
 
 ---
 
@@ -285,8 +289,8 @@ where it shouldn't be.
 - **Flat, level ground.** No slope, so no downhill release or uphill check.
 - **Spin decay is a single exponential** with a 24 s constant, independent of
   speed. Real decay depends on Reynolds number.
-- **The device's own numbers win where it has them.** A device-reported roll
-  overrides the simulated one; apex likewise. The simulation only fills gaps.
+- **Device reports remain separate.** Apex and roll reported by the device
+  are comparison values. They never distort the simulated path or its metrics.
 - **Systematic residuals.** Driver ~5% short, 5-iron ~6% long, as tabulated
   above.
 

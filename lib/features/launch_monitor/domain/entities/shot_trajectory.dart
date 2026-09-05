@@ -101,21 +101,88 @@ class TrajectoryPoint {
   /// Ball speed at this instant (mph).
   final double speed;
 
+  /// Mechanical energy per unit mass (J/kg), including rotation and height.
+  /// Null for manually constructed display-only samples.
+  final double? specificEnergy;
+
   const TrajectoryPoint({
     required this.t,
     required this.x,
     required this.y,
     required this.z,
     required this.speed,
+    this.specificEnergy,
   });
 
   Vec3 get position => Vec3(x, y, z);
 }
 
+/// The prefix of a sampled path visible at [time], ending at the interpolated
+/// ball position. Event samples need not be evenly spaced. At duplicate event
+/// times the last sample wins (the post-contact state).
+List<TrajectoryPoint> trajectoryThroughTime(
+  List<TrajectoryPoint> points,
+  double time,
+) {
+  if (points.isEmpty) return const [];
+  final end = trajectoryPointAtTime(points, time)!;
+  if (time >= points.last.t) return points;
+  final count = _samplesThroughTime(points, time);
+  return [
+    ...points.take(count),
+    if (count == 0 || points[count - 1].t != end.t) end,
+  ];
+}
+
+/// Interpolate by elapsed simulation time, never by sample index.
+TrajectoryPoint? trajectoryPointAtTime(
+  List<TrajectoryPoint> points,
+  double time,
+) {
+  if (points.isEmpty) return null;
+  if (time.isNaN || time < points.first.t) return points.first;
+  final count = _samplesThroughTime(points, time);
+  if (count >= points.length) return points.last;
+  final a = points[count - 1];
+  if (a.t == time) return a;
+  final b = points[count];
+  final fraction = (time - a.t) / (b.t - a.t);
+  double lerp(double x, double y) => x + (y - x) * fraction;
+  return TrajectoryPoint(
+    t: time,
+    x: lerp(a.x, b.x),
+    y: lerp(a.y, b.y),
+    z: lerp(a.z, b.z),
+    speed: lerp(a.speed, b.speed),
+    specificEnergy: a.specificEnergy == null || b.specificEnergy == null
+        ? null
+        : lerp(a.specificEnergy!, b.specificEnergy!),
+  );
+}
+
+int _samplesThroughTime(List<TrajectoryPoint> points, double time) {
+  var low = 0;
+  var high = points.length;
+  while (low < high) {
+    final mid = (low + high) ~/ 2;
+    if (points[mid].t <= time) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+  return low;
+}
+
+/// Why no usable flight could be produced.
+enum FlightFailure { invalidInput, timeLimit }
+
 /// Result of a shot simulation. All distances are yards, angles degrees.
 class ShotTrajectory {
   /// Airborne path, first point at impact, last point at touchdown.
   final List<TrajectoryPoint> points;
+
+  final FlightFailure? failure;
 
   /// Bounce-and-roll path, from touchdown to rest. Empty when the ball stops
   /// dead. Hops rise above `y == 0`; the roll-out runs along it.
@@ -164,6 +231,7 @@ class ShotTrajectory {
 
   const ShotTrajectory({
     required this.points,
+    this.failure,
     required this.groundPoints,
     required this.carry,
     required this.apex,
@@ -187,23 +255,27 @@ class ShotTrajectory {
   double get totalOffline => restPosition.x;
 
   /// An empty flight, used for shots with no usable launch data.
-  static const empty = ShotTrajectory(
-    points: [],
-    groundPoints: [],
-    carry: 0,
-    apex: 0,
-    apexDistance: 0,
-    flightTime: 0,
-    groundTime: 0,
-    descentAngle: 0,
-    landingSpeed: 0,
-    landingSpin: 0,
-    offline: 0,
-    curve: 0,
-    roll: 0,
-    restPosition: Vec3.zero,
-    bounces: 0,
-  );
+  static const empty = ShotTrajectory.failed(FlightFailure.invalidInput);
+
+  const ShotTrajectory.failed(FlightFailure reason)
+      : this(
+          failure: reason,
+          points: const [],
+          groundPoints: const [],
+          carry: 0,
+          apex: 0,
+          apexDistance: 0,
+          flightTime: 0,
+          groundTime: 0,
+          descentAngle: 0,
+          landingSpeed: 0,
+          landingSpin: 0,
+          offline: 0,
+          curve: 0,
+          roll: 0,
+          restPosition: Vec3.zero,
+          bounces: 0,
+        );
 
   bool get isEmpty => points.length < 2;
 }
@@ -352,6 +424,9 @@ class BallFlightModel {
   static const double _maxGroundSeconds = 15.0;
   static const double _maxFlightSeconds = 20.0;
 
+  /// Identifies the numerical model used to generate a trajectory.
+  static const version = '2';
+
   /// Fitted sea-level model used throughout the app.
   static const standard = BallFlightModel();
 
@@ -387,7 +462,9 @@ class BallFlightModel {
   /// arrivals bury into the turf and barely rebound, slow ones bounce more.
   double restitution(double impactSpeedMps, [GroundModel? turf]) {
     final v = impactSpeedMps.abs();
-    final e = 0.510 - 0.0375 * v + 0.000903 * v * v;
+    // Penner (2002), equations 5a–5b: the polynomial is only fitted up to
+    // 20 m/s. Extrapolating it makes fast impacts increasingly elastic.
+    final e = v > 20 ? 0.120 : 0.510 - 0.0375 * v + 0.000903 * v * v;
     return (e * (turf ?? ground).restitutionScale).clamp(0.03, 0.75);
   }
 
@@ -395,10 +472,6 @@ class BallFlightModel {
   ///
   /// [spinAxisDeg] follows the launch-monitor convention: positive tilts the
   /// spin axis to the right, curving the ball right (a fade for a right-hander).
-  ///
-  /// When the device reports its own roll, pass it as [measuredRollYds]: the
-  /// bounce and roll are still simulated for their shape, then scaled so the
-  /// downrange roll-out matches the measurement.
   ///
   /// [groundAt] resolves the turf under a point on the ground, in yards, and is
   /// consulted at every ground contact — so a ball can land on a green and
@@ -410,11 +483,21 @@ class BallFlightModel {
     required double launchDirectionDeg,
     required double spinRpm,
     required double spinAxisDeg,
-    double? measuredRollYds,
     GroundModel Function(double xYards, double zYards)? groundAt,
     bool Function(double xYards, double zYards)? stopsAt,
   }) {
-    if (ballSpeedMph <= 0 || launchAngleDeg <= 0) return ShotTrajectory.empty;
+    if (![ballSpeedMph, launchAngleDeg, launchDirectionDeg, spinRpm,
+          spinAxisDeg].every((value) => value.isFinite) ||
+        ballSpeedMph <= 0 || ballSpeedMph > 300 ||
+        launchAngleDeg <= 0 || launchAngleDeg > 90 ||
+        spinRpm < 0 || spinRpm > 30000 ||
+        !stepSeconds.isFinite || stepSeconds < 0.0001 || stepSeconds > 0.1 ||
+        spinDecaySeconds.isNaN || spinDecaySeconds <= 0 ||
+        ![dragBase, dragPerSpin, dragAtLowSpeed, liftMax, liftHalfSpin]
+            .every((value) => value.isFinite && value >= 0) ||
+        liftHalfSpin <= 0) {
+      return ShotTrajectory.empty;
+    }
 
     final v0 = ballSpeedMph * _mphToMps;
     final theta = launchAngleDeg * _degToRad;
@@ -431,7 +514,7 @@ class BallFlightModel {
         (spinRpm.abs() * _rpmToRadPerSec);
 
     final points = <TrajectoryPoint>[
-      TrajectoryPoint(t: 0, x: 0, y: 0, z: 0, speed: ballSpeedMph),
+      _toPoint(0, position, velocity, spin),
     ];
 
     var t = 0.0;
@@ -456,6 +539,10 @@ class BallFlightModel {
       position = next.$1;
       velocity = next.$2;
       spin = spin * spinDecayPerStep;
+      if (![position.x, position.y, position.z, velocity.x, velocity.y,
+            velocity.z, spin.x, spin.y, spin.z].every((v) => v.isFinite)) {
+        return ShotTrajectory.empty;
+      }
       t += stepSeconds;
       step++;
 
@@ -467,8 +554,14 @@ class BallFlightModel {
       if (position.y <= 0) break;
 
       if (step % sampleEvery == 0) {
-        points.add(_toPoint(t, position, velocity));
+        points.add(_toPoint(t, position, velocity, spin));
       }
+    }
+
+    // A time limit is not a touchdown. Do not invent a ground endpoint for a
+    // still-airborne ball, or feed that fabricated state into the ground model.
+    if (position.y > 0) {
+      return const ShotTrajectory.failed(FlightFailure.timeLimit);
     }
 
     // Interpolate the touchdown state back onto the ground plane.
@@ -486,15 +579,7 @@ class BallFlightModel {
     final landSpin = previousSpin + (spin - previousSpin) * frac;
     final landTime = t - stepSeconds * (1 - frac);
 
-    points.add(
-      TrajectoryPoint(
-        t: landTime,
-        x: landPosition.x * _mToYd,
-        y: 0,
-        z: landPosition.z * _mToYd,
-        speed: landVelocity.length * _mpsToMph,
-      ),
-    );
+    points.add(_toPoint(landTime, landPosition, landVelocity, landSpin));
 
     final carry = landPosition.z * _mToYd;
     final offline = landPosition.x * _mToYd;
@@ -514,31 +599,8 @@ class BallFlightModel {
       stopsAt: stopsAt,
     );
 
-    var groundPoints = ground.points;
-    var rest = ground.rest;
-
-    // Honour a device-measured roll by scaling the simulated ground path.
-    if (measuredRollYds != null) {
-      final simulatedRoll = (rest.z - landPosition.z) * _mToYd;
-      final scale = simulatedRoll.abs() < 0.05
-          ? 0.0
-          : (measuredRollYds / simulatedRoll).clamp(-5.0, 5.0);
-      groundPoints = [
-        for (final p in groundPoints)
-          TrajectoryPoint(
-            t: p.t,
-            x: offline + (p.x - offline) * scale,
-            y: p.y * scale.abs().clamp(0.0, 1.0),
-            z: carry + (p.z - carry) * scale,
-            speed: p.speed,
-          ),
-      ];
-      rest = Vec3(
-        landPosition.x + (rest.x - landPosition.x) * scale,
-        0,
-        landPosition.z + (rest.z - landPosition.z) * scale,
-      );
-    }
+    final groundPoints = ground.points;
+    final rest = ground.rest;
 
     final restYards = Vec3(rest.x * _mToYd, 0, rest.z * _mToYd);
 
@@ -564,19 +626,21 @@ class BallFlightModel {
 
   // ── Airborne ───────────────────────────────────────────────────────────────
 
-  TrajectoryPoint _toPoint(double t, Vec3 p, Vec3 v) => TrajectoryPoint(
+  TrajectoryPoint _toPoint(double t, Vec3 p, Vec3 v, Vec3 spin) => TrajectoryPoint(
     t: t,
     x: p.x * _mToYd,
     y: p.y * _mToYd,
     z: p.z * _mToYd,
     speed: v.length * _mpsToMph,
+    specificEnergy: 0.5 * v.dot(v) + _gravity * p.y +
+        0.2 * _ballRadiusM * _ballRadiusM * spin.dot(spin),
   );
 
   /// Classic RK4 over the coupled position/velocity state. Spin is held
   /// constant across the step; it decays two orders of magnitude more slowly
   /// than the step size.
-  (Vec3, Vec3) _rk4Step(Vec3 p, Vec3 v, Vec3 spin) {
-    final h = stepSeconds;
+  (Vec3, Vec3) _rk4Step(Vec3 p, Vec3 v, Vec3 spin, [double? duration]) {
+    final h = duration ?? stepSeconds;
 
     final k1v = _acceleration(v, spin);
     final k2v = _acceleration(v + k1v * (h / 2), spin);
@@ -672,7 +736,7 @@ class BallFlightModel {
     var airborne = false;
 
     final samples = <TrajectoryPoint>[];
-    void sample() => samples.add(_toPoint(t, p, v));
+    void sample() => samples.add(_toPoint(t, p, v, w));
 
     // The arrival itself is the first bounce.
     final firstImpact = _bounce(v, w, turfAt(p));
@@ -698,61 +762,63 @@ class BallFlightModel {
     }
 
     final h = stepSeconds;
-    final spinDecayPerStep = math.exp(-h / spinDecaySeconds);
     final maxSteps = (_maxGroundSeconds / h).round();
-    // ~25 Hz is plenty for a bounce path.
+    // Regular display samples plus exact pre/post-contact event samples.
     const sampleEvery = 8;
 
+    groundLoop:
     for (var step = 1; step <= maxSteps; step++) {
-      if (airborne) {
-        final previousY = p.y;
-        final next = _rk4Step(p, v, w);
-        p = next.$1;
-        v = next.$2;
-        w = w * spinDecayPerStep;
-        t += h;
-
-        if (p.y <= 0) {
-          // Land on the plane, then bounce.
-          final drop = previousY - p.y;
-          final frac = drop.abs() < 1e-9
-              ? 1.0
-              : (previousY / drop).clamp(0.0, 1.0);
-          p = Vec3(p.x, 0, p.z);
-          t -= h * (1 - frac);
-          final impact = _bounce(v, w, turfAt(p));
-          v = impact.$1;
-          w = impact.$2;
-          bounces++;
-          if (v.y <= _minBounceSpeedMps || bounces >= _maxBounces) {
-            airborne = false;
-            v = Vec3(v.x, 0, v.z);
+      var remaining = h;
+      while (remaining > 1e-10) {
+        if (airborne) {
+          final oldP = p;
+          final oldV = v;
+          final oldW = w;
+          final next = _rk4Step(p, v, w, remaining);
+          p = next.$1;
+          v = next.$2;
+          w = w * math.exp(-remaining / spinDecaySeconds);
+          if (p.y <= 0) {
+            final drop = oldP.y - p.y;
+            final fraction = drop.abs() < 1e-9
+                ? 1.0
+                : (oldP.y / drop).clamp(0.0, 1.0);
+            final contactP = oldP + (p - oldP) * fraction;
+            p = Vec3(contactP.x, 0, contactP.z);
+            v = oldV + (v - oldV) * fraction;
+            w = oldW + (w - oldW) * fraction;
+            t += remaining * fraction;
+            remaining *= 1 - fraction;
+            sample(); // Arrival energy, before the contact impulse.
+            if (finishedAt(p)) break groundLoop;
+            final impact = _bounce(v, w, turfAt(p));
+            v = impact.$1;
+            w = impact.$2;
+            bounces++;
+            if (v.y <= _minBounceSpeedMps || bounces >= _maxBounces) {
+              airborne = false;
+              v = Vec3(v.x, 0, v.z);
+            }
+            sample(); // Same event time, post-contact state wins in replay.
+            continue;
           }
-          sample();
-          // Bounced into it — same rule as landing in it.
-          if (finishedAt(p)) break;
-          continue;
-        }
-      } else {
-        final rolling = _groundStep(v, w, h, turfAt(p));
-        v = rolling.$1;
-        w = rolling.$2;
-        p = Vec3(p.x + v.x * h, 0, p.z + v.z * h);
-        t += h;
-
-        // Trickling in counts too — a ball that rolls into a hazard is as
-        // lost as one that flew there.
-        if (finishedAt(p)) {
-          sample();
-          break;
-        }
-
-        final contact = _contactVelocity(v, w);
-        if (v.length < _restSpeedMps && contact.length < 3 * _restSpeedMps) {
-          break;
+          t += remaining;
+          remaining = 0;
+        } else {
+          final rolling = _groundStep(v, w, remaining, turfAt(p));
+          v = rolling.$1;
+          w = rolling.$2;
+          p = Vec3(p.x + v.x * remaining, 0, p.z + v.z * remaining);
+          t += remaining;
+          remaining = 0;
+          if (finishedAt(p)) break groundLoop;
+          final contact = _contactVelocity(v, w);
+          if (v.length < _restSpeedMps &&
+              contact.length < 3 * _restSpeedMps) {
+            break groundLoop;
+          }
         }
       }
-
       if (step % sampleEvery == 0) sample();
     }
 

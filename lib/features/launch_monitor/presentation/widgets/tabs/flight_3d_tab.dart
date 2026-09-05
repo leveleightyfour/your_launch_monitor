@@ -94,7 +94,8 @@ bool isMowBand(double xYards, Terrain terrain) {
 /// time from a bad read, or something absurd — and is deliberately wider than
 /// any real golf shot, so nothing playable is altered by it.
 double airborneReplaySeconds(double? flightTime) =>
-    (flightTime ?? 3.0).clamp(0.3, 12.0);
+    (flightTime != null && flightTime.isFinite ? flightTime : 3.0)
+        .clamp(0.3, 12.0);
 
 /// Two shot rows describe the same shot.
 ///
@@ -328,7 +329,11 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
 
     final trajectory = shot.trajectory;
     if (trajectory.isEmpty) {
-      return _Message(text: 'Not enough launch data to model this flight');
+      return _Message(
+        text: trajectory.failure == FlightFailure.timeLimit
+            ? 'Flight exceeded the simulation time limit'
+            : 'Not enough valid launch data to model this flight',
+      );
     }
 
     final shotColor = _clubFor(shot)?.color ?? context.accent;
@@ -734,46 +739,63 @@ class _FlightStatBar extends StatelessWidget {
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       padding: EdgeInsets.fromLTRB(pad, 6, pad, 6),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          for (final (label, value, unit) in all.take(count))
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.clip,
-                    softWrap: false,
-                    style: AppTextStyles.sans(
-                      size: density == _Density.compact ? 9 : 10,
-                      color: AppColors.textDimmed,
-                    ),
-                  ),
-                  const SizedBox(height: 1),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Text(value, style: AppTextStyles.mono(size: valueSize)),
-                        const SizedBox(width: 2),
-                        Text(
-                          unit,
-                          style: AppTextStyles.sans(
-                            size: 9,
-                            color: AppColors.textDimmed,
-                          ),
+          Text(
+            [
+              'Simulated',
+              if (shot.reportedApexHeight != null)
+                'Device apex ${dist(shot.reportedApexHeight!)} ${prefs.distLabel}',
+              if (shot.reportedRollDistance != null)
+                'Device roll ${dist(shot.reportedRollDistance!)} ${prefs.distLabel}',
+            ].join(' · '),
+            style: AppTextStyles.sans(size: 9, color: AppColors.textDimmed),
+          ),
+          const SizedBox(height: 3),
+          Row(
+            children: [
+              for (final (label, value, unit) in all.take(count))
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.clip,
+                        softWrap: false,
+                        style: AppTextStyles.sans(
+                          size: density == _Density.compact ? 9 : 10,
+                          color: AppColors.textDimmed,
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 1),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text(value, style: AppTextStyles.mono(size: valueSize)),
+                            const SizedBox(width: 2),
+                            Text(
+                              unit,
+                              style: AppTextStyles.sans(
+                                size: 9,
+                                color: AppColors.textDimmed,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -1405,29 +1427,15 @@ abstract class _ViewPainter extends CustomPainter {
 
   // ── Geometry helpers ───────────────────────────────────────────────────────
 
-  int _visibleSegments(List<TrajectoryPoint> points, double progress) =>
-      (progress * (points.length - 1)).ceil().clamp(1, points.length - 1);
-
-  Vec3 _interpolate(List<TrajectoryPoint> points, double progress) {
-    final scaled = progress.clamp(0.0, 1.0) * (points.length - 1);
-    final i = scaled.floor().clamp(0, points.length - 1);
-    final j = math.min(i + 1, points.length - 1);
-    final t = scaled - i;
-    final a = points[i];
-    final b = points[j];
-    return Vec3(
-      a.x + (b.x - a.x) * t,
-      a.y + (b.y - a.y) * t,
-      a.z + (b.z - a.z) * t,
-    );
-  }
+  double get _flightTime => trajectory.flightTime * _flightProgress;
+  double get _groundTime =>
+      trajectory.flightTime + trajectory.groundTime * _groundProgress;
 
   Vec3 _ballPosition() {
-    if (trajectory.points.isEmpty) return Vec3.zero;
-    if (!_hasLanded) return _interpolate(trajectory.points, _flightProgress);
-    final ground = trajectory.groundPoints;
-    if (ground.isEmpty) return trajectory.restPosition;
-    return _interpolate(ground, _groundProgress);
+    final point = !_hasLanded
+        ? trajectoryPointAtTime(trajectory.points, _flightTime)
+        : trajectoryPointAtTime(trajectory.groundPoints, _groundTime);
+    return point?.position ?? trajectory.restPosition;
   }
 
   /// Build a screen-space polyline for the first [upTo] segments, splitting
@@ -2225,10 +2233,11 @@ class _FlightPainter extends _ViewPainter {
 
     if (_hasLanded) _paintLandingMarks(canvas, camera);
 
-    final flightSegments = _visibleSegments(trajectory.points, _flightProgress);
-    _paintCurtain(canvas, camera, flightSegments);
-    _paintShadow(canvas, camera, trajectory.points, flightSegments);
-    _paintFlightPath(canvas, camera, flightSegments);
+    final visible = trajectoryThroughTime(trajectory.points, _flightTime);
+    final flightSegments = math.max(0, visible.length - 1);
+    _paintCurtain(canvas, camera, visible);
+    _paintShadow(canvas, camera, visible, flightSegments);
+    _paintFlightPath(canvas, camera, visible);
     _paintGroundPath(canvas, camera);
     _paintApexMarker(canvas, camera, ball);
     _paintBall(canvas, camera, ball);
@@ -2238,8 +2247,12 @@ class _FlightPainter extends _ViewPainter {
   bool shouldRepaint(_FlightPainter old) =>
       _viewChanged(old) || old.shotColor != shotColor || old.accent != accent;
 
-  void _paintCurtain(Canvas canvas, _Camera camera, int upTo) {
-    final points = trajectory.points;
+  void _paintCurtain(
+    Canvas canvas,
+    _Camera camera,
+    List<TrajectoryPoint> points,
+  ) {
+    final upTo = points.length - 1;
     final sheet = Path();
     for (var i = 0; i < upTo; i++) {
       final quad = _clipPolygon([
@@ -2274,8 +2287,12 @@ class _FlightPainter extends _ViewPainter {
     );
   }
 
-  void _paintFlightPath(Canvas canvas, _Camera camera, int upTo) {
-    final path = _pathFor(camera, trajectory.points, upTo);
+  void _paintFlightPath(
+    Canvas canvas,
+    _Camera camera,
+    List<TrajectoryPoint> points,
+  ) {
+    final path = _pathFor(camera, points, points.length - 1);
     if (path == null) return;
 
     canvas.drawPath(
@@ -2312,8 +2329,8 @@ class _FlightPainter extends _ViewPainter {
     final ground = trajectory.groundPoints;
     if (ground.length < 2 || _groundProgress <= 0) return;
 
-    final upTo = _visibleSegments(ground, _groundProgress);
-    final path = _pathFor(camera, ground, upTo);
+    final visible = trajectoryThroughTime(ground, _groundTime);
+    final path = _pathFor(camera, visible, visible.length - 1);
     if (path == null) return;
 
     canvas.drawPath(
@@ -2327,7 +2344,7 @@ class _FlightPainter extends _ViewPainter {
 
     // Mark each touchdown: a sample sits exactly on the ground right after
     // every bounce.
-    for (var i = 1; i <= upTo; i++) {
+    for (var i = 1; i < ground.length && ground[i].t <= _groundTime; i++) {
       if (ground[i].y > 0.01 || ground[i - 1].y <= 0.01) continue;
       final at = camera.project(Vec3(ground[i].x, 0, ground[i].z));
       if (at == null) continue;

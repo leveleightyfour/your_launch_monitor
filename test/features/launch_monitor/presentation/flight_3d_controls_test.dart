@@ -17,7 +17,10 @@ const _shot = ShotData(
   clubSpeed: 85,
 );
 
-Future<void> _pumpTab(WidgetTester tester, {required bool canEditHole}) async {
+Future<void> _pumpTab(WidgetTester tester, {
+  required bool canEditHole,
+  ShotData shot = _shot,
+}) async {
   tester.view.physicalSize = const Size(900, 650);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -26,7 +29,7 @@ Future<void> _pumpTab(WidgetTester tester, {required bool canEditHole}) async {
       child: MaterialApp(
         theme: AppTheme.dark(),
         home: Scaffold(
-          body: Flight3DTab(shots: const [_shot], canEditHole: canEditHole),
+          body: Flight3DTab(shots: [shot], canEditHole: canEditHole),
         ),
       ),
     ),
@@ -37,6 +40,22 @@ Future<void> _pumpTab(WidgetTester tester, {required bool canEditHole}) async {
 }
 
 void main() {
+  testWidgets('device reports are labelled separately from the simulation',
+      (tester) async {
+    const reported = ShotData(
+      ballSpeed: 120, spinRate: 6500, spinAxis: 0,
+      launchDirection: 0, launchAngle: 18, clubSpeed: 85,
+      apex: 80, run: 500,
+    );
+    await _pumpTab(tester, canEditHole: false, shot: reported);
+    expect(find.textContaining('Simulated'), findsOneWidget);
+    expect(find.textContaining('Device apex'), findsOneWidget);
+    expect(find.textContaining('Device roll'), findsOneWidget);
+    expect(reported.apexHeight, reported.trajectory.apex);
+    expect(reported.rollDistance, reported.trajectory.roll);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a live session offers the hole builder', (tester) async {
     await _pumpTab(tester, canEditHole: true);
     expect(find.byTooltip('Hole builder'), findsOneWidget);

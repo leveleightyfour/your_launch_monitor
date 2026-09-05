@@ -32,14 +32,12 @@ ShotTrajectory _flight(
   double launchDirection = 0,
   double spin = 3000,
   double spinAxis = 0,
-  double? roll,
 }) => model.simulate(
   ballSpeedMph: ballSpeed,
   launchAngleDeg: launchAngle,
   launchDirectionDeg: launchDirection,
   spinRpm: spin,
   spinAxisDeg: spinAxis,
-  measuredRollYds: roll,
 );
 
 void main() {
@@ -323,6 +321,14 @@ void main() {
 
       expect(best.key, greaterThan(500.0));
       expect(best.key, lessThan(9000.0));
+      final spins = carries.keys.toList()..sort();
+      for (var i = 1; i < spins.length; i++) {
+        expect(
+          carries[spins[i]]! > carries[spins[i - 1]]!,
+          spins[i] <= best.key,
+          reason: 'unexpected secondary peak at ${spins[i]} rpm',
+        );
+      }
     });
 
     test('apex and descent angle rise with spin; landing speed falls', () {
@@ -522,22 +528,21 @@ void main() {
       expect(flight.bounces, greaterThan(0));
       expect(flight.bounces, lessThanOrEqualTo(8));
 
-      // Nothing on the ground goes faster than the ball arrived, and the
-      // ball ends up stopped. (Speed is not monotonic within a hop — the ball
-      // accelerates as it falls back down — but every bounce is a net loss.)
-      for (final p in ground) {
-        expect(p.speed, lessThan(flight.landingSpeed));
+      final arrivalEnergy = flight.points.last.specificEnergy!;
+      expect(ground.first.specificEnergy!, lessThanOrEqualTo(arrivalEnergy));
+      var impactsChecked = 1;
+      for (var i = 1; i < ground.length; i++) {
+        final before = ground[i - 1];
+        final after = ground[i];
+        if (after.t == before.t && after.y == 0 && before.y == 0 &&
+            after.specificEnergy != before.specificEnergy) {
+          expect(after.specificEnergy!,
+              lessThanOrEqualTo(before.specificEnergy! + 1e-8));
+          impactsChecked++;
+        }
       }
+      expect(impactsChecked, flight.bounces);
       expect(ground.last.speed, lessThan(1.0));
-
-      // Compare like with like: the speed at each touchdown must fall.
-      final touchdowns = [
-        for (var i = 1; i < ground.length; i++)
-          if (ground[i].y <= 0.01 && ground[i - 1].y > 0.01) ground[i].speed,
-      ];
-      for (var i = 1; i < touchdowns.length; i++) {
-        expect(touchdowns[i], lessThan(touchdowns[i - 1]));
-      }
 
       // Hops get lower, never higher than the flight itself.
       for (final p in ground) {
@@ -627,8 +632,21 @@ void main() {
         spin: 4000,
       );
 
-      expect(spinner.roll, lessThan(1.0));
+      final furthest = spinner.groundPoints
+          .map((point) => point.z)
+          .reduce(math.max);
+      expect(spinner.restPosition.z, lessThan(furthest - 0.01),
+          reason: 'a checking shot must actually move backwards');
+      expect(spinner.roll, lessThan(0.0));
       expect(runner.roll, greaterThan(spinner.roll + 2));
+    });
+
+    test('a high-spin stress case hops forwards then moves backwards', () {
+      // This is a response test, not a measured reference flight.
+      final shot = _flight(model, ballSpeed: 70, launchAngle: 30, spin: 15000);
+      final furthest = shot.groundPoints.map((p) => p.z).reduce(math.max);
+      expect(furthest, greaterThan(shot.carry + 0.1));
+      expect(shot.restPosition.z, lessThan(furthest - 0.05));
     });
 
     test('turf firmness orders the roll the way it should', () {
@@ -669,19 +687,6 @@ void main() {
       expect(draw.restPosition.x, lessThan(draw.offline));
     });
 
-    test('a measured roll overrides the simulation but keeps the shape', () {
-      final flight = _flight(
-        model,
-        ballSpeed: 160,
-        launchAngle: 12,
-        spin: 2700,
-        roll: 6,
-      );
-
-      expect(flight.roll, closeTo(6, 1e-6));
-      expect(flight.totalDistance, closeTo(flight.carry + 6, 1e-6));
-      expect(flight.groundPoints.last.z, closeTo(flight.carry + 6, 0.01));
-    });
 
     test('the ground phase always terminates', () {
       for (final speed in const [60.0, 100.0, 140.0, 180.0]) {
