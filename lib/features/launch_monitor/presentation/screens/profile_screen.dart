@@ -156,6 +156,10 @@ class ProfileScreen extends ConsumerWidget {
               selected: prefs.showTestShotButton ? 1 : 0,
               onSelect: (i) => notifier.setShowTestShotButton(i == 1),
             ),
+            _FlightViewStyleSetting(
+              selected: prefs.flightViewStyle,
+              onSelect: notifier.setFlightViewStyle,
+            ),
             _AccentPickerRow(
               current: accent,
               onSelect: accentNotifier.setAccent,
@@ -468,4 +472,47 @@ class _SettingsRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Stacked, wrapping controls remain readable on phones and at large text sizes.
+class _FlightViewStyleSetting extends StatelessWidget {
+  final FlightViewStyle selected;
+  final ValueChanged<FlightViewStyle> onSelect;
+
+  const _FlightViewStyleSetting({
+    required this.selected,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 12),
+    decoration: const BoxDecoration(
+      border: Border(bottom: BorderSide(color: AppColors.border)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('3D flight view', style: AppTextStyles.sans(size: 14)),
+        const SizedBox(height: 4),
+        Text(
+          'Choose the look of your flight replay.',
+          style: AppTextStyles.sans(size: 12, color: AppColors.textMuted),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final style in FlightViewStyle.values)
+              ChoiceChip(
+                key: ValueKey('flight-view-${style.name}'),
+                label: Text(style.label),
+                selected: selected == style,
+                onSelected: (_) => onSelect(style),
+              ),
+          ],
+        ),
+      ],
+    ),
+  );
 }

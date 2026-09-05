@@ -42,6 +42,15 @@ enum SessionScreenLayout {
   final String label;
 }
 
+/// Rendering style shared by every 3D flight pane.
+enum FlightViewStyle {
+  classic('Classic'),
+  realistic('Realistic');
+
+  const FlightViewStyle(this.label);
+  final String label;
+}
+
 // ── UnitPrefs ─────────────────────────────────────────────────────────────────
 
 /// The 3D flight view's sky, picked from curated scenes rather than a free
@@ -130,6 +139,8 @@ class UnitPrefs {
   /// coordinated scene (sky plus turf), not just a backdrop colour.
   final SkyScene skyScene;
 
+  final FlightViewStyle flightViewStyle;
+
   /// The split view's pane choices, stored by pane-enum name so the
   /// screens' private enums stay private. Unknown names fall back to the
   /// screen's own default.
@@ -165,6 +176,7 @@ class UnitPrefs {
     this.autoReconnect = true,
     this.showTestShotButton = false,
     this.skyScene = SkyScene.day,
+    this.flightViewStyle = FlightViewStyle.classic,
     this.splitLeftPane = 'table',
     this.splitRightPane = 'dispersion',
     this.splitThirdPane = 'optimizer',
@@ -189,6 +201,7 @@ class UnitPrefs {
     bool? autoReconnect,
     bool? showTestShotButton,
     SkyScene? skyScene,
+    FlightViewStyle? flightViewStyle,
     String? splitLeftPane,
     String? splitRightPane,
     String? splitThirdPane,
@@ -204,6 +217,7 @@ class UnitPrefs {
     autoReconnect: autoReconnect ?? this.autoReconnect,
     showTestShotButton: showTestShotButton ?? this.showTestShotButton,
     skyScene: skyScene ?? this.skyScene,
+    flightViewStyle: flightViewStyle ?? this.flightViewStyle,
     splitLeftPane: splitLeftPane ?? this.splitLeftPane,
     splitRightPane: splitRightPane ?? this.splitRightPane,
     splitThirdPane: splitThirdPane ?? this.splitThirdPane,
@@ -238,6 +252,7 @@ class UnitPrefs {
     'autoReconnect': autoReconnect,
     'showTestShotButton': showTestShotButton,
     'skyScene': skyScene.name,
+    'flightViewStyle': flightViewStyle.name,
     'splitLeftPane': splitLeftPane,
     'splitRightPane': splitRightPane,
     'splitThirdPane': splitThirdPane,
@@ -266,6 +281,10 @@ class UnitPrefs {
     skyScene: SkyScene.values.firstWhere(
       (e) => e.name == j['skyScene'],
       orElse: () => SkyScene.day,
+    ),
+    flightViewStyle: FlightViewStyle.values.firstWhere(
+      (e) => e.name == j['flightViewStyle'],
+      orElse: () => FlightViewStyle.classic,
     ),
     splitLeftPane: j['splitLeftPane'] as String? ?? 'table',
     splitRightPane: j['splitRightPane'] as String? ?? 'dispersion',
@@ -344,6 +363,11 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
 
   void setDistance(DistanceUnit unit) {
     state = state.copyWith(distance: unit);
+    _save();
+  }
+
+  void setFlightViewStyle(FlightViewStyle style) {
+    state = state.copyWith(flightViewStyle: style);
     _save();
   }
 

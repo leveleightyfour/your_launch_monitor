@@ -1,0 +1,41 @@
+name: Flight view checks
+on:
+  pull_request:
+    paths:
+      - 'lib/features/launch_monitor/presentation/widgets/tabs/*flight*'
+      - 'lib/features/launch_monitor/presentation/screens/profile_screen.dart'
+      - 'lib/shared/providers/unit_prefs_provider.dart'
+      - 'test/**'
+      - '.github/workflows/flight-view.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  flight-view:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Analyze changed implementation and tests
+        run: >-
+          flutter analyze --no-pub
+          lib/features/launch_monitor/presentation/widgets/tabs/flight_3d_tab.dart
+          lib/features/launch_monitor/presentation/widgets/tabs/realistic_flight_painters.dart
+          lib/features/launch_monitor/presentation/screens/profile_screen.dart
+          lib/shared/providers/unit_prefs_provider.dart
+          test/shared/flight_view_style_pref_test.dart
+          test/features/launch_monitor/presentation/realistic_flight_test.dart
+      - name: Flight preference, rendering and regression tests
+        run: >-
+          flutter test --no-pub
+          test/shared/flight_view_style_pref_test.dart
+          test/features/launch_monitor/presentation/realistic_flight_test.dart
+          test/features/launch_monitor/presentation/flight_3d_controls_test.dart
+          test/features/launch_monitor/presentation/flight_trails_test.dart
+          test/features/launch_monitor/presentation/replay_timing_test.dart
+          test/features/launch_monitor/presentation/mow_bands_test.dart
