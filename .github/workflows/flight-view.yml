@@ -32,10 +32,25 @@ jobs:
           test/features/launch_monitor/presentation/realistic_flight_test.dart
       - name: Flight preference, rendering and regression tests
         run: >-
-          flutter test --no-pub
+          flutter test --no-pub --dart-define=FLIGHT_PREVIEW=true
           test/shared/flight_view_style_pref_test.dart
           test/features/launch_monitor/presentation/realistic_flight_test.dart
           test/features/launch_monitor/presentation/flight_3d_controls_test.dart
           test/features/launch_monitor/presentation/flight_trails_test.dart
           test/features/launch_monitor/presentation/replay_timing_test.dart
           test/features/launch_monitor/presentation/mow_bands_test.dart
+      - name: Attach scene preview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: realistic-flight-preview
+          path: build/flight-preview.png
+          if-no-files-found: ignore
+      - name: Preview image for remote visual review
+        if: always()
+        run: |
+          if [ -f build/flight-preview.png ]; then
+            printf 'FLIGHT_PREVIEW_PNG:'
+            base64 -w 0 build/flight-preview.png
+            printf '\n'
+          fi

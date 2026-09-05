@@ -184,8 +184,9 @@ class _RealisticScenePainter extends _ScenePainter {
     for (var i = 0; i < 36; i++) {
       final sign = i.isEven ? -1.0 : 1.0;
       final at = Vec3(sign * (side + (i % 5) * 7), 0, 35 + (i ~/ 2) * 22.0);
-      if (course != null && course.terrainAt(at.x, at.z) != Terrain.rough)
+      if (course != null && course.terrainAt(at.x, at.z) != Terrain.rough) {
         continue;
+      }
       final depth = camera.depthOf(at);
       if (depth < 2) continue;
       trees.add((at: at, scale: 0.8 + (i % 4) * 0.18, depth: depth));
