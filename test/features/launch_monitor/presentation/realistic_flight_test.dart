@@ -95,6 +95,23 @@ void main() {
         find.byKey(ValueKey('flight-scene-${style.name}')),
         findsOneWidget,
       );
+      if (style == FlightViewStyle.realistic &&
+          const bool.fromEnvironment('FLIGHT_PREVIEW')) {
+        final scene = find.byKey(const ValueKey('flight-scene-realistic'));
+        final boundary = tester.renderObject<RenderRepaintBoundary>(
+          find
+              .ancestor(of: scene, matching: find.byType(RepaintBoundary))
+              .first,
+        );
+        await tester.runAsync(() async {
+          final image = await boundary.toImage(pixelRatio: 1);
+          final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          final file = File('build/flight-preview.png');
+          await file.parent.create(recursive: true);
+          await file.writeAsBytes(bytes!.buffer.asUint8List());
+          image.dispose();
+        });
+      }
       expect(identical(_shot.trajectory, trajectory), isTrue);
       expect(find.byTooltip('Replay'), findsOneWidget);
       expect(tester.takeException(), isNull);
