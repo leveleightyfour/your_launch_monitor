@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:omni_sniffer/features/launch_monitor/application/watch_sync_provider.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/last_device_provider.dart';
 import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
 import 'package:omni_sniffer/shared/providers/router.dart';
@@ -60,6 +61,9 @@ class OmniSnifferApp extends ConsumerWidget {
     // Construct + start the Shorebird update poller for the app lifetime.
     // No-ops in debug / non-Shorebird builds.
     ref.watch(shorebirdUpdateProvider);
+    // Keeps a paired Apple Watch showing the same tiles as the session
+    // screen. Inert on every platform but iOS.
+    ref.watch(watchSyncProvider);
     return MaterialApp.router(
       title: "Your Launch Monitor",
       debugShowCheckedModeBanner: false,
