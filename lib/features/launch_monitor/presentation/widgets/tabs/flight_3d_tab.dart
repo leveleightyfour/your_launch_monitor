@@ -16,6 +16,8 @@ import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 import 'package:omni_sniffer/shared/app_icons.dart';
 
+part 'realistic_flight_painters.dart';
+
 /// Camera positions offered by the view chips.
 enum FlightCamera {
   behind('Behind', AppIcons.up),
@@ -410,6 +412,13 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
     required _Density density,
     required HoleSetup? hole,
   }) {
+    final realistic = prefs.flightViewStyle == FlightViewStyle.realistic;
+    final scenePainter = realistic
+        ? _RealisticScenePainter.new
+        : _ScenePainter.new;
+    final flightPainter = realistic
+        ? _RealisticFlightPainter.new
+        : _FlightPainter.new;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onDoubleTap: () => _applyPreset(_camera),
@@ -444,7 +453,9 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
           RepaintBoundary(
             child: CustomPaint(
               isComplex: true,
-              painter: _ScenePainter(
+              key: ValueKey('flight-scene-${prefs.flightViewStyle.name}'),
+              willChange: _camera == FlightCamera.follow,
+              painter: scenePainter(
                 trajectory: trajectory,
                 replay: _replay,
                 flightFraction: _flightFraction,
@@ -468,7 +479,8 @@ class _Flight3DTabState extends ConsumerState<Flight3DTab>
           ),
           RepaintBoundary(
             child: CustomPaint(
-              painter: _FlightPainter(
+              willChange: true,
+              painter: flightPainter(
                 trajectory: trajectory,
                 replay: _replay,
                 flightFraction: _flightFraction,
@@ -1670,6 +1682,11 @@ class _ScenePainter extends _ViewPainter {
       old.ghosts.length != ghosts.length ||
       old.shotColor != shotColor;
 
+  bool get _showGrid => true;
+
+  Color _terrainColor(Terrain terrain, bool band) =>
+      !band ? terrain.stripeColor : terrain.surfaceColor;
+
   // ── Scene ──────────────────────────────────────────────────────────────────
 
   /// Screen height of the ground plane's true horizon for this camera, or
@@ -1768,15 +1785,12 @@ class _ScenePainter extends _ViewPainter {
 
         final x0 = grid.left + col * cell;
         final x1 = grid.left + end * cell + 0.04;
-        _polygon3(
-          canvas,
-          camera,
-          [Vec3(x0, 0, z0), Vec3(x1, 0, z0), Vec3(x1, 0, z1), Vec3(x0, 0, z1)],
-          Paint()
-            ..color = banded && !band
-                ? terrain.stripeColor
-                : terrain.surfaceColor,
-        );
+        _polygon3(canvas, camera, [
+          Vec3(x0, 0, z0),
+          Vec3(x1, 0, z0),
+          Vec3(x1, 0, z1),
+          Vec3(x0, 0, z1),
+        ], Paint()..color = _terrainColor(terrain, !banded || band));
         col = end;
       }
     }
@@ -2030,19 +2044,16 @@ class _ScenePainter extends _ViewPainter {
         // seam.
         final right = math.min((lane + 1) * _stripeWidth + 0.05, fairwayHalf);
         if (right - left < 0.01) continue;
-        _polygon3(
-          canvas,
-          camera,
-          [
-            Vec3(left, 0, behind),
-            Vec3(right, 0, behind),
-            Vec3(right, 0, fairwayEnd),
-            Vec3(left, 0, fairwayEnd),
-          ],
-          Paint()..color = lane.isEven ? scene.fairway : scene.fairwayStripe,
-        );
+        _polygon3(canvas, camera, [
+          Vec3(left, 0, behind),
+          Vec3(right, 0, behind),
+          Vec3(right, 0, fairwayEnd),
+          Vec3(left, 0, fairwayEnd),
+        ], Paint()..color = lane.isEven ? scene.fairway : scene.fairwayStripe);
       }
     }
+
+    if (!_showGrid) return;
 
     // Cross lines — faded with distance so the horizon doesn't turn solid.
     for (var z = 0.0; z <= maxDepth; z += gridStep) {
