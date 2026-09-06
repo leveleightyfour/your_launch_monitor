@@ -106,7 +106,6 @@ class ShotData {
       launchDirectionDeg: launchDirection,
       spinRpm: spinRate,
       spinAxisDeg: spinAxis,
-      measuredRollYds: run,
       groundAt: playedHole != null && playedHole.enabled
           ? playedHole.groundAt
           : null,
@@ -135,13 +134,16 @@ class ShotData {
 
   double get totalDistance => trajectory.totalDistance;
 
-  /// Apex height in yards — the device value when available, otherwise the
-  /// simulated one.
-  double get apexHeight => apex ?? trajectory.apex;
+  /// Simulated apex and roll, consistent with the plotted trajectory.
+  double get apexHeight => trajectory.apex;
+  double get rollDistance => trajectory.roll;
 
-  /// Roll-out in yards — the device value when available, otherwise estimated
-  /// from the landing angle.
-  double get rollDistance => run ?? trajectory.roll;
+  /// Device-reported values are comparison data, never geometry overrides.
+  /// Preserve the original raw fields even when a report is unusable.
+  double? get reportedApexHeight =>
+      apex != null && apex!.isFinite && apex! >= 0 ? apex : null;
+  double? get reportedRollDistance =>
+      run != null && run!.isFinite ? run : null;
 
   /// Lateral offset at landing in yards (positive = right of target). Includes
   /// the ball's curvature, not just the launch direction.

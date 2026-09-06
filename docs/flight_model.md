@@ -1,5 +1,9 @@
 # Ball Flight Model & 3D Flight View
 
+See [v2 correctness changes](flight_model_changes.md) for contact integration,
+timestamp-based replay and device-report separation. Numerical tables below
+record the original calibration; they are not independent accuracy results.
+
 The Omni measures the ball at impact only — ball speed, launch angle, launch
 direction, total spin and spin axis. Everything that happens afterwards (carry,
 apex, descent angle, curvature, how the ball behaves when it lands, where it
@@ -109,7 +113,8 @@ Each impact applies two impulses.
 measured golf-ball/turf impacts:
 
 ```
-e = 0.510 − 0.0375·v_n + 0.000903·v_n²
+e = 0.510 − 0.0375·v_n + 0.000903·v_n²  (v_n ≤ 20 m/s)
+e = 0.120                                 (v_n > 20 m/s)
 ```
 
 Fast, steep arrivals bury into the turf and barely rebound (e ≈ 0.12 at 17 m/s);
@@ -211,10 +216,10 @@ airborne, so they are the same shot wherever it happens to land.
 
 ### Roll and the device
 
-A device-reported `ShotData.run` still wins. The bounce is simulated anyway for
-its *shape*, then the whole ground path is scaled so its downrange extent
-matches the measurement — the 3D view shows a plausible bounce sequence that
-still totals exactly what the device said.
+Device-reported `ShotData.run` and `ShotData.apex` remain separate comparison
+data. They never rescale the ground path or replace simulated geometry.
+`reportedRollDistance` and `reportedApexHeight` expose usable device values;
+the 3D stat bar labels them separately from the simulated results.
 
 `roll` is the downrange (target-line) distance gained after touchdown, matching
 how `carry` is measured, so `totalDistance == carry + roll` always holds. It
@@ -232,8 +237,8 @@ can be negative when a steep, spinning shot comes back.
 | `carry` | simulation |
 | `lateralOffset` | simulation — includes curvature, not just the start line |
 | `totalDistance` | carry + roll |
-| `apexHeight` | device `apex`, else simulation |
-| `rollDistance` | device `run`, else the simulated bounce and roll |
+| `apexHeight` | simulation; device comparison in `reportedApexHeight` |
+| `rollDistance` | simulation; device comparison in `reportedRollDistance` |
 | `curveDistance` | sideways yards gained in the air, measured from the start line |
 | `descentAngle` | simulation |
 
@@ -291,11 +296,11 @@ is coloured as rough — warmer and drier than the turf — so the boundary is
 visible, which matters because that edge is where the ball's behaviour
 changes.
 
-**Replay.** The flight draws itself in at ~1.15× real time whenever the
-selected shot changes, then carries on through the bounce and roll — the
-ground phase is compressed to at most 1.8 s so a long release doesn't stretch
-the animation. The replay button re-runs it. The trails toggle overlays
-previous shots with the same club.
+**Replay.** The airborne phase plays in real time, then continues through the
+bounce and roll, compressed to at most 4 seconds. Position and visible paths
+are interpolated by timestamp, including irregular contact events. The tracer
+ends at the interpolated ball position. The replay button re-runs it and trails
+compare shots with the same club and target.
 
 **Scaling.** The view is used as a full tab, as one half of a split, and as a
 pane on a phone, so a `_Density` tier is derived from the available size and

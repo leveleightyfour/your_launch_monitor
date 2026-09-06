@@ -94,7 +94,6 @@ ShotTrajectory _flight({
   double launchDirection = 0,
   required double spin,
   double spinAxis = 0,
-  double? roll,
 }) =>
     BallFlightModel.standard.simulate(
       ballSpeedMph: ballSpeed,
@@ -102,7 +101,6 @@ ShotTrajectory _flight({
       launchDirectionDeg: launchDirection,
       spinRpm: spin,
       spinAxisDeg: spinAxis,
-      measuredRollYds: roll,
     );
 
 void main() {
@@ -264,13 +262,6 @@ void main() {
       expect(driver.totalDistance, greaterThan(driver.carry));
     });
 
-    test('a measured roll from the device wins over the estimate', () {
-      final flight =
-          _flight(ballSpeed: 165, launchAngle: 11, spin: 2500, roll: 7);
-
-      expect(flight.roll, 7);
-      expect(flight.totalDistance, closeTo(flight.carry + 7, 0.001));
-    });
 
     test('the resting point continues along the ground track', () {
       final flight = _flight(
@@ -346,11 +337,13 @@ void main() {
       expect(s.descentAngle, s.trajectory.descentAngle);
     });
 
-    test('a device-reported roll is used for total distance', () {
+    test('device roll stays separate from simulated distance', () {
       final s = shot(run: 12);
 
-      expect(s.rollDistance, 12);
-      expect(s.totalDistance, closeTo(s.carry + 12, 0.001));
+      expect(s.reportedRollDistance, 12);
+      expect(s.rollDistance, s.trajectory.roll);
+      expect(s.totalDistance, closeTo(s.carry + s.rollDistance, 0.001));
+      expect(s.totalDistance, shot().totalDistance);
     });
 
     test('apex falls back to the simulation when the device has none', () {

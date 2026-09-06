@@ -1,0 +1,39 @@
+name: Flight model checks
+on:
+  push:
+    paths:
+      - 'lib/features/launch_monitor/domain/entities/**'
+      - 'lib/features/launch_monitor/presentation/widgets/tabs/flight_3d_tab.dart'
+      - 'test/features/launch_monitor/domain/entities/**'
+      - 'test/features/launch_monitor/presentation/**'
+      - 'tool/validate_flight.dart'
+      - '.github/workflows/flight-model.yml'
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  flight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Check the model and replay
+        run: >-
+          flutter test
+          test/features/launch_monitor/domain/entities/
+          test/features/launch_monitor/presentation/replay_timing_test.dart
+          test/features/launch_monitor/presentation/flight_trails_test.dart
+          test/features/launch_monitor/presentation/flight_3d_controls_test.dart
+      - name: Analyze changed implementation
+        run: >-
+          dart analyze
+          lib/features/launch_monitor/domain/entities/shot_trajectory.dart
+          lib/features/launch_monitor/domain/entities/shot_data.dart
+          lib/features/launch_monitor/presentation/widgets/tabs/flight_3d_tab.dart
+          tool/validate_flight.dart
