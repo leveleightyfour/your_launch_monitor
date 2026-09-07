@@ -31,6 +31,7 @@ class FittingPanel extends ConsumerWidget {
           if (shots == null && !capturing)
             DropdownButton<ShotIntent>(
               value: ref.watch(shotIntentProvider),
+              icon: const Icon(AppIcons.chevronDown),
               items: const [
                 DropdownMenuItem(
                   value: ShotIntent.stock,
@@ -144,6 +145,7 @@ class FittingSheet extends ConsumerWidget {
       if (review.trialIds.isNotEmpty)
         DropdownButton<String>(
           isExpanded: true,
+          icon: const Icon(AppIcons.chevronDown),
           value: review.selected,
           items: [
             for (var i = 0; i < review.trialIds.length; i++)
@@ -283,8 +285,7 @@ class FittingEquipmentDetails extends StatelessWidget {
   final EquipmentSetup? candidate;
   const FittingEquipmentDetails({super.key, this.baseline, this.candidate});
   @override
-  Widget build(BuildContext context) => ExpansionTile(
-    tilePadding: EdgeInsets.zero,
+  Widget build(BuildContext context) => _AppExpansionTile(
     title: Text('Tested equipment', style: AppTextStyles.label()),
     children: [
       for (final entry in [('A', baseline), ('B', candidate)])
@@ -307,8 +308,7 @@ class FittingEquipmentDetails extends StatelessWidget {
 class FittingEvidenceNote extends StatelessWidget {
   const FittingEvidenceNote({super.key});
   @override
-  Widget build(BuildContext context) => ExpansionTile(
-    tilePadding: EdgeInsets.zero,
+  Widget build(BuildContext context) => _AppExpansionTile(
     title: Text('How to interpret the results', style: AppTextStyles.label()),
     children: [
       Text(
@@ -318,5 +318,38 @@ class FittingEvidenceNote extends StatelessWidget {
         style: AppTextStyles.body(color: AppColors.textMuted),
       ),
     ],
+  );
+}
+
+/// [ExpansionTile] whose chevron is a Lucide glyph instead of the stock
+/// [Icons.expand_more].
+///
+/// Material glyphs are tree-shaken per release build, and a Shorebird patch
+/// ships code only — so a framework default this app never used at release
+/// time is missing from the icon font on patched devices and renders as a
+/// blank box. Every icon the app draws must therefore come from [AppIcons].
+class _AppExpansionTile extends StatefulWidget {
+  final Widget title;
+  final List<Widget> children;
+  const _AppExpansionTile({required this.title, required this.children});
+
+  @override
+  State<_AppExpansionTile> createState() => _AppExpansionTileState();
+}
+
+class _AppExpansionTileState extends State<_AppExpansionTile> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) => ExpansionTile(
+    tilePadding: EdgeInsets.zero,
+    title: widget.title,
+    trailing: AnimatedRotation(
+      turns: _expanded ? 0.5 : 0,
+      duration: kThemeAnimationDuration,
+      child: const Icon(AppIcons.chevronDown),
+    ),
+    onExpansionChanged: (open) => setState(() => _expanded = open),
+    children: widget.children,
   );
 }

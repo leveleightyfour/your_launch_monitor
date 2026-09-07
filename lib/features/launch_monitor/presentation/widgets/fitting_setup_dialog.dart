@@ -144,6 +144,7 @@ class FittingConditionsForm extends StatelessWidget {
       DropdownButtonFormField<String>(
         initialValue: draft.clubId,
         isExpanded: true,
+        icon: const Icon(AppIcons.chevronDown),
         decoration: InputDecoration(
           labelText: 'Club (required)',
           errorText: draft.errors['club'],
