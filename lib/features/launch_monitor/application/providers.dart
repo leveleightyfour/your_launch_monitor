@@ -1,3 +1,5 @@
+import 'fitting_capture_provider.dart';
+import '../domain/entities/shot_context.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -467,6 +469,7 @@ class LaunchMonitor extends _$LaunchMonitor {
   // ── Shot management (existing behaviour) ─────────────────────────────────
 
   void clearShots() {
+    ref.read(fittingCaptureProvider.notifier).stop();
     _draftSessionId = null;
     _draftCreatedAt = null;
     draftName = null;
@@ -536,10 +539,13 @@ class LaunchMonitor extends _$LaunchMonitor {
   /// the same persist + state-update path as a real BLE shot.
   Future<void> simulateShot() async {
     final club = ref.read(activeClubProvider);
-    final shot = generatePgaTourShot(
-      club?.id,
-      _simRand,
-    ).copyWith(hole: _activeHole);
+    final shot = generatePgaTourShot(club?.id, _simRand).copyWith(
+      hole: _activeHole,
+      context: _captureContext(club?.id).copyWith(
+        ballSource: MeasurementSource.simulated,
+        clubSpeedSource: MeasurementSource.simulated,
+      ),
+    );
     final dbReady = await _persistShot(shot);
     state = state.copyWith(shots: [dbReady, ...state.shots]);
   }
@@ -736,10 +742,7 @@ class LaunchMonitor extends _$LaunchMonitor {
     if (b.isBackspinValid &&
         b.isSidespinValid &&
         (b.backspinRpm != 0 || b.sidespinRpm != 0)) {
-      return math.atan2(
-            b.sidespinRpm.toDouble(),
-            b.backspinRpm.toDouble(),
-          ) *
+      return math.atan2(b.sidespinRpm.toDouble(), b.backspinRpm.toDouble()) *
           180.0 /
           math.pi;
     }
@@ -760,10 +763,29 @@ class LaunchMonitor extends _$LaunchMonitor {
     return b.totalSpinRpm.abs().toDouble();
   }
 
+  ShotContext _captureContext(String? clubId) {
+    final fitting = ref.read(fittingCaptureProvider);
+    return fitting != null && fitting.clubId == clubId
+        ? fitting.context
+        : ShotContext(intent: ref.read(shotIntentProvider));
+  }
+
   ShotData _ballToShotData(sg.BallMetrics b, String? clubId) {
     return ShotData(
       clubId: clubId,
       hole: _activeHole,
+      context: _captureContext(clubId).copyWith(
+        ballSource:
+            b.isBallSpeedValid &&
+                b.isVerticalAngleValid &&
+                b.isHorizontalAngleValid &&
+                (b.isTotalSpinValid ||
+                    (b.isBackspinValid && b.isSidespinValid)) &&
+                (b.isSpinAxisValid || (b.isBackspinValid && b.isSidespinValid))
+            ? MeasurementSource.measured
+            : MeasurementSource.unavailable,
+        clubSpeedSource: MeasurementSource.estimated,
+      ),
       ballSpeed: b.ballSpeedMps * _mpsToMph,
       spinRate: _spinRateFor(b),
       spinAxis: _spinAxisFor(b),
@@ -854,6 +876,12 @@ extension on ShotData {
       spinAxis: spinAxis,
       launchDirection: launchDirection,
       launchAngle: launchAngle,
+      context: context.copyWith(
+        clubSpeedSource:
+            c.isClubSpeedValid && c.clubSpeed.isFinite && c.clubSpeed > 0
+            ? MeasurementSource.measured
+            : context.clubSpeedSource,
+      ),
       clubSpeed: c.isClubSpeedValid ? c.clubSpeed * _mpsToMph : clubSpeed,
       apex: apex,
       run: run,

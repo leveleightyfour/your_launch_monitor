@@ -1,0 +1,49 @@
+name: Shot optimiser and fitting checks
+on:
+  push:
+    branches: ['feat/validated-shot-optimizer']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  optimizer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Generate and verify Drift schema
+        run: |
+          python3 tool/generate_database.py
+          git diff --exit-code -- lib/features/launch_monitor/data/database.g.dart
+      - name: Check shot feedback, capture and fitting workflow
+        run: >-
+          flutter test
+          test/features/launch_monitor/domain/entities/
+          test/features/launch_monitor/application/fitting_draft_test.dart
+          test/features/launch_monitor/application/optimizer_report_test.dart
+          test/features/launch_monitor/application/spin_bridge_test.dart
+          test/features/launch_monitor/data/assessment_context_test.dart
+          test/features/launch_monitor/data/squaregolf/notifications_test.dart
+          test/features/launch_monitor/presentation/fitting_setup_test.dart
+      - name: Analyze optimiser integration
+        run: >-
+          dart analyze
+          lib/features/launch_monitor/domain/entities/shot_optimizer.dart
+          lib/features/launch_monitor/domain/entities/fitting_comparison.dart
+          lib/features/launch_monitor/domain/entities/shot_context.dart
+          lib/features/launch_monitor/application/fitting_capture_provider.dart
+          lib/features/launch_monitor/application/fitting_draft_provider.dart
+          lib/features/launch_monitor/application/fitting_review_provider.dart
+          lib/features/launch_monitor/application/shot_optimizer_providers.dart
+          lib/features/launch_monitor/application/providers.dart
+          lib/features/launch_monitor/data/database.dart
+          lib/features/launch_monitor/presentation/widgets/fitting_panel.dart
+          lib/features/launch_monitor/presentation/widgets/fitting_setup_dialog.dart
+          lib/features/launch_monitor/presentation/widgets/fitting_round_view.dart
+          lib/features/launch_monitor/presentation/widgets/shot_optimizer_panel.dart

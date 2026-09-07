@@ -1,236 +1,116 @@
-# Shot Optimizer
+# Shot feedback and equipment comparison
 
-The shot optimizer analyses each recorded shot against club-specific optimal
-windows, diagnoses inefficiencies, estimates the distance they cost, and turns
-them into prioritised, actionable recommendations. This document explains the
-logic end to end.
+The optimisation tab supports shot review and controlled equipment comparisons.
+It does not certify a fit or infer which untested shaft, head or adjustment to buy.
+Carry, offline and landing outcomes come from `BallFlightModel.standard`; the
+device supplies launch measurements, not the rest of the flight.
 
-**Code map**
+## Input eligibility
 
-| Layer | File | Responsibility |
-|---|---|---|
-| Domain | `lib/features/launch_monitor/domain/entities/shot_optimizer.dart` | `ShotOptimizer` engine, `OptimalRanges`, `Diagnostic`, `Recommendation`, `ShotAnalysis`, `Severity` |
-| Application | `lib/features/launch_monitor/application/shot_optimizer_providers.dart` | Riverpod providers: per-shot analysis + session-wide summary |
-| Presentation | `lib/features/launch_monitor/presentation/widgets/shot_optimizer_panel.dart` | `ShotOptimizerPanel` side panel UI |
-| Tests | `test/features/launch_monitor/domain/entities/shot_optimizer_test.dart` | Unit tests for ranges, diagnostics, recommendations |
+Each shot stores a versioned `ShotContext` with ball and club-speed provenance,
+shot intent, objective and (during a comparison) an immutable setup snapshot.
+The live BLE path requires valid speed, launch angles, spin and spin axis (or
+valid backspin and sidespin components). Finite physical bounds and successful
+flight integration are checked before feedback. Putter shots are outside scope.
 
-All distances inside the domain layer are **yards** and speeds are **mph**.
-Conversion to the user's preferred units (`UnitPrefs`) happens only at the
-presentation layer.
+Club speed inferred from ball speed / 1.45 is marked estimated. It must never
+support a smash-factor diagnosis. Valid later club packets promote the source
+to measured without losing the fitting context. Demo shots are explicitly
+simulated: they can preview feedback but cannot count as fitting evidence.
 
----
+Database schema 6 adds nullable `assessment_context` JSON to shots. Old rows,
+unknown versions and damaged metadata remain unverified; no migration invents
+measurement validity. Save, reload and club-packet updates preserve the snapshot.
+CSV appends source, intent and full context columns (JSON distances are yards).
 
-## 1. Entry point
+## Feedback calculations
 
-```dart
-ShotAnalysis analyze(ShotData shot, ClubType clubType, {String? clubId})
-```
+- Stock-shot references distinguish club number and nominal wedge loft. Driver
+  and mini-driver launch/spin windows interpolate continuously from 75–115 mph
+  measured club speed. Other club windows are deliberately broad; they are not
+  calibrated to actual head loft or an individual's delivery. Recorded equipment
+  loft is descriptive and does not silently alter these reference equations.
+- Partial shots do not receive stock launch, spin or smash targets. Unknown
+  intent also suppresses stock targets. Strike and direction can still be reviewed.
+- Low smash severity scales with the relative shortfall below the reference:
+  medium initially, high above 10%, critical above 20%. Strike and low smash
+  share one contact action. Low smash alone is not treated as proof of a mishit.
+- The former spin-loft-to-rpm residual is removed: without speed, friction and
+  empirical calibration it cannot support an inconsistent-delivery diagnosis.
+- For stock drivers with a carry objective and at least 70 mph ball speed, a
+  bounded joint search evaluates launch 8–22° and spin 1800–4200 rpm. It uses a
+  2°/400 rpm grid and a local 1°/200 rpm refinement, at most 65 flights. Current
+  ball speed, direction and spin axis stay fixed. The starting result is the
+  current flight, so the reported best cannot be worse. A gain is shown only
+  at 3 yd or more. This is a bounded model estimate, not a global optimum or
+  guaranteed achievable gain. Results are cached per immutable shot and club.
+  Native-platform session reports run in a worker isolate; selecting another
+  shot reuses the report for that unchanged session rather than blocking the UI.
+- No diagnostic yard penalties are added together. The one potential carry gain
+  is the difference between two outcomes from the same flight model. Smash
+  recovery is not also credited. Attack angle supplies conditional context only.
+- High-spin driver guidance correctly notes that low-face contact can add spin;
+  it does not recommend striking lower to reduce spin.
+- Start-line tolerance uses atan(offline tolerance / max(carry, 20 yd)). Modelled
+  landing outside the corridor gets directional feedback even if face and path
+  match. Signed face-to-path is supporting evidence, not a handedness assumption.
+- Approach objectives assess target carry (±max(3 yd, 5%)), the chosen landing
+  angle and lateral tolerance rather than maximising distance. Actual stopping
+  still depends on landing speed, spin, ball and green conditions.
 
-`analyze` runs four steps:
+The UI says “Available checks passed”, never “optimal”. It exposes missing
+measurements and provisional references. Session summaries group by club and
+intent, report assessed counts, carry variability and measured-smash counts,
+and do not average unrelated clubs or sum overlapping distance losses.
 
-1. **Diagnostics** — compare the shot's metrics against optimal windows.
-2. **Recommendations** — map each diagnostic to a coaching action.
-3. **Optimal carry / carry gap** — estimate what the swing *could* carry and
-   how far short the shot fell.
-4. **Summary** — a one-line, human-readable verdict.
+## Comparison protocol
 
-Putter shots are excluded entirely — putts are not "optimized".
+1. Select a club, stock/partial intent and carry, accuracy or approach objective.
+   Record ball, lie and environment, lateral tolerance, and an approach target
+   and minimum descent where relevant. Use the same conditions for both setups.
+2. Record name, head, shaft, loft setting and length for A and B; optional notes
+   capture other differences. Review the configuration before starting.
+3. Alternate A/B in short blocks, selecting the setup before each shot. Retain
+   ordinary mishits. At least 10 eligible measured shots per setup and three
+   switches are required in each round. Changing active club pauses recording
+   for that comparison. Saved shots retain the setup in use at capture time.
+4. Review counts, exclusions, mean carry, sample SD, absolute offline, descent,
+   landing speed and landing spin. Use fresh shots in the confirmation phase.
+   An advantage must repeat in both phases before the stronger verdict appears.
 
-The club context comes from two inputs:
+Objective loss is negative carry, absolute lateral error, or Euclidean distance
+from the approach target. Positive improvement means loss(A) − loss(B). The
+sampling margin is `2.3 * sqrt(variance(A)/nA + variance(B)/nB)`; 2.3 is a
+conservative two-sided small-sample multiplier for n ≥ 10. The interval assumes
+independent representative shots; serial dependence and selective deletion can
+invalidate it. It is **not** uncertainty in the device or flight model. Both
+zero-variance samples are rejected as evidence requiring verification.
 
-- `clubType` — the broad category (`wood`, `miniDriver`, `hybrid`, `iron`,
-  `wedge`, `putter`), derived from `Club.type`.
-- `clubId` — the specific club (`'dr'`, `'7i'`, `'sw'`, `'56deg'`, …), used
-  where the category alone is too coarse (driver speed bands, iron spin rule,
-  wedge lofts). Note the driver's `ClubType` is `wood`; driver-specific logic
-  keys off `clubId == 'dr'`.
+A candidate advantage needs improvement minus margin > 2 yd. Additional guards:
+carry gains cannot increase mean absolute offline beyond the corridor or have
+an upper-bound offline degradation > 10% of its width; accuracy gains cannot
+have an upper-bound carry loss > 5 yd; approach gains need at least 80% of
+candidate shots above minimum descent and mean absolute offline inside tolerance.
+These are provisional product thresholds, not empirically validated fitting rules.
+Incompatible objectives, clubs, intent, conditions or setup specifications block
+comparison. Simulated and unverified shots are counted as excluded.
 
-## 2. Optimal ranges (`OptimalRanges`)
+## Verification and calibration limits
 
-`OptimalRanges.getRange(clubType, metric, clubSpeed:, clubId:)` resolves the
-optimal `(min, max)` window for a metric. Resolution order:
+Regression tests cover validity, partial shots, contact severity, direction,
+joint-search consistency, approach intent, comparison eligibility, confirmation,
+metadata persistence and UI flow. A same-model search agreeing with a finer
+same-model grid checks implementation consistency only.
 
-### 2.1 Driver — speed-aware windows
+Before claiming individual fitting accuracy, collect independent measured flight
+outcomes across speeds, clubs, strike patterns and balls. Split calibration and
+holdout players/sessions before tuning. Report signed error and spread for carry,
+lateral landing, descent, landing speed and spin, including failure rates. Test
+whether A/B decisions repeat on the holdout sessions and agree with observed
+flight, turf interaction and player constraints. Predefine practical thresholds
+and assess uncertainty coverage; do not widen tests after seeing failures.
 
-Optimal launch and spin for a driver depend on swing speed: slower swings need
-more launch and spin to keep the ball airborne; faster swings need less to
-avoid ballooning. Club speed is bucketed into three bands:
-
-| Band | Club speed | Launch angle | Spin rate | Smash factor |
-|---|---|---|---|---|
-| Slow | < 90 mph | 11–15° | 2,500–3,200 rpm | 1.45–1.65 |
-| Moderate | 90–105 mph | 10–14° | 2,200–2,800 rpm | 1.45–1.65 |
-| Fast | ≥ 105 mph | 9–13° | 2,000–2,600 rpm | 1.45–1.65 |
-
-### 2.2 Iron spin — club-number rule
-
-Optimal iron spin ≈ **1,000 rpm × club number**, with a ±500 rpm window
-(e.g. 7-iron → 6,500–7,500 rpm). If the club number can't be parsed, a safe
-fallback of 5,000–7,500 rpm is used.
-
-### 2.3 Wedge spin
-
-Named wedges use fixed windows:
-
-| Wedge | Window (rpm) |
-|---|---|
-| PW | 8,500–10,500 |
-| GW | 9,000–11,000 |
-| SW | 9,500–11,500 |
-| LW | 10,000–12,000 |
-
-Degree wedges (`50deg` … `64deg`) scale with loft:
-`target = 5,000 + 100 × loft`, clamped to 9,000–11,500 rpm, with a ±1,000 rpm
-window. So a 56° wedge targets 10,600 rpm (window 9,600–11,600).
-
-### 2.4 Flat ranges — everything else
-
-| Club type | Launch angle | Spin rate | Smash factor |
-|---|---|---|---|
-| Mini driver | 10–15° | 2,200–3,000 rpm | 1.45–1.65 |
-| Wood (fairway) | 14–20° | 2,500–3,600 rpm | 1.40–1.60 |
-| Hybrid | 16–26° | 3,000–4,200 rpm | 1.35–1.55 |
-| Iron | 14–22° | (club-number rule) | 1.35–1.50 |
-| Wedge | 24–40° | (loft rule) | 1.20–1.45 |
-| Putter | 1–6° | 0–500 rpm | 1.0–1.8 |
-
-## 3. Diagnostics
-
-Each check produces a `Diagnostic` with the measured value, the optimal
-window, a `Severity` (`critical` → `high` → `medium` → `low`), likely root
-causes, and — where a sensible model exists — `estimatedYardsLost`. The
-final list is sorted most-severe first.
-
-Checks are organised in tiers, roughly "biggest distance levers first":
-
-### Tier 1 — Energy transfer (smash factor)
-
-Smash factor = ball speed ÷ club speed. Below the window is **critical** —
-it means energy is being left on the table at impact (off-centre strike,
-dirty face, ball mismatch). Above the window is flagged **low** severity
-(usually a sensor artefact rather than a real problem).
-
-Distance lost is modelled physically: the smash deficit times club speed is
-the lost *ball speed*, and each mph of ball speed is worth roughly:
-
-| Club type | Carry yards per ball-speed mph |
-|---|---|
-| Wood / mini driver | 1.9 |
-| Hybrid | 1.7 |
-| Iron | 1.5 |
-| Wedge | 1.0 |
-
-Example: a driver swing at 100 mph with smash 1.30 vs a 1.45 floor loses
-`0.15 × 100 × 1.9 ≈ 28 yards`.
-
-### Tier 2 — Launch conditions
-
-- **Launch angle**: flagged whenever outside the window. Severity scales
-  with deviation: > 5° out is **critical**, > 3° **high**, else **medium**.
-  Distance lost ≈ 2 yards per degree of deviation.
-- **Spin rate**: flagged only when more than **10% outside** the window
-  (spin measurements are noisy). Severity: > 25% out **critical**, > 15%
-  **high**, else **medium**.
-- **Spin loft mismatch** (needs `dynamicLoft` and `angleOfAttack`): spin
-  loft = dynamic loft − attack angle. Expected spin ≈ spin loft × a per-club
-  factor (woods 186, hybrids 250, irons 342, wedges 380 rpm/degree). If the
-  measured spin deviates from the prediction by more than 15%, the delivery
-  is inconsistent (strike location / shaft lag / wrist hinge) — flagged
-  **medium**.
-
-### Tier 3 — Delivery
-
-- **Path–face alignment** (needs `swingPath` and `faceAngle`): a gap > 5°
-  between path and face creates curvature and costs distance. > 10° is
-  **critical**, else **high**. Distance lost ≈ 1.5 yards per degree of gap.
-- **Attack angle** (needs `angleOfAttack`), club-aware:
-  - **Driver / mini driver** (teed): any *negative* attack angle is flagged
-    (optimal +3 to +5°). Below −3° is **high**, else **medium**.
-    Distance lost ≈ 2 yards per degree down.
-  - **Ground clubs** strike with a descending blow, deepening as clubs get
-    shorter:
-
-    | Club type | Optimal window |
-    |---|---|
-    | Fairway wood | −4.0 to +0.5° |
-    | Hybrid | −4.5 to −0.5° |
-    | Iron | −5.0 to −2.0° |
-    | Wedge | −7.0 to −3.0° |
-
-    Shallower than the window ("picking") or more than 2° deeper than it
-    ("digging") is flagged **medium**.
-
-### Tier 4 — Impact location
-
-Needs `horizontalImpact` / `verticalImpact` (mm from centre). The radial
-miss is converted to inches; misses > 0.5″ are flagged (> 0.75″ is
-**high**), at ≈ 5 yards lost per inch off-centre.
-
-## 4. Recommendations
-
-Each diagnostic maps to at most one `Recommendation` — an action id, a
-coaching description, the metrics it would improve, a priority (1 = do this
-first), and an expected carry gain (carried over from the diagnostic's
-estimated loss). Duplicates are removed by action id and the list is sorted
-by priority.
-
-| Diagnostic | Action | Priority |
-|---|---|---|
-| Low smash factor | `improve_center_contact` | 1 |
-| Low launch | `raise_dynamic_loft` | 1 |
-| High launch | `lower_dynamic_loft` | 1 |
-| Off-centre impact | `optimize_strike_location` | 1 |
-| High spin | `reduce_spin` | 2 |
-| Low spin | `increase_spin` | 2 |
-| Path–face gap | `improve_face_path_alignment` | 2 |
-| Negative driver attack angle | `hit_up_on_driver` | 2 |
-| Shallow attack angle (ground club) | `strike_down_through_the_ball` | 2 |
-| Steep attack angle (ground club) | `shallow_the_attack_angle` | 2 |
-| Spin loft mismatch | `stabilize_delivery` | 3 |
-
-The UI shows the top three.
-
-## 5. Optimal carry and carry gap
-
-Optimal carry is a coarse "what should this swing speed produce" model —
-club speed × a carry-per-mph multiplier derived from tour averages:
-
-| Club | Yards per mph of club speed |
-|---|---|
-| Driver (`dr`) | 2.6 |
-| Mini driver | 2.5 |
-| Fairway wood | 2.35 |
-| Hybrid | 2.2 |
-| Iron | 1.9 |
-| Wedge | 1.4 |
-
-The **carry gap** (optimal − actual, floored at 0) is only reported when at
-least one diagnostic is out of range. On a clean shot the model's error would
-otherwise masquerade as "potential gain", so it is suppressed.
-
-## 6. Session summary
-
-`sessionOptSummaryProvider` re-analyses every shot in the session and
-aggregates:
-
-- shot count, average carry, average smash factor,
-- total count of critical diagnostics,
-- **top issue** — the most frequently out-of-range metric and how many shots
-  it appeared on,
-- **total estimated yards lost** across all flagged diagnostics.
-
-The panel shows the top issue with its frequency and the cumulative distance
-lost, converted to the user's units.
-
-## 7. Known limitations / future ideas
-
-- The carry and yards-lost models are linear rules of thumb, not a flight
-  model; they are meant for *ranking* problems, not exact prediction.
-- `ShotData.carry` is itself an estimate until the device protocol delivers a
-  measured carry, so the carry gap inherits that error.
-- Diagnostics are per-shot; consistency analysis (e.g. strike-pattern or
-  smash-factor dispersion across a session, per-club trends) would be a
-  natural next layer on top of the existing session aggregation.
-- Optimal windows are static defaults. Letting users tune windows per club
-  (fitting context, altitude, ball model) would make the diagnostics more
-  personally accurate.
+See [flight validation](flight_model_validation.md) and
+[flight changes](flight_model_changes.md). UI follows `DESIGN.md`, `PRODUCT.md`,
+`flutter_best_practices.md` and `flutter_ui_guide.md`: app tokens, Material/Lucide,
+Riverpod form state, progressive setup/review and responsive scrolling.

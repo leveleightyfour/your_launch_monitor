@@ -16,8 +16,9 @@ import 'dart:typed_data';
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Encode raw bytes as a list of two-character lower-case hex strings.
-List<String> bytesToHexList(Uint8List bytes) =>
-    [for (final b in bytes) b.toRadixString(16).padLeft(2, '0')];
+List<String> bytesToHexList(Uint8List bytes) => [
+  for (final b in bytes) b.toRadixString(16).padLeft(2, '0'),
+];
 
 /// Result of parsing a 2-byte little-endian int16 metric.
 class _Int16Parse {
@@ -93,16 +94,17 @@ class SensorData {
 
   @override
   int get hashCode => Object.hash(
-        Object.hashAll(rawData),
-        ballReady,
-        ballDetected,
-        positionX,
-        positionY,
-        positionZ,
-      );
+    Object.hashAll(rawData),
+    ballReady,
+    ballDetected,
+    positionX,
+    positionY,
+    positionZ,
+  );
 
   @override
-  String toString() => 'SensorData(ready: $ballReady, detected: $ballDetected, '
+  String toString() =>
+      'SensorData(ready: $ballReady, detected: $ballDetected, '
       'pos: ($positionX, $positionY, $positionZ))';
 }
 
@@ -133,11 +135,23 @@ SensorData parseSensorData(List<String> bytesList) {
     ballReady: bytesList[3] == '01' || bytesList[3] == '02',
     ballDetected: bytesList[4] == '01',
     positionX: _parseInt32LE(
-        bytesList[5], bytesList[6], bytesList[7], bytesList[8]),
+      bytesList[5],
+      bytesList[6],
+      bytesList[7],
+      bytesList[8],
+    ),
     positionY: _parseInt32LE(
-        bytesList[9], bytesList[10], bytesList[11], bytesList[12]),
+      bytesList[9],
+      bytesList[10],
+      bytesList[11],
+      bytesList[12],
+    ),
     positionZ: _parseInt32LE(
-        bytesList[13], bytesList[14], bytesList[15], bytesList[16]),
+      bytesList[13],
+      bytesList[14],
+      bytesList[15],
+      bytesList[16],
+    ),
   );
 }
 
@@ -152,6 +166,8 @@ class BallMetrics {
   final double spinAxis;
   final int backspinRpm;
   final int sidespinRpm;
+  final bool isVerticalAngleValid;
+  final bool isHorizontalAngleValid;
   final bool isBallSpeedValid;
   final bool isTotalSpinValid;
   final bool isSpinAxisValid;
@@ -188,6 +204,8 @@ class BallMetrics {
     required this.spinAxis,
     required this.backspinRpm,
     required this.sidespinRpm,
+    this.isVerticalAngleValid = true,
+    this.isHorizontalAngleValid = true,
     required this.isBallSpeedValid,
     required this.isTotalSpinValid,
     required this.isSpinAxisValid,
@@ -203,30 +221,33 @@ class BallMetrics {
     bool? isSpinAxisValid,
     bool? isBackspinValid,
     bool? isSidespinValid,
-  }) =>
-      BallMetrics(
-        rawData: rawData,
-        ballSpeedMps: ballSpeedMps,
-        verticalAngle: verticalAngle,
-        horizontalAngle: horizontalAngle,
-        totalSpinRpm: totalSpinRpm,
-        spinAxis: spinAxis,
-        backspinRpm: backspinRpm,
-        sidespinRpm: sidespinRpm,
-        isBallSpeedValid: isBallSpeedValid ?? this.isBallSpeedValid,
-        isTotalSpinValid: isTotalSpinValid ?? this.isTotalSpinValid,
-        isSpinAxisValid: isSpinAxisValid ?? this.isSpinAxisValid,
-        isBackspinValid: isBackspinValid ?? this.isBackspinValid,
-        isSidespinValid: isSidespinValid ?? this.isSidespinValid,
-        validityBitmask: validityBitmask,
-        tailInt16: tailInt16,
-      );
+  }) => BallMetrics(
+    rawData: rawData,
+    ballSpeedMps: ballSpeedMps,
+    verticalAngle: verticalAngle,
+    horizontalAngle: horizontalAngle,
+    totalSpinRpm: totalSpinRpm,
+    spinAxis: spinAxis,
+    backspinRpm: backspinRpm,
+    sidespinRpm: sidespinRpm,
+    isVerticalAngleValid: isVerticalAngleValid,
+    isHorizontalAngleValid: isHorizontalAngleValid,
+    isBallSpeedValid: isBallSpeedValid ?? this.isBallSpeedValid,
+    isTotalSpinValid: isTotalSpinValid ?? this.isTotalSpinValid,
+    isSpinAxisValid: isSpinAxisValid ?? this.isSpinAxisValid,
+    isBackspinValid: isBackspinValid ?? this.isBackspinValid,
+    isSidespinValid: isSidespinValid ?? this.isSidespinValid,
+    validityBitmask: validityBitmask,
+    tailInt16: tailInt16,
+  );
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is BallMetrics &&
           _listEq(rawData, other.rawData) &&
+          isVerticalAngleValid == other.isVerticalAngleValid &&
+          isHorizontalAngleValid == other.isHorizontalAngleValid &&
           ballSpeedMps == other.ballSpeedMps &&
           verticalAngle == other.verticalAngle &&
           horizontalAngle == other.horizontalAngle &&
@@ -244,24 +265,27 @@ class BallMetrics {
 
   @override
   int get hashCode => Object.hashAll([
-        Object.hashAll(rawData),
-        ballSpeedMps,
-        verticalAngle,
-        horizontalAngle,
-        totalSpinRpm,
-        spinAxis,
-        backspinRpm,
-        sidespinRpm,
-        isBallSpeedValid,
-        isTotalSpinValid,
-        isSpinAxisValid,
-        isBackspinValid,
-        isSidespinValid,
-        validityBitmask,
-      ]);
+    Object.hashAll(rawData),
+    isVerticalAngleValid,
+    isHorizontalAngleValid,
+    ballSpeedMps,
+    verticalAngle,
+    horizontalAngle,
+    totalSpinRpm,
+    spinAxis,
+    backspinRpm,
+    sidespinRpm,
+    isBallSpeedValid,
+    isTotalSpinValid,
+    isSpinAxisValid,
+    isBackspinValid,
+    isSidespinValid,
+    validityBitmask,
+  ]);
 
   @override
-  String toString() => 'BallMetrics(speed: ${ballSpeedMps}mps, '
+  String toString() =>
+      'BallMetrics(speed: ${ballSpeedMps}mps, '
       'angle: $verticalAngle°/$horizontalAngle°, '
       'spin: $totalSpinRpm@$spinAxis° '
       '(back: $backspinRpm, side: $sidespinRpm))';
@@ -322,6 +346,8 @@ BallMetrics parseShotBallMetrics(List<String> bytesList) {
     spinAxis: axis.ok ? axis.value : 0.0,
     backspinRpm: backspinRpm,
     sidespinRpm: sidespinRpm,
+    isVerticalAngleValid: vAng.ok && vAng.valid,
+    isHorizontalAngleValid: hAng.ok && hAng.valid,
     isBallSpeedValid: isBallSpeedValid,
     isTotalSpinValid: isTotalSpinValid,
     isSpinAxisValid: isSpinAxisValid,
@@ -426,24 +452,24 @@ class ClubMetrics {
 
   @override
   int get hashCode => Object.hashAll([
-        Object.hashAll(rawData),
-        pathAngle,
-        faceAngle,
-        attackAngle,
-        dynamicLoftAngle,
-        impactHorizontal,
-        impactVertical,
-        clubSpeed,
-        smashFactor,
-        isPathAngleValid,
-        isFaceAngleValid,
-        isAttackAngleValid,
-        isDynamicLoftValid,
-        isImpactHorizontalValid,
-        isImpactVerticalValid,
-        isClubSpeedValid,
-        isSmashFactorValid,
-      ]);
+    Object.hashAll(rawData),
+    pathAngle,
+    faceAngle,
+    attackAngle,
+    dynamicLoftAngle,
+    impactHorizontal,
+    impactVertical,
+    clubSpeed,
+    smashFactor,
+    isPathAngleValid,
+    isFaceAngleValid,
+    isAttackAngleValid,
+    isDynamicLoftValid,
+    isImpactHorizontalValid,
+    isImpactVerticalValid,
+    isClubSpeedValid,
+    isSmashFactorValid,
+  ]);
 
   @override
   String toString() =>
@@ -549,8 +575,7 @@ class AlignmentData {
           isAligned == other.isAligned;
 
   @override
-  int get hashCode =>
-      Object.hash(Object.hashAll(rawData), aimAngle, isAligned);
+  int get hashCode => Object.hash(Object.hashAll(rawData), aimAngle, isAligned);
 
   @override
   String toString() => 'AlignmentData(angle: $aimAngle°, aligned: $isAligned)';

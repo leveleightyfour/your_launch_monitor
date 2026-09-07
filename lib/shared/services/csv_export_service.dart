@@ -50,12 +50,17 @@ class CsvExportService {
           );
 
     try {
-      final csv =
-          buildCsv(shots: shots, clubs: clubs, tags: tags, prefs: prefs);
+      final csv = buildCsv(
+        shots: shots,
+        clubs: clubs,
+        tags: tags,
+        prefs: prefs,
+      );
 
       final dir = await getTemporaryDirectory();
       final date = DateTime.now();
-      final stamp = '${date.year}-${date.month.toString().padLeft(2, '0')}-'
+      final stamp =
+          '${date.year}-${date.month.toString().padLeft(2, '0')}-'
           '${date.day.toString().padLeft(2, '0')}';
       final safe = baseName
           .trim()
@@ -63,7 +68,8 @@ class CsvExportService {
           .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
           .replaceAll(RegExp(r'^-+|-+$'), '');
       final file = File(
-          '${dir.path}/${safe.isEmpty ? 'shots' : safe}_$stamp.csv');
+        '${dir.path}/${safe.isEmpty ? 'shots' : safe}_$stamp.csv',
+      );
       await file.writeAsString(csv);
 
       await SharePlus.instance.share(
@@ -76,9 +82,9 @@ class CsvExportService {
       );
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
       }
     }
   }
@@ -115,6 +121,10 @@ class CsvExportService {
       'Impact Horizontal (mm)',
       'Impact Vertical (mm)',
       'Tags',
+      'Ball Measurement Source',
+      'Club Speed Source',
+      'Shot Intent',
+      'Assessment Context (JSON; distances in yd)',
     ];
 
     String clubName(String? id) {
@@ -131,7 +141,8 @@ class CsvExportService {
     }
 
     String n(double v, [int dp = 1]) => v.toStringAsFixed(dp);
-    String opt(double? v, [int dp = 1]) => v == null ? '' : v.toStringAsFixed(dp);
+    String opt(double? v, [int dp = 1]) =>
+        v == null ? '' : v.toStringAsFixed(dp);
     String optDist(double? v) => v == null ? '' : n(prefs.dist(v));
 
     final buf = StringBuffer()..writeln(headers.map(_escape).join(','));
@@ -163,6 +174,10 @@ class CsvExportService {
         opt(s.horizontalImpact),
         opt(s.verticalImpact),
         tagNames(s.tagIds),
+        s.context.ballSource.name,
+        s.context.clubSpeedSource.name,
+        s.context.intent.name,
+        s.context.encode(),
       ];
       buf.writeln(row.map(_escape).join(','));
     }
