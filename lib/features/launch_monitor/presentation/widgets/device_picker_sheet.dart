@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:omni_sniffer/features/launch_monitor/application/providers.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/last_device_provider.dart';
-import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/constants.dart';
+import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/constants.dart'
+    as sg;
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 import 'package:omni_sniffer/shared/app_icons.dart';
 
@@ -15,16 +17,32 @@ import 'package:omni_sniffer/shared/app_icons.dart';
 class DevicePickerSheet extends ConsumerStatefulWidget {
   const DevicePickerSheet({super.key});
 
-  static Future<void> show(BuildContext context) {
-    return showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.card,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => const DevicePickerSheet(),
-    );
+  static Future<void> show(BuildContext context) async {
+    // Grab the container up front: the sheet's own `dispose` can't touch `ref`,
+    // and by the time the modal closes the caller's context may be gone.
+    final container = ProviderScope.containerOf(context, listen: false);
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: AppColors.card,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (_) => const DevicePickerSheet(),
+      );
+    } finally {
+      // Dismissing the sheet — drag, barrier tap, Esc, back — tears the widget
+      // down without telling the notifier, leaving the shared status on
+      // `scanning`. Every connect control is gated on `disconnected`, so that
+      // is exactly how the session screen ends up with a Connect button that
+      // no longer opens this sheet. Reset it here, for every caller.
+      if (container.exists(launchMonitorProvider) &&
+          container.read(launchMonitorProvider).status ==
+              LaunchMonitorStatus.scanning) {
+        await container.read(launchMonitorProvider.notifier).stopScan();
+      }
+    }
   }
 
   @override
@@ -72,10 +90,9 @@ class _DevicePickerSheetState extends ConsumerState<DevicePickerSheet> {
   @override
   void dispose() {
     // Don't touch `ref` here — Riverpod forbids it during teardown
-    // (Bad state: "Cannot use ref after the widget was disposed"). The
-    // chip's onConnect handler in session_list_screen.dart awaits the
-    // modal close and resets scan state explicitly, which is the canonical
-    // path. We only clean up our local stream subscription here.
+    // (Bad state: "Cannot use ref after the widget was disposed"). Cancelling
+    // the subscription stops the platform scan via the adapter, and [show]
+    // resets the shared status once the modal has fully closed.
     _sub?.cancel();
     super.dispose();
   }
@@ -135,7 +152,11 @@ class _DevicePickerSheetState extends ConsumerState<DevicePickerSheet> {
                   )
                 else
                   IconButton(
-                    icon: Icon(AppIcons.refresh, size: 18, color: context.accent),
+                    icon: Icon(
+                      AppIcons.refresh,
+                      size: 18,
+                      color: context.accent,
+                    ),
                     onPressed: _startScan,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
@@ -282,15 +303,15 @@ class _DeviceTile extends StatelessWidget {
 }
 
 class _DeviceTypeBadge extends StatelessWidget {
-  final SquareGolfDeviceType type;
+  final sg.SquareGolfDeviceType type;
   const _DeviceTypeBadge({required this.type});
 
   @override
   Widget build(BuildContext context) {
     final (label, color) = switch (type) {
-      SquareGolfDeviceType.omni => ('OMNI', context.accent),
-      SquareGolfDeviceType.home => ('HOME', AppColors.textMuted),
-      SquareGolfDeviceType.unknown => ('?', AppColors.textDimmed),
+      sg.SquareGolfDeviceType.omni => ('OMNI', context.accent),
+      sg.SquareGolfDeviceType.home => ('HOME', AppColors.textMuted),
+      sg.SquareGolfDeviceType.unknown => ('?', AppColors.textDimmed),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

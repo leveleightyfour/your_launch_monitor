@@ -68,6 +68,16 @@ class SensorData {
   final List<String> rawData;
   final bool ballReady;
   final bool ballDetected;
+
+  /// Byte 3 verbatim, before it is flattened into [ballReady].
+  ///
+  /// It carries at least three states and the Go reference treats two of them
+  /// (`01` and `02`) as the same "ready". The manual describes two distinct
+  /// LED behaviours — solid green with the ball inside the ready zone, blinking
+  /// green while the monitor waits for one to be placed there — so those two
+  /// values plausibly separate "in the zone" from "seen but not in it", and
+  /// collapsing them throws that away. Kept raw until a capture settles it.
+  final int readyState;
   final int positionX;
   final int positionY;
   final int positionZ;
@@ -76,6 +86,7 @@ class SensorData {
     required this.rawData,
     required this.ballReady,
     required this.ballDetected,
+    this.readyState = 0,
     required this.positionX,
     required this.positionY,
     required this.positionZ,
@@ -133,6 +144,7 @@ SensorData parseSensorData(List<String> bytesList) {
   return SensorData(
     rawData: List.unmodifiable(bytesList),
     ballReady: bytesList[3] == '01' || bytesList[3] == '02',
+    readyState: int.tryParse(bytesList[3], radix: 16) ?? 0,
     ballDetected: bytesList[4] == '01',
     positionX: _parseInt32LE(
       bytesList[5],

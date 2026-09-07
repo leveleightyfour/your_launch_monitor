@@ -17,6 +17,8 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/screens/sessio
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/device_picker_sheet.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/error_banner.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/session_finish_flow.dart';
+import 'package:omni_sniffer/features/launch_monitor/application/ball_position_provider.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/ball_position_map.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/camera_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/club_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/dispersion_tab.dart';
@@ -554,19 +556,11 @@ class _TopBar extends StatelessWidget {
               onTap: onToggleArm,
             ),
             const SizedBox(width: 8),
-            Tooltip(
-              message: ballLabel,
-              child: Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: !detecting || (!ballDetected && !ballReady)
-                      ? Colors.transparent
-                      : ballColor,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: ballColor, width: 2),
-                ),
-              ),
+            _BallChip(
+              colour: ballColor,
+              filled: detecting && (ballDetected || ballReady),
+              label: ballLabel,
+              onTap: () => BallPositionPanel.show(context),
             ),
             const SizedBox(width: 6),
           ] else
@@ -577,7 +571,11 @@ class _TopBar extends StatelessWidget {
                 _ => 'CONNECT',
               },
               active: false,
-              onTap: status == LaunchMonitorStatus.disconnected
+              // Tappable while scanning too: if a scan ever outlives its
+              // picker the chip is the way back in, and reopening restarts it.
+              onTap:
+                  status == LaunchMonitorStatus.disconnected ||
+                      status == LaunchMonitorStatus.scanning
                   ? () => DevicePickerSheet.show(context)
                   : null,
             ),
@@ -650,6 +648,63 @@ class _MonoChip extends StatelessWidget {
           child: Text(
             label,
             style: _mono(10, color: active ? accent : _ink55, tracking: 1.3),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The ball-state dot, in a chip that admits it is a button.
+///
+/// It was a bare 10px dot, which carried the state honestly and gave no hint
+/// that the mat view sat behind it. Same dot, same colours, now with the word
+/// next to it and the chip border every other control in this bar wears.
+class _BallChip extends StatelessWidget {
+  final Color colour;
+  final bool filled;
+  final String label;
+  final VoidCallback onTap;
+
+  const _BallChip({
+    required this.colour,
+    required this.filled,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: '$label. Tap for the ball position on the mat',
+      child: Semantics(
+        button: true,
+        label: '$label. Show ball position on the mat',
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+            decoration: BoxDecoration(
+              border: Border.all(color: _edge),
+              borderRadius: BorderRadius.circular(2),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: filled ? colour : Colors.transparent,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: colour, width: 2),
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Text('MAT', style: _mono(10, color: _ink55, tracking: 1.3)),
+              ],
+            ),
           ),
         ),
       ),
@@ -962,10 +1017,39 @@ class _Rail extends ConsumerWidget {
         border: Border(left: BorderSide(color: _hairline)),
       ),
       child: current == null
-          ? Center(
-              child: Text(
-                'WAITING FOR THE FIRST SHOT',
-                style: _mono(10, color: _ink30, tracking: 1.6),
+          // No shot to report on yet — which is precisely when the golfer is
+          // setting the ball down. The rail spent that whole stretch showing
+          // an apology; it shows the mat instead, and goes back to the shot
+          // story the moment there is one.
+          ? Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Flexible, because the map is square and the rail is not:
+                  // on a short window a fixed 260 would overflow the column.
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 320),
+                      // A Consumer, not a ref.watch on the rail: the position
+                      // moves at sensor rate, and the rail is a tile grid once
+                      // shots exist. Only this subtree hears about it.
+                      child: Consumer(
+                        builder: (context, ref, _) => BallPositionMap(
+                          position: ref.watch(ballPositionProvider),
+                          detecting: ref.watch(
+                            launchMonitorProvider.select((s) => s.detecting),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'WAITING FOR THE FIRST SHOT',
+                    style: _mono(10, color: _ink30, tracking: 1.6),
+                  ),
+                ],
               ),
             )
           : Column(

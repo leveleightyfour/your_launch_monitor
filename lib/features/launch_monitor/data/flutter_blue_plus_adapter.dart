@@ -17,35 +17,109 @@ class FlutterBluePlusAdapter implements BleAdapter {
   final Map<String, BluetoothCharacteristic> _chars = {};
 
   @override
-  Stream<List<BleScannedDevice>> scan({Duration timeout = const Duration(seconds: 15)}) {
-    lmLog('scan', 'startScan timeout=${timeout.inSeconds}s');
-    FlutterBluePlus.startScan(timeout: timeout);
-    return FlutterBluePlus.scanResults.map((results) {
-      final mapped = results
-          .map((r) => BleScannedDevice(
-                id: r.device.remoteId.str,
-                name: r.device.platformName,
-                manufacturerDataHex: _flattenManufacturerData(
-                  r.advertisementData.manufacturerData,
-                ),
-              ))
-          .toList();
-      // Log every device while we're hunting for the Omni's advertised name.
-      // Tighten this back to a prefix filter once we know what it actually
-      // calls itself.
-      for (final d in mapped) {
-        final isCandidate = d.name.toLowerCase().contains('square') ||
-            d.name.toLowerCase().contains('omni') ||
-            d.name.toLowerCase().contains('sg') ||
-            d.manufacturerDataHex.toUpperCase().contains('3033303041');
-        lmLog(
-          'scan',
-          '${isCandidate ? '★ ' : '  '}name="${d.name}" id=${d.id} '
-              'mfg=${d.manufacturerDataHex}',
-        );
+  Stream<List<BleScannedDevice>> scan({
+    Duration timeout = const Duration(seconds: 15),
+  }) {
+    // A plain `.map` over `FlutterBluePlus.scanResults` reads simpler, but that
+    // stream is a long-lived broadcast controller that is never closed: when the
+    // scan times out the caller gets no `done`, so a picker waiting on one spins
+    // forever. Cancelling it doesn't stop the platform scan either. Own the
+    // whole lifecycle here, the way the Windows adapter does.
+    final controller = StreamController<List<BleScannedDevice>>();
+    StreamSubscription<List<ScanResult>>? resultsSub;
+    StreamSubscription<bool>? scanningSub;
+
+    Future<void> cancelSubs() async {
+      final results = resultsSub;
+      final scanning = scanningSub;
+      resultsSub = null;
+      scanningSub = null;
+      await results?.cancel();
+      await scanning?.cancel();
+    }
+
+    Future<void> finish() async {
+      await cancelSubs();
+      if (!controller.isClosed) await controller.close();
+    }
+
+    controller.onListen = () async {
+      lmLog('scan', 'startScan timeout=${timeout.inSeconds}s');
+      try {
+        // Awaited: startScan reports "bluetooth is off" and "unauthorised" —
+        // both routine on macOS — by rejecting this future, never on
+        // scanResults. Left fire-and-forget those become an unhandled async
+        // error while the caller waits on a stream that will never emit.
+        await FlutterBluePlus.startScan(timeout: timeout);
+      } catch (e, s) {
+        lmWarn('scan', 'startScan failed: $e');
+        if (!controller.isClosed) controller.addError(e, s);
+        await finish();
+        return;
       }
-      return mapped;
-    });
+      if (controller.isClosed) return; // cancelled while starting
+
+      resultsSub = FlutterBluePlus.scanResults.listen(
+        (results) {
+          if (!controller.isClosed) controller.add(_mapResults(results));
+        },
+        onError: (Object e, StackTrace s) {
+          if (!controller.isClosed) controller.addError(e, s);
+        },
+      );
+
+      // `isScanning` re-emits its current value on listen, which is the `true`
+      // the startScan above just caused; the next `false` is the timeout
+      // firing. That transition is the only signal FlutterBluePlus gives that
+      // a scan is over, so turn it into the `done` the caller is waiting for.
+      scanningSub = FlutterBluePlus.isScanning
+          .where((scanning) => !scanning)
+          .listen((_) {
+            lmLog('scan', 'scan finished');
+            unawaited(finish());
+          });
+    };
+
+    controller.onCancel = () async {
+      await cancelSubs();
+      // Nothing else stops the platform scan once the caller walks away, and an
+      // orphaned scan keeps the radio busy and blocks the next one.
+      try {
+        await FlutterBluePlus.stopScan();
+      } catch (_) {}
+    };
+
+    return controller.stream;
+  }
+
+  static List<BleScannedDevice> _mapResults(List<ScanResult> results) {
+    final mapped = results
+        .map(
+          (r) => BleScannedDevice(
+            id: r.device.remoteId.str,
+            name: r.device.platformName,
+            manufacturerDataHex: _flattenManufacturerData(
+              r.advertisementData.manufacturerData,
+            ),
+          ),
+        )
+        .toList();
+    // Log every device while we're hunting for the Omni's advertised name.
+    // Tighten this back to a prefix filter once we know what it actually
+    // calls itself.
+    for (final d in mapped) {
+      final isCandidate =
+          d.name.toLowerCase().contains('square') ||
+          d.name.toLowerCase().contains('omni') ||
+          d.name.toLowerCase().contains('sg') ||
+          d.manufacturerDataHex.toUpperCase().contains('3033303041');
+      lmLog(
+        'scan',
+        '${isCandidate ? '★ ' : '  '}name="${d.name}" id=${d.id} '
+            'mfg=${d.manufacturerDataHex}',
+      );
+    }
+    return mapped;
   }
 
   static String _flattenManufacturerData(Map<int, List<int>> data) {

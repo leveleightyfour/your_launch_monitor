@@ -6,6 +6,8 @@ import 'package:omni_sniffer/shared/app_version.dart';
 import 'package:omni_sniffer/shared/providers/accent_color_provider.dart';
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/log.dart';
+import 'package:omni_sniffer/features/launch_monitor/application/ball_observation_provider.dart';
+import 'package:omni_sniffer/shared/services/ball_observation_export.dart';
 import 'package:omni_sniffer/shared/services/protocol_capture_export.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 import 'package:omni_sniffer/shared/app_icons.dart';
@@ -178,6 +180,20 @@ class ProfileScreen extends ConsumerWidget {
                 icon: AppIcons.bug,
                 label: 'Export protocol capture',
                 onTap: () => ProtocolCaptureExport.share(context),
+              ),
+            ),
+            // Where the monitor has seen a ball, and where it called one ready.
+            // The zone cannot be read off the manual — its offsets are quoted
+            // from the device's body, and the wire reports from the middle of
+            // its field of view — so it is measured instead.
+            Consumer(
+              builder: (ctx, ref, _) => _SettingsRow(
+                icon: AppIcons.bug,
+                label: 'Export ball position log',
+                onTap: () => BallObservationExport.share(
+                  ctx,
+                  ref.read(ballObservationLogProvider).log,
+                ),
               ),
             ),
             const SizedBox(height: 24),
