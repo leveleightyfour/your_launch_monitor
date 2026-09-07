@@ -28,10 +28,14 @@ carry/apex annotations, the shot tracer and comparison trails remain available.
 - Procedural surface detail examines at most 676 candidates per scene repaint,
   reduced to 324 in compact panes and Follow. It rejects offscreen/distant points
   and fades them by camera depth. Placement is deterministic in world space.
-- Custom-hole trees reuse the existing per-grid stand cache. At most 128 visible
-  trees draw (64 for compact/Follow), nearest first for selection, then sorted
-  back to front. Small/distant crowns use three lobes rather than seven. Analytic
-  holes use up to 36 decorative trees outside their fairway and green.
+- Custom-hole trees reuse the existing per-grid stand cache and draw every
+  visible tree back to front, without a nearest-tree count cap. Visibility uses
+  the full projected canopy, trunk and shadow against the canvas clip bounds.
+  Crowns with a projected radius up to 5 logical pixels use three flat-colour
+  lobes and no shadow; shadows fade in between radii of 5 and 10 pixels. Crowns
+  below 12 pixels and compact/Follow views use three lobes; larger crowns use
+  seven. Analytic holes use up to 36 decorative trees outside their fairway and
+  green, with the same bounds checks and screen-size detail.
 - The new animated tracer and ball use ordinary strokes and radial gradients;
   they do not use `MaskFilter.blur`, `saveLayer`, lighting/shadow maps or animated
   reflections. Device pixel ratio does not increase procedural object counts.
@@ -40,7 +44,8 @@ This remains a perspective Canvas visualization, not a photorealistic 3D engine.
 The ground is flat to match the flight model. Trees are decorative, and the shot
 layer stays visible over foliage, as in Classic. The custom hole's rectangular
 terrain edges are preserved rather than inventing different landing surfaces.
-The detail caps bound the added work; they are not a measured FPS guarantee.
+Surface detail is capped; tree cost scales with the visible stand and projected
+size. These optimizations are not a measured FPS guarantee.
 
 ## Validation
 

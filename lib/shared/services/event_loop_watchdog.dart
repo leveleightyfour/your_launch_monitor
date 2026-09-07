@@ -35,7 +35,6 @@ class EventLoopWatchdog {
   final String tag;
 
   Timer? _timer;
-  Stopwatch? _since;
   int _stalls = 0;
   int _ticks = 0;
   Duration _worst = Duration.zero;
@@ -51,7 +50,6 @@ class EventLoopWatchdog {
     _worst = Duration.zero;
     debugPrint('[watchdog:$tag] started');
     final since = Stopwatch()..start();
-    _since = since;
     _timer = Timer.periodic(_interval, (_) {
       final late = since.elapsed - _interval;
       since.reset();
@@ -79,7 +77,6 @@ class EventLoopWatchdog {
     final ran = _timer != null;
     _timer?.cancel();
     _timer = null;
-    _since = null;
     if (ran) {
       debugPrint(
         '[watchdog:$tag] stopped · $_stalls stalls · '

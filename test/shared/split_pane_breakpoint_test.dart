@@ -1,7 +1,5 @@
-/// The split view's third pane is a desktop / ultra-wide affordance: it took
-/// the width the fixed optimizer rail used to occupy, so it must not leak onto
-/// a phone or a tablet in portrait, and it must fold away again the moment a
-/// desktop window is dragged too narrow to divide three ways.
+/// Split panes follow available logical width on every platform, with an
+/// ultra-wide override for the three-pane strip.
 library;
 
 import 'package:flutter/foundation.dart';
@@ -54,13 +52,13 @@ void main() {
     });
 
     testWidgets('phone in landscape does not', (tester) async {
-      // ~19.5:9 — wide enough in ratio, but shortestSide rules it out.
-      expect(await _supports(tester, const Size(2340, 540)), isFalse);
+      // Logical pixels, not the physical pixel count of a phone display.
+      expect(await _supports(tester, const Size(844, 390)), isFalse);
     });
 
-    testWidgets('tablet that is merely wide does not', (tester) async {
-      // 16:10 iPad-class landscape: plenty of pixels, not ultra-wide.
-      expect(await _supports(tester, const Size(1366, 1024)), isFalse);
+    testWidgets('wide tablet gets three readable panes', (tester) async {
+      // Three 360-point panes fit even without an ultra-wide aspect ratio.
+      expect(await _supports(tester, const Size(1366, 1024)), isTrue);
     });
 
     testWidgets('a narrow ultra-wide still gets three panes', (tester) async {

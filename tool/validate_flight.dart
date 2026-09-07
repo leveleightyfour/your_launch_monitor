@@ -1,11 +1,13 @@
 /// Compare an independent set of observed flights with the unchanged aero fit.
 /// Usage: dart run tool/validate_flight.dart observations.json
 /// All distances are yards, speeds mph, angles degrees, times seconds.
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
-import '../lib/features/launch_monitor/domain/entities/shot_trajectory.dart';
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_trajectory.dart';
 
 void main(List<String> args) {
   if (args.length != 1) {

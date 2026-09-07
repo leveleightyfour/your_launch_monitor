@@ -2024,7 +2024,6 @@ class _ShotReviewState extends State<_ShotReview>
   }
 
   Widget _pane(int slot, {required bool captioned}) {
-    final clip = widget.shot.angles[slot]!;
     final shown = _decoders[slot]!.shown;
     return ColoredBox(
       color: Colors.black,

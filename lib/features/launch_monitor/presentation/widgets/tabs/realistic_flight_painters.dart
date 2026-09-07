@@ -251,31 +251,30 @@ class _RealisticScenePainter extends _ScenePainter {
   @override
   void _paintTrees(Canvas canvas, _Camera camera, HoleGrid grid) {
     final visible = <({double depth, Vec3 at, double scale})>[];
-    final viewport = Rect.fromLTRB(
-      -80,
-      -120,
-      camera.centre.dx * 2 + 80,
-      camera.centre.dy * 2 + 120,
-    );
     for (final tree in _ScenePainter._treeStands(grid)) {
       final depth = camera.depthOf(tree.at);
       if (depth < 2) continue;
-      final top = camera.project(tree.at + Vec3(0, 6 * tree.scale, 0));
-      if (top == null || !viewport.contains(top)) continue;
       visible.add((depth: depth, at: tree.at, scale: tree.scale));
     }
-    visible.sort((a, b) => a.depth.compareTo(b.depth));
-    // Keep nearest trees, then paint back-to-front. The scan uses the shared
-    // cached stand list; dense custom grids cannot multiply canopy draw calls.
-    final count = math.min(visible.length, _reducedDetail ? 64 : 128);
+    // Keep the entire stand as the camera moves. Screen-size detail and
+    // whole-tree bounds below control drawing cost without removing rows.
+    visible.sort((a, b) => b.depth.compareTo(a.depth));
     final trunk = Paint()..color = scene.treeTrunk;
     final lit = Paint()..color = scene.treeCanopyLit;
     final shade = Paint()..color = scene.treeCanopy;
-    for (var i = count - 1; i >= 0; i--) {
-      final t = visible[i];
+    for (final t in visible) {
       _paintTree(canvas, camera, t.at, t.scale, trunk, lit, shade);
     }
   }
+
+  static final _treeShadowRing = List<Offset>.generate(
+    16,
+    (i) => Offset(
+      3 + math.cos(i * math.pi / 8) * 4,
+      2 + math.sin(i * math.pi / 8) * 2.4,
+    ),
+    growable: false,
+  );
 
   @override
   void _paintTree(
@@ -293,29 +292,60 @@ class _RealisticScenePainter extends _ScenePainter {
     final crown = camera.project(base + Vec3(0, 6.4 * scale, 0));
     if (bottom == null || crown == null) return;
     final radius = camera.focal * 3.4 * scale / depth;
-    if (radius < 1.2) return;
+    // A lobe can reach 1.32 radii from the crown. Include the full trunk
+    // and antialiasing fringe too; testing a treetop point clips nearby trees.
+    var bounds = Rect.fromCircle(center: crown, radius: radius * 1.35)
+        .expandToInclude(
+          Rect.fromPoints(bottom, crown).inflate(math.max(0.4, radius * 0.07)),
+        )
+        .inflate(1);
+    final shadowOpacity = ((radius - 5) / 5).clamp(0.0, 1.0);
+    // Small crowns retain their silhouette but don't need ground shadows.
+    // Include the projected shadow so offscreen trees can still cast into view.
+    var shadowCrossesNearPlane = false;
+    if (shadowOpacity > 0) {
+      // Project the enclosing ground rectangle before constructing the shadow.
+      for (final corner in const [
+        Offset(-1, -0.4),
+        Offset(7, -0.4),
+        Offset(7, 4.4),
+        Offset(-1, 4.4),
+      ]) {
+        final projected = camera.project(
+          Vec3(base.x + corner.dx * scale, 0.01, base.z + corner.dy * scale),
+        );
+        if (projected == null) {
+          shadowCrossesNearPlane = true;
+        } else {
+          bounds = bounds.expandToInclude(
+            Rect.fromCircle(center: projected, radius: 1),
+          );
+        }
+      }
+    }
+    if (!shadowCrossesNearPlane &&
+        !bounds.overlaps(canvas.getLocalClipBounds())) {
+      return;
+    }
     final fog = (depth / 900).clamp(0.0, 0.75);
     final dark = Color.lerp(scene.treeCanopy, scene.skyHorizon, fog)!;
     final light = Color.lerp(scene.treeCanopyLit, scene.skyHorizon, fog)!;
 
-    // Ground-projected directional shadow; gradients cost one ordinary fill.
-    final shadow = <Vec3>[
-      for (var i = 0; i < 16; i++)
-        Vec3(
-          base.x + 3 * scale + math.cos(i * math.pi / 8) * 4 * scale,
-          0.01,
-          base.z + 2 * scale + math.sin(i * math.pi / 8) * 2.4 * scale,
-        ),
-    ];
-    _polygon3(
-      canvas,
-      camera,
-      shadow,
-      Paint()
-        ..color = Colors.black.withAlpha(
-          prefs.skyScene == SkyScene.overcast ? 20 : 38,
-        ),
-    );
+    if (shadowOpacity > 0) {
+      _polygon3(
+        canvas,
+        camera,
+        [
+          for (final offset in _treeShadowRing)
+            Vec3(base.x + offset.dx * scale, 0.01, base.z + offset.dy * scale),
+        ],
+        Paint()
+          ..color = Colors.black.withAlpha(
+            ((prefs.skyScene == SkyScene.overcast ? 20 : 38) * shadowOpacity)
+                .round(),
+          ),
+      );
+    }
     canvas.drawLine(
       bottom,
       crown,
@@ -324,7 +354,8 @@ class _RealisticScenePainter extends _ScenePainter {
         ..strokeWidth = math.max(0.8, radius * 0.14),
     );
     final paint = Paint();
-    final lobes = radius < 5 || _reducedDetail ? 3 : 7;
+    final distant = radius <= 5;
+    final lobes = _reducedDetail || radius < 12 ? 3 : 7;
     for (var i = 0; i < lobes; i++) {
       final angle = i * 2.4 + base.z;
       final at = crown.translate(
@@ -332,12 +363,16 @@ class _RealisticScenePainter extends _ScenePainter {
         math.sin(angle) * radius * 0.34,
       );
       final r = radius * (i == 0 ? 0.9 : 0.67);
-      paint.shader = ui.Gradient.radial(
-        at.translate(-r * 0.35, -r * 0.4),
-        r * 1.7,
-        [light, dark],
-        [0, 1],
-      );
+      if (distant) {
+        paint.color = i.isEven ? dark : light;
+      } else {
+        paint.shader = ui.Gradient.radial(
+          at.translate(-r * 0.35, -r * 0.4),
+          r * 1.7,
+          [light, dark],
+          [0, 1],
+        );
+      }
       canvas.drawCircle(at, r, paint);
     }
   }
@@ -400,7 +435,11 @@ class _RealisticFlightPainter extends _FlightPainter {
   });
 
   @override
-  void _paintCurtain(Canvas canvas, _Camera camera, int upTo) {}
+  void _paintCurtain(
+    Canvas canvas,
+    _Camera camera,
+    List<TrajectoryPoint> points,
+  ) {}
 
   @override
   void _paintShadow(
@@ -411,8 +450,12 @@ class _RealisticFlightPainter extends _FlightPainter {
   ) {}
 
   @override
-  void _paintFlightPath(Canvas canvas, _Camera camera, int upTo) {
-    final path = _pathFor(camera, trajectory.points, upTo);
+  void _paintFlightPath(
+    Canvas canvas,
+    _Camera camera,
+    List<TrajectoryPoint> points,
+  ) {
+    final path = _pathFor(camera, points, points.length - 1);
     if (path == null) return;
     // Two crisp strokes stay readable against sky and turf without a
     // full-flight blur on every animation frame.

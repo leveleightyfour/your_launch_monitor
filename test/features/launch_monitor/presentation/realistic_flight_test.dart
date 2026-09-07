@@ -40,8 +40,127 @@ const _shot = ShotData(
   hole: HoleSetup.standard,
 );
 
+// Record tree silhouettes through the real scene painter without rasterizing.
+// Each tree draws its trunk immediately before its canopy circles.
+class _TreeCanvas extends Fake implements Canvas {
+  _TreeCanvas(this.clip);
+
+  final Rect clip;
+  final crowns = <Offset>[];
+  final canopyBounds = <Rect>[];
+  int flatLobes = 0;
+  Offset? _pendingCrown;
+  bool _inCanopy = false;
+
+  @override
+  Rect getLocalClipBounds() => clip;
+
+  @override
+  void drawLine(Offset a, Offset b, Paint paint) {
+    _pendingCrown = b;
+    _inCanopy = false;
+  }
+
+  @override
+  void drawCircle(Offset centre, double radius, Paint paint) {
+    if (_pendingCrown != null) {
+      crowns.add(_pendingCrown!);
+      canopyBounds.add(Rect.fromCircle(center: centre, radius: radius));
+      _pendingCrown = null;
+      _inCanopy = true;
+    } else if (_inCanopy) {
+      canopyBounds[canopyBounds.length - 1] = canopyBounds.last.expandToInclude(
+        Rect.fromCircle(center: centre, radius: radius),
+      );
+    }
+    if (_inCanopy && paint.shader == null) flatLobes++;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    _pendingCrown = null;
+    _inCanopy = false;
+    return null;
+  }
+}
+
 void main() {
   GoogleFonts.config.allowRuntimeFetching = false;
+  testWidgets('dense woods retain visible trees and partial canopies', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    final container = ProviderContainer(
+      overrides: [unitPrefsProvider.overrideWith(_MemoryPrefs.new)],
+    );
+    addTearDown(container.dispose);
+    container
+        .read(unitPrefsProvider.notifier)
+        .setFlightViewStyle(FlightViewStyle.realistic);
+    final grid = HoleGrid(
+      cellSize: 5,
+      cols: 40,
+      rows: 100,
+      cells: List.filled(4000, Terrain.trees),
+    );
+    final shot = _shot.copyWith(hole: HoleSetup.standard.copyWith(grid: grid));
+    for (final size in [const Size(900, 650), const Size(320, 260)]) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: Scaffold(
+              body: Flight3DTab(shots: [shot], showStatBar: false),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final finder = find.byKey(const ValueKey('flight-scene-realistic'));
+      final painter = tester.widget<CustomPaint>(finder).painter!;
+      final sceneSize = tester.getSize(finder);
+      final viewport = Offset.zero & sceneSize;
+      final canvas = _TreeCanvas(viewport);
+      painter.paint(canvas, sceneSize);
+      expect(canvas.crowns.length, greaterThan(128), reason: '$size');
+      expect(
+        canvas.flatLobes,
+        greaterThan(0),
+        reason: 'Distant trees should use inexpensive flat canopies',
+      );
+
+      // A narrow clip touches foliage while excluding its crown point. This
+      // also exercises Canvas clips that differ from the camera principal point.
+      final index = canvas.canopyBounds.indexWhere(
+        (bounds) =>
+            viewport.contains(bounds.topLeft) &&
+            viewport.contains(bounds.bottomRight) &&
+            bounds.width > 10,
+      );
+      expect(index, greaterThanOrEqualTo(0));
+      final crown = canvas.crowns[index];
+      final bounds = canvas.canopyBounds[index];
+      final clip = Rect.fromLTWH(bounds.left, bounds.top, 2, bounds.height);
+      expect(clip.contains(crown), isFalse);
+      final partial = _TreeCanvas(clip);
+      painter.paint(partial, sceneSize);
+      expect(
+        partial.crowns,
+        contains(crown),
+        reason: 'Foliage must survive when its crown point is outside the clip',
+      );
+      expect(
+        partial.crowns.length,
+        lessThan(canvas.crowns.length),
+        reason: 'Trees wholly outside the clip should be rejected',
+      );
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('Profile switches the mounted flight view in both directions', (
     tester,
   ) async {
@@ -86,6 +205,9 @@ void main() {
         180,
         scrollable: find.byType(Scrollable).last,
       );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(option);
+      await tester.pumpAndSettle();
       await tester.tap(option);
       await tester.pumpAndSettle();
       expect(container.read(unitPrefsProvider).flightViewStyle, style);
