@@ -1,3 +1,4 @@
+import '../domain/entities/shot_context.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/session.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
 
@@ -350,6 +351,11 @@ ShotData _shot(
   double? vImp,
 }) {
   return ShotData(
+    context: const ShotContext(
+      ballSource: MeasurementSource.simulated,
+      clubSpeedSource: MeasurementSource.simulated,
+      intent: ShotIntent.stock,
+    ),
     clubId: clubId,
     ballSpeed: ballSpeed,
     spinRate: spinRate,

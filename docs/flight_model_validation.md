@@ -42,7 +42,7 @@ A failure at a low layer invalidates everything above it.
 | 3 | Invariants | Does it respect physical bounds and symmetry? | No |
 | 4 | Sensitivity | Does every input move the flight the right way? | No |
 | 5 | Reference | Do published launch conditions give published flights? | Yes |
-| 6 | Cross-model | Does an independently built model agree? | Indirectly |
+| 6 | Window compatibility | Are provisional windows compatible with this model? | No; not independent validation |
 | 7 | Field | Does it match *this user's* shots on *this* range? | User's own |
 
 Layers 1–4 need no data at all, which is what makes them valuable: they are
@@ -192,34 +192,19 @@ The turf parameters were fitted separately, against the tour carry-to-total
 deltas, with the ball–turf friction pinned to Penner's measured 0.40 rather
 than fitted, so the spin-to-turf coupling stays physical.
 
-## 7. Layer 6 — cross-model agreement
+## 7. Reference-window compatibility (not independent validation)
 
-`ShotOptimizer`'s optimal launch and spin windows were written from published
-coaching and club-fitting guidance, with no knowledge of this simulation. They
-are an independent model of the same physics. If the two agree, that is much
-stronger evidence than either alone.
+The optimiser's broad launch/spin windows are provisional fitting references.
+The window sweep tests whether flights inside them approach the best carry in
+this same model. That is an internal compatibility check, not agreement with
+an independently measured or implemented flight model.
 
-They mostly do. Best carry reachable from inside the optimizer's driver window,
-against the best reachable anywhere:
-
-| Club speed | Shortfall inside the window |
-|---|---|
-| 115 mph | 0.2% |
-| 100 mph | 0.6% |
-| 85 mph | 2.9% |
-
-The carry ridge is very broad — at 170 mph ball speed, a 13° launch is within
-0.33% of the best carry available at *any* launch angle — so comparing the
-location of the two models' optima is meaningless. Comparing how much distance
-each leaves on the table is not.
-
-**The 85 mph disagreement is real and is not fitted away.** This model puts the
-carry-maximising launch for a slow swing at roughly 20–23°, above the 11–15°
-the optimizer recommends, worth about 5 yards of carry. Both can be defended:
-high launch genuinely does pay for slow swings, and a fitter's window is
-constrained by what a player can actually deliver with a driver. It is recorded
-in the test with the measured number so that a refit that changes it shows up
-as a deliberate decision rather than a silent drift.
+The updated optimiser directly searches `BallFlightModel.standard` at unchanged
+ball speed, direction and spin axis. Its agreement with a finer sweep can catch
+search and unit errors but cannot establish physical accuracy. Historical
+shortfall figures for the previous fixed windows do not describe the new
+interpolated windows. Independent cross-model and field validation remain
+necessary before making fitting-accuracy claims; see [shot optimiser](shot_optimizer.md).
 
 ## 8. Layer 7 — validating against your own shots
 
@@ -302,7 +287,7 @@ than "someone changed a number". Prefer, in order —
 1. a closed-form comparison,
 2. an invariant (symmetry, bound, conservation),
 3. a monotonic or single-peaked sweep,
-4. agreement with a model built independently of this one,
+4. internal compatibility with provisional optimiser windows (not independent validation),
 5. a reference data point.
 
 The last is the weakest and the suite already has enough of them.

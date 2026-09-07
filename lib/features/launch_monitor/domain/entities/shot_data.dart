@@ -1,3 +1,5 @@
+import 'shot_context.dart';
+
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/terrain.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_trajectory.dart';
@@ -10,26 +12,27 @@ class ShotData {
   /// Database row ID. Null for shots that haven't been persisted yet.
   final int? dbId;
   final String? clubId;
+  final ShotContext context;
 
   // Ball data
   final double ballSpeed;
   final double spinRate;
   final double spinAxis;
   final double launchDirection; // horizontal launch angle (deg)
-  final double launchAngle;    // vertical launch angle (deg)
+  final double launchAngle; // vertical launch angle (deg)
 
   // Club data
   final double clubSpeed;
 
   // Nullable — populated once BLE protocol is decoded
-  final double? apex;          // max height (yds)
-  final double? run;           // rolling distance (yds)
-  final double? swingPath;     // club path angle (deg)
-  final double? faceAngle;     // face angle relative to target (deg)
+  final double? apex; // max height (yds)
+  final double? run; // rolling distance (yds)
+  final double? swingPath; // club path angle (deg)
+  final double? faceAngle; // face angle relative to target (deg)
   final double? angleOfAttack; // (deg)
-  final double? dynamicLoft;   // (deg)
+  final double? dynamicLoft; // (deg)
   final double? horizontalImpact; // impact position (mm, + = toe)
-  final double? verticalImpact;   // impact position (mm, + = high)
+  final double? verticalImpact; // impact position (mm, + = high)
 
   /// IDs referencing persisted [Tag] rows.
   final List<int> tagIds;
@@ -42,6 +45,7 @@ class ShotData {
   final HoleSetup? hole;
 
   const ShotData({
+    this.context = const ShotContext(),
     this.dbId,
     this.clubId,
     required this.ballSpeed,
@@ -63,12 +67,15 @@ class ShotData {
   });
 
   ShotData copyWith({
+    double? clubSpeed,
+    ShotContext? context,
     int? dbId,
     List<int>? tagIds,
     HoleSetup? hole,
     bool clearHole = false,
   }) {
     return ShotData(
+      context: context ?? this.context,
       dbId: dbId ?? this.dbId,
       clubId: clubId,
       ballSpeed: ballSpeed,
@@ -76,7 +83,7 @@ class ShotData {
       spinAxis: spinAxis,
       launchDirection: launchDirection,
       launchAngle: launchAngle,
-      clubSpeed: clubSpeed,
+      clubSpeed: clubSpeed ?? this.clubSpeed,
       apex: apex,
       run: run,
       swingPath: swingPath,
@@ -142,8 +149,7 @@ class ShotData {
   /// Preserve the original raw fields even when a report is unusable.
   double? get reportedApexHeight =>
       apex != null && apex!.isFinite && apex! >= 0 ? apex : null;
-  double? get reportedRollDistance =>
-      run != null && run!.isFinite ? run : null;
+  double? get reportedRollDistance => run != null && run!.isFinite ? run : null;
 
   /// Lateral offset at landing in yards (positive = right of target). Includes
   /// the ball's curvature, not just the launch direction.
@@ -154,6 +160,30 @@ class ShotData {
 
   /// Angle the ball lands at, in degrees below horizontal.
   double get descentAngle => trajectory.descentAngle;
+
+  bool get hasMeasuredClubSpeed =>
+      context.clubSpeedSource == MeasurementSource.measured &&
+      clubSpeed.isFinite &&
+      clubSpeed > 0;
+
+  bool get hasUsableLaunch =>
+      (context.ballSource == MeasurementSource.measured ||
+          context.ballSource == MeasurementSource.simulated) &&
+      [
+        ballSpeed,
+        spinRate,
+        spinAxis,
+        launchDirection,
+        launchAngle,
+      ].every((v) => v.isFinite) &&
+      ballSpeed > 0 &&
+      ballSpeed <= 250 &&
+      spinRate >= 0 &&
+      spinRate <= 20000 &&
+      launchAngle > 0 &&
+      launchAngle < 80 &&
+      spinAxis.abs() <= 180 &&
+      launchDirection.abs() <= 90;
 
   /// Ball speed / club speed ratio.
   double get smashFactor => clubSpeed > 0 ? ballSpeed / clubSpeed : 0.0;

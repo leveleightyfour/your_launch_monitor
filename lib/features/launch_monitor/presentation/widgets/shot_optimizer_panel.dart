@@ -1,3 +1,5 @@
+import 'fitting_panel.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -33,16 +35,22 @@ class ShotOptimizerPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final explicit = shots;
-    final ShotAnalysis? analysis;
+    final AsyncValue<ShotAnalysis?> analysis;
     final SessionOptSummary? sessionSummary;
     if (explicit == null) {
       analysis = ref.watch(currentShotAnalysisProvider);
-      sessionSummary = ref.watch(sessionOptSummaryProvider);
+      sessionSummary = ref.watch(sessionOptSummaryProvider).valueOrNull;
     } else {
-      final optimizer = ref.read(shotOptimizerProvider);
       final clubs = ref.watch(clubsProvider);
-      analysis = analyzeShotAt(optimizer, explicit, selectedShotIndex, clubs);
-      sessionSummary = summariseShots(optimizer, explicit, clubs);
+      final report = ref.watch(
+        optimizerReportProvider((shots: explicit, clubs: clubs)),
+      );
+      analysis = report.whenData(
+        (r) => r.analyses.isEmpty
+            ? null
+            : r.analyses[selectedShotIndex.clamp(0, r.analyses.length - 1)],
+      );
+      sessionSummary = report.valueOrNull?.summary;
     }
     final prefs = ref.watch(unitPrefsProvider);
 
@@ -53,13 +61,35 @@ class ShotOptimizerPanel extends ConsumerWidget {
             ? const Border(left: BorderSide(color: AppColors.border))
             : null,
       ),
-      child: analysis == null
-          ? const _EmptyState()
-          : _OptimizerContent(
-              analysis: analysis,
-              sessionSummary: sessionSummary,
-              prefs: prefs,
+      child: Column(
+        children: [
+          FittingPanel(shots: explicit),
+          Expanded(
+            child: analysis.when(
+              skipLoadingOnRefresh: false,
+              skipLoadingOnReload: false,
+              loading: () => const Center(
+                child: CircularProgressIndicator(
+                  semanticsLabel: 'Calculating shot feedback',
+                ),
+              ),
+              error: (_, _) => Center(
+                child: Text(
+                  'Unable to calculate feedback. Reopen the optimisation tab to retry.',
+                  style: AppTextStyles.body(),
+                ),
+              ),
+              data: (value) => value == null
+                  ? const _EmptyState()
+                  : _OptimizerContent(
+                      analysis: value,
+                      sessionSummary: sessionSummary,
+                      prefs: prefs,
+                    ),
             ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -77,7 +107,11 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(AppIcons.optimizer, size: 36, color: AppColors.textDimmed),
+            const Icon(
+              AppIcons.optimizer,
+              size: 36,
+              color: AppColors.textDimmed,
+            ),
             const SizedBox(height: 14),
             Text(
               'Shot Optimizer',
@@ -89,7 +123,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Hit a shot to see what it cost you and what to work on.',
+              'Hit a shot to review launch conditions and suggested checks.',
               textAlign: TextAlign.center,
               style: AppTextStyles.sans(
                 size: 12,
@@ -180,13 +214,11 @@ class _StatReadout extends StatelessWidget {
   final String label;
   final String value;
   final String unit;
-  final Color? valueColor;
 
   const _StatReadout({
     required this.label,
     required this.value,
     this.unit = '',
-    this.valueColor,
   });
 
   @override
@@ -211,10 +243,7 @@ class _StatReadout extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   value,
-                  style: AppTextStyles.statValue(
-                    size: 20,
-                    color: valueColor ?? Colors.white,
-                  ),
+                  style: AppTextStyles.statValue(size: 20, color: Colors.white),
                 ),
               ),
             ),
@@ -299,7 +328,11 @@ class _SummarySection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _StatusBadge(critical: critical, outOfRange: outOfRange),
+          _StatusBadge(
+            critical: critical,
+            outOfRange: outOfRange,
+            assessed: analysis.assessed,
+          ),
           const SizedBox(height: 10),
           Text(
             analysis.summary,
@@ -308,6 +341,14 @@ class _SummarySection extends StatelessWidget {
               color: AppColors.textMuted,
             ).copyWith(height: 1.45),
           ),
+          for (final note in analysis.limitations)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                note,
+                style: AppTextStyles.sans(size: 12, color: AppColors.textMuted),
+              ),
+            ),
           if (gap != null && gap > 1.0 && analysis.optimalCarry != null) ...[
             const SizedBox(height: 12),
             _CarryGapCallout(
@@ -320,13 +361,15 @@ class _SummarySection extends StatelessWidget {
           _StatGrid(
             stats: [
               _StatReadout(
-                label: 'Carry',
+                label: 'Modelled carry',
                 value: prefs.dist(shot.carry).toStringAsFixed(1),
                 unit: prefs.distLabel,
               ),
               _StatReadout(
                 label: 'Smash',
-                value: shot.smashFactor.toStringAsFixed(2),
+                value: shot.hasMeasuredClubSpeed
+                    ? shot.smashFactor.toStringAsFixed(2)
+                    : '—',
               ),
               _StatReadout(
                 label: 'Launch',
@@ -391,7 +434,8 @@ class _CarryGapCallout extends StatelessWidget {
                     ),
                   ),
                   TextSpan(
-                    text: '  on offer — optimal carry is '
+                    text:
+                        '  modelled gain at current ball speed; estimated carry '
                         '$optimal ${prefs.distLabel}',
                     style: AppTextStyles.sans(
                       size: 12,
@@ -412,14 +456,23 @@ class _StatusBadge extends StatelessWidget {
   final int critical;
   final int outOfRange;
 
-  const _StatusBadge({required this.critical, required this.outOfRange});
+  final bool assessed;
+  const _StatusBadge({
+    required this.critical,
+    required this.outOfRange,
+    required this.assessed,
+  });
 
   @override
   Widget build(BuildContext context) {
     final Color color;
     final String label;
     final IconData icon;
-    if (critical > 0) {
+    if (!assessed) {
+      color = AppColors.textMuted;
+      icon = AppIcons.info;
+      label = 'Not assessed';
+    } else if (critical > 0) {
       color = AppColors.severityCritical;
       icon = AppIcons.error;
       label = '$critical critical ${critical == 1 ? 'issue' : 'issues'}';
@@ -430,7 +483,7 @@ class _StatusBadge extends StatelessWidget {
     } else {
       color = context.accent;
       icon = AppIcons.checkCircle;
-      label = 'Optimal';
+      label = 'Available checks passed';
     }
 
     return Container(
@@ -628,9 +681,12 @@ class _DiagnosticTile extends StatelessWidget {
   Widget build(BuildContext context) {
     // How far out of range the metric sits, for the deviation bar.
     final range = diagnostic.maxOptimal - diagnostic.minOptimal;
-    final mid = (diagnostic.minOptimal + diagnostic.maxOptimal) / 2;
-    final deviation = (diagnostic.measured - mid).abs();
-    final barFraction = (deviation / (range * 1.5)).clamp(0.0, 1.0);
+    final deviation = diagnostic.measured < diagnostic.minOptimal
+        ? diagnostic.minOptimal - diagnostic.measured
+        : diagnostic.measured > diagnostic.maxOptimal
+        ? diagnostic.measured - diagnostic.maxOptimal
+        : 0.0;
+    final barFraction = range > 0 ? (deviation / range).clamp(0.0, 1.0) : 0.0;
     final lost = diagnostic.estimatedYardsLost;
 
     return Container(
@@ -670,12 +726,21 @@ class _DiagnosticTile extends StatelessWidget {
             runSpacing: 8,
             children: [
               _InlineFigure(
-                label: 'Measured',
+                label: switch (diagnostic.metric) {
+                  'launchConditions' ||
+                  'carryDistance' ||
+                  'lateralOffset' ||
+                  'descentAngle' => 'Modelled',
+                  'smashFactor' ||
+                  'pathFaceAngleAlignment' ||
+                  'impactLocation' => 'Calculated',
+                  _ => 'Measured',
+                },
                 value: _formatValue(diagnostic.measured, diagnostic.metric),
                 valueColor: _severityColor,
               ),
               _InlineFigure(
-                label: 'Optimal',
+                label: 'Reference',
                 value:
                     '${_formatValue(diagnostic.minOptimal, diagnostic.metric)}'
                     '–${_formatValue(diagnostic.maxOptimal, diagnostic.metric)}',
@@ -714,11 +779,14 @@ class _DiagnosticTile extends StatelessWidget {
   String _formatValue(double value, String metric) => switch (metric) {
     'smashFactor' => value.toStringAsFixed(2),
     'spinRate' || 'spinLoftMismatch' => '${value.toInt()} rpm',
-    'launchAngle' || 'attackAngle' => '${value.toStringAsFixed(1)}°',
+    'launchAngle' ||
+    'attackAngle' ||
+    'launchDirection' ||
+    'descentAngle' => '${value.toStringAsFixed(1)}°',
     // Held in yards like everything in the domain layer. This used to print
     // the raw number with a hardcoded "yds", so a golfer working in metres
     // read one figure here in a different unit from the rest of the panel.
-    'carryDistance' =>
+    'carryDistance' || 'lateralOffset' || 'launchConditions' =>
       '${prefs.dist(value).toStringAsFixed(0)} ${prefs.distLabel}',
     'pathFaceAngleAlignment' => '${value.toStringAsFixed(1)}°',
     'impactLocation' => '${value.toStringAsFixed(2)}"',
@@ -791,88 +859,37 @@ class _SessionSummarySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _SectionHeader(label: 'Session so far'),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.border2),
-            ),
-            child: _StatGrid(
-              stats: [
-                _StatReadout(label: 'Shots', value: '${summary.totalShots}'),
-                _StatReadout(
-                  label: 'Avg carry',
-                  value: prefs.dist(summary.avgCarry).toStringAsFixed(1),
-                  unit: prefs.distLabel,
-                ),
-                _StatReadout(
-                  label: 'Avg smash',
-                  value: summary.avgSmash.toStringAsFixed(2),
-                ),
-                _StatReadout(
-                  label: 'Critical',
-                  value: '${summary.totalCritical}',
-                  valueColor: summary.totalCritical > 0
-                      ? AppColors.severityCritical
-                      : context.accent,
-                ),
-              ],
-            ),
+          const _SectionHeader(label: 'Session evidence'),
+          const SizedBox(height: 8),
+          Text(
+            '${summary.assessedShots} of ${summary.totalShots} shots assessed',
+            style: AppTextStyles.sans(size: 13),
           ),
-          if (summary.topIssueMetric != null) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border2),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    AppIcons.insights,
-                    size: 15,
-                    color: AppColors.severityWarning,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Recurring: '
-                      '${_humanizeMetric(summary.topIssueMetric!)}'
-                      ' — ${summary.topIssueCount}× this session',
-                      style: AppTextStyles.sans(
-                        size: 12,
-                        color: AppColors.textMuted,
-                      ).copyWith(height: 1.4),
-                    ),
-                  ),
-                  if (summary.totalYardsLost > 1) ...[
-                    const SizedBox(width: 8),
-                    Text(
-                      '~${prefs.dist(summary.totalYardsLost).toStringAsFixed(0)}'
-                      ' ${prefs.distLabel}',
-                      style: AppTextStyles.sans(
-                        size: 12,
-                        weight: FontWeight.w700,
-                        color: AppColors.severityWarning,
-                      ),
-                    ),
-                  ],
-                ],
+          for (final group in summary.groups)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                '${group.label} · ${group.count} shots\n'
+                'Modelled carry ${prefs.dist(group.avgCarry).toStringAsFixed(1)} ${prefs.distLabel}'
+                '${group.carrySd == null ? "" : " · SD ${prefs.dist(group.carrySd!).toStringAsFixed(1)} ${prefs.distLabel}"}\n'
+                'Smash from measured speeds ${group.avgSmash?.toStringAsFixed(2) ?? "—"} (${group.measuredSpeedCount} readings)',
+                style: AppTextStyles.sans(size: 12, color: AppColors.textMuted),
               ),
             ),
-          ],
+          if (summary.topIssueMetric != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                '${_humanizeMetric(summary.topIssueMetric!)}: '
+                '${summary.topIssueCount}/${summary.assessedShots} assessed shots. '
+                'Review comparable clubs and shot intents before treating this as a pattern.',
+                style: AppTextStyles.sans(size: 12, color: AppColors.textMuted),
+              ),
+            ),
         ],
       ),
     );
@@ -882,6 +899,10 @@ class _SessionSummarySection extends StatelessWidget {
 // ── Copy helpers ─────────────────────────────────────────────────────────────
 
 String _humanizeMetric(String metric) => switch (metric) {
+  'launchConditions' => 'Launch and spin combination',
+  'launchDirection' => 'Start line',
+  'lateralOffset' => 'Modelled lateral miss',
+  'descentAngle' => 'Modelled landing angle',
   'smashFactor' => 'Smash factor',
   'launchAngle' => 'Launch angle',
   'spinRate' => 'Spin rate',

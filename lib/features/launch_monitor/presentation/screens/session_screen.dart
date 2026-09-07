@@ -17,6 +17,7 @@ import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_o
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/session_finish_flow.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/shot_list_panel.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/camera_tab.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/ball_position_map.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/club_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/dispersion_tab.dart';
 import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/flight_3d_tab.dart';
@@ -719,12 +720,10 @@ class _ActiveSessionTopBar extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // Ball ready / not-ready indicator.
-            _BallReadyIndicator(
-              detecting: detecting,
-              ballDetected: ballDetected,
-              ballReady: ballReady,
-            ),
+            // The status dot and the mat, as one control: the edge carries the
+            // ball state the dot used to, and the picture inside adds where on
+            // the mat it is. Tap for the full view and the numbers.
+            const BallPositionMiniMap(),
             const SizedBox(width: 8),
           ],
           if (onSimulateShot != null) ...[
@@ -736,13 +735,18 @@ class _ActiveSessionTopBar extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           _CircleButton(
-            onTap: status == LaunchMonitorStatus.disconnected
+            // Tappable while scanning too: if a scan ever outlives its picker
+            // the dot is the way back in, and reopening restarts the scan.
+            onTap:
+                status == LaunchMonitorStatus.disconnected ||
+                    status == LaunchMonitorStatus.scanning
                 ? () => DevicePickerSheet.show(context)
                 : null,
             label: switch (status) {
               LaunchMonitorStatus.connected => 'Connected',
               LaunchMonitorStatus.connecting => 'Connecting',
-              LaunchMonitorStatus.scanning => 'Scanning for devices',
+              LaunchMonitorStatus.scanning =>
+                'Scanning for devices. Tap to reopen',
               LaunchMonitorStatus.disconnected =>
                 'Disconnected. Tap to connect',
             },
@@ -1760,77 +1764,6 @@ class _CircleButton extends StatelessWidget {
 /// - red   : armed, no ball detected
 /// - amber : ball detected but not in a ready position
 /// - green : ball detected and ready to hit
-class _BallReadyIndicator extends StatelessWidget {
-  final bool detecting;
-  final bool ballDetected;
-  final bool ballReady;
-
-  const _BallReadyIndicator({
-    required this.detecting,
-    required this.ballDetected,
-    required this.ballReady,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final (color, tooltip) = !detecting
-        ? (AppColors.textDimmed, 'Detection off')
-        : ballReady
-        ? (Colors.green, 'Ball ready')
-        : ballDetected
-        ? (Colors.orange, 'Ball detected, not ready')
-        : (Colors.red, 'No ball detected');
-
-    // State reads through shape as well as hue, so red-vs-green is never
-    // the only signal: hollow ring = no ball, filled dot = ball detected,
-    // filled dot with glow = ready to hit.
-    final hollow = !detecting || (!ballDetected && !ballReady);
-
-    return Tooltip(
-      message: tooltip,
-      child: Semantics(
-        label: tooltip,
-        // Sized to align with the 44px _CircleButton targets beside it.
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Center(
-            child: Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: AppColors.card,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.border2),
-              ),
-              child: Center(
-                child: Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: hollow ? Colors.transparent : color,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: color, width: 2),
-                    boxShadow: detecting && ballReady
-                        ? [
-                            BoxShadow(
-                              color: color.withAlpha(153),
-                              blurRadius: 6,
-                              spreadRadius: 1,
-                            ),
-                          ]
-                        : null,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ── Battery chip ───────────────────────────────────────────────────────────────
 
 class _BatteryChip extends StatelessWidget {

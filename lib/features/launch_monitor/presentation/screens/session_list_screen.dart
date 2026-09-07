@@ -47,19 +47,9 @@ class SessionListScreen extends ConsumerWidget {
                   const Spacer(),
                   _ConnectChip(
                     status: status,
-                    onConnect: () async {
-                      await DevicePickerSheet.show(context);
-                      // The picker's own dispose calls stopScan but the
-                      // mutation can race with route transition teardown,
-                      // leaving the chip stuck on "Scanning…". Force-reset
-                      // here once the modal has fully closed.
-                      final s = ref.read(launchMonitorProvider).status;
-                      if (s == LaunchMonitorStatus.scanning) {
-                        await ref
-                            .read(launchMonitorProvider.notifier)
-                            .stopScan();
-                      }
-                    },
+                    // [DevicePickerSheet.show] resets a stuck "Scanning…" for
+                    // every caller now, so there is nothing to clean up here.
+                    onConnect: () => DevicePickerSheet.show(context),
                     onDisconnect: notifier.disconnect,
                   ),
                 ],
@@ -281,11 +271,7 @@ class _ActiveSessionTile extends StatelessWidget {
                 border: Border.all(color: context.accentBorder),
               ),
               child: Center(
-                child: Icon(
-                  AppIcons.sessions,
-                  size: 18,
-                  color: context.accent,
-                ),
+                child: Icon(AppIcons.sessions, size: 18, color: context.accent),
               ),
             ),
             const SizedBox(width: 12),
@@ -648,11 +634,7 @@ class _SessionActionsMenu extends StatelessWidget {
           value: _SessionAction.delete,
           child: Row(
             children: [
-              const Icon(
-                AppIcons.delete,
-                size: 16,
-                color: Color(0xFFEF4444),
-              ),
+              const Icon(AppIcons.delete, size: 16, color: Color(0xFFEF4444)),
               const SizedBox(width: 10),
               Text(
                 'Delete',

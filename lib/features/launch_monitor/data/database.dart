@@ -2,7 +2,7 @@
 //
 // After editing this file, regenerate with:
 //   flutter pub get
-//   dart run build_runner build --delete-conflicting-outputs
+//   python3 tool/generate_database.py
 //
 // The generated file (database.g.dart) is produced by drift_dev and must
 // exist before the app will compile. The IDE errors shown before generation
@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'dart:ui' show Color;
 
 import 'package:drift/drift.dart';
+import '../domain/entities/shot_context.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
@@ -77,6 +78,8 @@ class Shots extends Table {
   /// targets were per-shot; those fall back to the session's.
   TextColumn get holeSetup => text().nullable()();
 
+  TextColumn get assessmentContext => text().nullable()();
+
   // ── Tags ──────────────────────────────────────────────────────────────────
   /// Comma-separated tag IDs, e.g. "1,3,7". Empty string = no tags.
   TextColumn get tagIds => text().withDefault(const Constant(''))();
@@ -114,8 +117,10 @@ class SavedClubs extends Table {
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  AppDatabase.forTesting(QueryExecutor executor) : super(executor);
+
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -134,6 +139,9 @@ class AppDatabase extends _$AppDatabase {
       if (from < 5) {
         // Targets became a property of the shot, not the session.
         await m.addColumn(shots, shots.holeSetup);
+      }
+      if (from < 6) {
+        await m.addColumn(shots, shots.assessmentContext);
       }
     },
   );
@@ -220,6 +228,7 @@ class AppDatabase extends _$AppDatabase {
     }
     return (update(shots)..where((s) => s.id.equals(shot.dbId!))).write(
       ShotsCompanion(
+        assessmentContext: Value(shot.context.encode()),
         clubId: Value(shot.clubId),
         ballSpeed: Value(shot.ballSpeed),
         spinRate: Value(shot.spinRate),
@@ -279,9 +288,11 @@ class AppDatabase extends _$AppDatabase {
     final rows = await select(activities).get();
     final result = <domain.Session>[];
     for (final row in rows) {
-      final shotRows = await (select(
-        shots,
-      )..where((s) => s.activityId.equals(row.id))).get();
+      final shotRows =
+          await (select(shots)
+                ..where((s) => s.activityId.equals(row.id))
+                ..orderBy([(s) => OrderingTerm.asc(s.id)]))
+              .get();
       result.add(_toDomainSession(row, shotRows));
     }
     result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -347,6 +358,7 @@ class AppDatabase extends _$AppDatabase {
         ? <int>[]
         : row.tagIds.split(',').map(int.parse).toList();
     return ShotData(
+      context: ShotContext.decode(row.assessmentContext),
       dbId: row.id,
       clubId: row.clubId,
       ballSpeed: row.ballSpeed,
@@ -373,6 +385,7 @@ class AppDatabase extends _$AppDatabase {
   ShotsCompanion _toShotCompanion(int activityId, ShotData shot) {
     return ShotsCompanion.insert(
       activityId: activityId,
+      assessmentContext: Value(shot.context.encode()),
       clubId: Value(shot.clubId),
       ballSpeed: shot.ballSpeed,
       spinRate: shot.spinRate,

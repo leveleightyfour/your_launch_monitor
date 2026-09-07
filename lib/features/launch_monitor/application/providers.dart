@@ -1,8 +1,12 @@
+import 'fitting_capture_provider.dart';
+import '../domain/entities/shot_context.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:omni_sniffer/features/launch_monitor/application/ball_observation_provider.dart';
+import 'package:omni_sniffer/features/launch_monitor/application/ball_position_provider.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/clubs_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/application/tags_notifier.dart';
 import 'package:omni_sniffer/features/launch_monitor/data/ble_adapter.dart';
@@ -17,6 +21,7 @@ import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/notificatio
     as sg;
 import 'package:omni_sniffer/features/launch_monitor/data/squaregolf/commands.dart'
     as sg;
+import 'package:omni_sniffer/features/launch_monitor/domain/entities/ball_position.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/hole_setup.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/launch_monitor_state.dart';
@@ -65,6 +70,10 @@ class LaunchMonitor extends _$LaunchMonitor {
 
   /// Connected device type — drives whether Omni-only commands are sent.
   sg.SquareGolfDeviceType _connectedType = sg.SquareGolfDeviceType.unknown;
+
+  /// Set once [_cleanup] has run. The provider is auto-disposed, so a scan
+  /// stream that outlives it would otherwise write state to a dead notifier.
+  bool _disposed = false;
 
   /// Player handedness sent with club-select / detect commands.
   sg.Handedness _handedness = sg.Handedness.rightHanded;
@@ -127,6 +136,10 @@ class LaunchMonitor extends _$LaunchMonitor {
     // Let BT permissions / adapter init finish before kicking a connect.
     await Future<void>.delayed(const Duration(milliseconds: 1200));
 
+    // The provider is auto-disposed: leaving the screen inside that delay
+    // takes the notifier with it, and reading `state` or `ref` after that
+    // throws rather than failing open the way this is meant to.
+    if (_disposed) return;
     if (state.status != LaunchMonitorStatus.disconnected) return;
 
     final prefs = ref.read(unitPrefsProvider);
@@ -192,15 +205,33 @@ class LaunchMonitor extends _$LaunchMonitor {
         })
         .handleError((Object e) {
           _setError('Scan failed: $e');
-        });
+        })
+        // A scan that ends on its own — the timeout elapsing — is otherwise
+        // silent, and the status stays on `scanning` forever. Every connect
+        // affordance is gated on `disconnected`, so that dead-ends the UI:
+        // the button stops opening the picker and there is no way back.
+        .transform(
+          StreamTransformer.fromHandlers(
+            handleDone: (sink) {
+              _endScan();
+              sink.close();
+            },
+          ),
+        );
+  }
+
+  /// Drop out of the `scanning` status now that no scan is running. Safe to
+  /// call when a scan already ended, or after the provider is gone.
+  void _endScan() {
+    if (_disposed) return;
+    if (state.status != LaunchMonitorStatus.scanning) return;
+    state = state.copyWith(status: LaunchMonitorStatus.disconnected);
   }
 
   Future<void> stopScan() async {
     // Reset state first so the chip never gets stuck on "scanning" even if
     // the platform stop call hangs.
-    if (state.status == LaunchMonitorStatus.scanning) {
-      state = state.copyWith(status: LaunchMonitorStatus.disconnected);
-    }
+    _endScan();
     await _scanSubscription?.cancel();
     _scanSubscription = null;
     // Awaited so callers can be sure the BT stack is back to idle before
@@ -276,6 +307,7 @@ class LaunchMonitor extends _$LaunchMonitor {
             ballDetected: false,
             ballReady: false,
           );
+          _clearBallPosition();
           break;
         case sg.LmConnectionStatus.connecting:
         case sg.LmConnectionStatus.scanning:
@@ -291,6 +323,23 @@ class LaunchMonitor extends _$LaunchMonitor {
         ballDetected: s.ballDetected,
         ballReady: s.ballReady,
       );
+      // Position rides a separate provider so a coordinate moving at frame
+      // rate never touches the state the whole session screen watches.
+      final ball = BallPosition.fromSensor(s);
+      ref.read(ballPositionProvider.notifier).update(ball);
+      // Every frame with a ball in it is a sample of where the monitor will and
+      // will not call one ready — which is the only way to find the zone, since
+      // the manual's offsets are quoted from the device's body and these
+      // coordinates are measured from the middle of its field of view.
+      if (ball.detected) {
+        ref
+            .read(ballObservationLogProvider)
+            .record(
+              depthMm: ball.depthMm,
+              lateralMm: ball.lateralMm,
+              ready: ball.ready,
+            );
+      }
     });
     _capacitorSub = svc.capacitorReadyStream.listen((ready) {
       state = state.copyWith(capacitorReady: ready);
@@ -361,6 +410,7 @@ class LaunchMonitor extends _$LaunchMonitor {
     try {
       await svc.deactivateBallDetection();
       state = state.copyWith(detecting: false);
+      _clearBallPosition();
     } catch (e) {
       lmWarn('bridge', 'disarm failed: $e');
     }
@@ -454,6 +504,7 @@ class LaunchMonitor extends _$LaunchMonitor {
   }
 
   Future<void> disconnect() async {
+    _clearBallPosition();
     await _disposeService();
     if (_deviceId != null) {
       try {
@@ -467,6 +518,7 @@ class LaunchMonitor extends _$LaunchMonitor {
   // ── Shot management (existing behaviour) ─────────────────────────────────
 
   void clearShots() {
+    ref.read(fittingCaptureProvider.notifier).stop();
     _draftSessionId = null;
     _draftCreatedAt = null;
     draftName = null;
@@ -536,10 +588,13 @@ class LaunchMonitor extends _$LaunchMonitor {
   /// the same persist + state-update path as a real BLE shot.
   Future<void> simulateShot() async {
     final club = ref.read(activeClubProvider);
-    final shot = generatePgaTourShot(
-      club?.id,
-      _simRand,
-    ).copyWith(hole: _activeHole);
+    final shot = generatePgaTourShot(club?.id, _simRand).copyWith(
+      hole: _activeHole,
+      context: _captureContext(club?.id).copyWith(
+        ballSource: MeasurementSource.simulated,
+        clubSpeedSource: MeasurementSource.simulated,
+      ),
+    );
     final dbReady = await _persistShot(shot);
     state = state.copyWith(shots: [dbReady, ...state.shots]);
   }
@@ -736,10 +791,7 @@ class LaunchMonitor extends _$LaunchMonitor {
     if (b.isBackspinValid &&
         b.isSidespinValid &&
         (b.backspinRpm != 0 || b.sidespinRpm != 0)) {
-      return math.atan2(
-            b.sidespinRpm.toDouble(),
-            b.backspinRpm.toDouble(),
-          ) *
+      return math.atan2(b.sidespinRpm.toDouble(), b.backspinRpm.toDouble()) *
           180.0 /
           math.pi;
     }
@@ -760,10 +812,29 @@ class LaunchMonitor extends _$LaunchMonitor {
     return b.totalSpinRpm.abs().toDouble();
   }
 
+  ShotContext _captureContext(String? clubId) {
+    final fitting = ref.read(fittingCaptureProvider);
+    return fitting != null && fitting.clubId == clubId
+        ? fitting.context
+        : ShotContext(intent: ref.read(shotIntentProvider));
+  }
+
   ShotData _ballToShotData(sg.BallMetrics b, String? clubId) {
     return ShotData(
       clubId: clubId,
       hole: _activeHole,
+      context: _captureContext(clubId).copyWith(
+        ballSource:
+            b.isBallSpeedValid &&
+                b.isVerticalAngleValid &&
+                b.isHorizontalAngleValid &&
+                (b.isTotalSpinValid ||
+                    (b.isBackspinValid && b.isSidespinValid)) &&
+                (b.isSpinAxisValid || (b.isBackspinValid && b.isSidespinValid))
+            ? MeasurementSource.measured
+            : MeasurementSource.unavailable,
+        clubSpeedSource: MeasurementSource.estimated,
+      ),
       ballSpeed: b.ballSpeedMps * _mpsToMph,
       spinRate: _spinRateFor(b),
       spinAxis: _spinAxisFor(b),
@@ -798,7 +869,17 @@ class LaunchMonitor extends _$LaunchMonitor {
 
   // ── Internal: lifecycle ──────────────────────────────────────────────────
 
+  /// Drop the last known ball position. Guarded because the provider is
+  /// auto-disposed and this runs from teardown paths too.
+  void _clearBallPosition() {
+    if (_disposed) return;
+    ref.read(ballPositionProvider.notifier).clear();
+    // Get what was sampled this session onto disk while the provider is alive.
+    unawaited(ref.read(ballObservationLogProvider).flush());
+  }
+
   void _setError(String message) {
+    if (_disposed) return;
     state = LaunchMonitorState(
       status: LaunchMonitorStatus.disconnected,
       error: message,
@@ -835,6 +916,7 @@ class LaunchMonitor extends _$LaunchMonitor {
   }
 
   void _cleanup() {
+    _disposed = true;
     _scanSubscription?.cancel();
     _disposeService();
     if (_deviceId != null) _ble.disconnect(_deviceId!);
@@ -854,6 +936,12 @@ extension on ShotData {
       spinAxis: spinAxis,
       launchDirection: launchDirection,
       launchAngle: launchAngle,
+      context: context.copyWith(
+        clubSpeedSource:
+            c.isClubSpeedValid && c.clubSpeed.isFinite && c.clubSpeed > 0
+            ? MeasurementSource.measured
+            : context.clubSpeedSource,
+      ),
       clubSpeed: c.isClubSpeedValid ? c.clubSpeed * _mpsToMph : clubSpeed,
       apex: apex,
       run: run,

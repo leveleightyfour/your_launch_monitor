@@ -9,7 +9,7 @@
 ///   2. the answer has converged with respect to the time step
 ///   3. published launch conditions produce the published flights
 ///   4. the response to every input has the physically correct sign and shape
-///   5. the model's optima agree with an independently authored model
+///   5. provisional reference windows are compatible with the model
 ///   6. the ground phase conserves what it must and dissipates the rest
 library;
 
@@ -389,13 +389,9 @@ void main() {
   });
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 5. Cross-model check.
-  //
-  // ShotOptimizer's optimal windows were written from published coaching and
-  // tour-fitting data, with no knowledge of this simulation. If the launch and
-  // spin that this model says maximise carry land inside those windows, two
-  // independently sourced models agree — much stronger evidence than either
-  // one alone.
+  // 5. Internal reference-window compatibility.
+  // This uses the same flight model for both sweeps. It is not independent
+  // validation of either the model or the provisional fitting references.
   // ───────────────────────────────────────────────────────────────────────────
   group('agreement with the optimizer windows', () {
     /// Best carry available anywhere in a plausible launch/spin envelope.
@@ -461,15 +457,8 @@ void main() {
         final max = bestCarry(ballSpeed);
         final inWindow = bestCarryInWindow(ballSpeed, launchWindow, spinWindow);
 
-        // The carry ridge is broad, so the argmax's exact position says
-        // little. What matters is that the independently authored window is
-        // not leaving meaningful distance on the table under this model.
-        //
-        // Measured shortfall: 2.9% at 85mph, 0.6% at 100mph, 0.2% at 115mph.
-        // The slow band is the loosest — this model puts the carry-maximising
-        // launch for a slow swing above the fitter's window, a known and
-        // documented disagreement worth about 5 yards. Tighten this threshold
-        // if the coefficients are ever refitted.
+        // Retain the existing shortfall gate as an internal compatibility
+        // check; agreement cannot establish actual fitting accuracy.
         expect(
           (max - inWindow) / max,
           lessThan(0.035),
@@ -534,10 +523,14 @@ void main() {
       for (var i = 1; i < ground.length; i++) {
         final before = ground[i - 1];
         final after = ground[i];
-        if (after.t == before.t && after.y == 0 && before.y == 0 &&
+        if (after.t == before.t &&
+            after.y == 0 &&
+            before.y == 0 &&
             after.specificEnergy != before.specificEnergy) {
-          expect(after.specificEnergy!,
-              lessThanOrEqualTo(before.specificEnergy! + 1e-8));
+          expect(
+            after.specificEnergy!,
+            lessThanOrEqualTo(before.specificEnergy! + 1e-8),
+          );
           impactsChecked++;
         }
       }
@@ -635,8 +628,11 @@ void main() {
       final furthest = spinner.groundPoints
           .map((point) => point.z)
           .reduce(math.max);
-      expect(spinner.restPosition.z, lessThan(furthest - 0.01),
-          reason: 'a checking shot must actually move backwards');
+      expect(
+        spinner.restPosition.z,
+        lessThan(furthest - 0.01),
+        reason: 'a checking shot must actually move backwards',
+      );
       expect(spinner.roll, lessThan(0.0));
       expect(runner.roll, greaterThan(spinner.roll + 2));
     });
@@ -686,7 +682,6 @@ void main() {
       expect(fade.restPosition.x, greaterThan(fade.offline));
       expect(draw.restPosition.x, lessThan(draw.offline));
     });
-
 
     test('the ground phase always terminates', () {
       for (final speed in const [60.0, 100.0, 140.0, 180.0]) {
