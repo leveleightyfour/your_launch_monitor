@@ -65,7 +65,7 @@ void main() {
     expect(find.byIcon(AppIcons.chevronDown), findsNWidgets(2));
     expect(materialGlyph, findsNothing);
 
-    await tester.tap(find.text('Tested equipment'));
+    await tester.tap(find.text('TESTED EQUIPMENT'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Head A'), findsOneWidget);
     expect(find.byIcon(AppIcons.chevronDown), findsNWidgets(2));
@@ -73,7 +73,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('setup dialog club dropdown draws a Lucide chevron', (
+  testWidgets('setup dialog draws no Material glyph', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1024, 768);
@@ -98,8 +98,8 @@ void main() {
     );
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
-    expect(find.text('Club (required)'), findsOneWidget);
-    expect(find.byIcon(AppIcons.chevronDown), findsOneWidget);
+    expect(find.textContaining('CLUB', findRichText: true), findsOneWidget);
+    expect(find.text('Stock / full swing'), findsOneWidget);
     expect(materialGlyph, findsNothing);
     expect(tester.takeException(), isNull);
   });

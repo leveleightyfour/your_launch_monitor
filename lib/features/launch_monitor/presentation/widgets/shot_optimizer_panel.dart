@@ -1,5 +1,3 @@
-import 'fitting_panel.dart';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,6 +8,9 @@ import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_optimi
 import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 import 'package:omni_sniffer/shared/app_icons.dart';
+import 'package:omni_sniffer/shared/widgets/app_controls.dart';
+
+import 'fitting_panel.dart';
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
@@ -180,31 +181,6 @@ class _OptimizerContent extends StatelessWidget {
 }
 
 // ── Shared pieces ────────────────────────────────────────────────────────────
-
-/// Section heading, in the same caps label the tiles and dispersion header
-/// use. [trailing] carries a count so a section announces its own size.
-class _SectionHeader extends StatelessWidget {
-  final String label;
-  final String? trailing;
-
-  const _SectionHeader({required this.label, this.trailing});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(label.toUpperCase(), style: AppTextStyles.statLabel()),
-        if (trailing != null) ...[
-          const SizedBox(width: 6),
-          Text(
-            trailing!,
-            style: AppTextStyles.statLabel(color: AppColors.textDimmed),
-          ),
-        ],
-      ],
-    );
-  }
-}
 
 /// Label above, number below, unit trailing — the grammar the tiles and the
 /// dispersion header already use, so a readout means the same thing wherever
@@ -531,8 +507,8 @@ class _RecommendationsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(
-            label: 'Work on',
+          AppSectionLabel(
+            'Work on',
             trailing: recommendations.length > shown.length
                 ? '${shown.length} of ${recommendations.length}'
                 : null,
@@ -646,8 +622,8 @@ class _DiagnosticsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(
-            label: 'Diagnostics',
+          AppSectionLabel(
+            'Diagnostics',
             trailing: '${diagnostics.length}',
           ),
           const SizedBox(height: 10),
@@ -863,7 +839,7 @@ class _SessionSummarySection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _SectionHeader(label: 'Session evidence'),
+          const AppSectionLabel('Session evidence'),
           const SizedBox(height: 8),
           Text(
             '${summary.assessedShots} of ${summary.totalShots} shots assessed',
