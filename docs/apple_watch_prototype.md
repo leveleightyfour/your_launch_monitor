@@ -124,7 +124,15 @@ for the phone's session, not a second author of it.
 The watch target lives in `ios/Runner.xcodeproj` as `YourLMWatch`
 (`com.leveleightyfour.YourLaunchMonitor.watchkitapp`), embedded into
 `Runner.app/Watch/`. `flutter build ios` and `flutter run` build it as a
-dependency of Runner; nothing about the normal workflow changes.
+dependency of Runner. Store builds add the export options:
+
+```
+shorebird release ios --no-confirm --export-options-plist=ios/ExportOptions.plist
+flutter build ipa --export-options-plist=ios/ExportOptions.plist
+```
+
+The watch app is native, so it only ever reaches devices in a release — a
+Shorebird patch ships Dart and cannot add or update it.
 
 To run it on a watch: open `ios/Runner.xcworkspace`, pick the **YourLMWatch**
 scheme and a paired watch or watch simulator. Run the iPhone app alongside it —
@@ -152,9 +160,13 @@ regeneration, run it again.
 - The watch app icon is the iPhone app's 1024px artwork. watchOS masks icons
   to a circle; this one is centred with clear margins so nothing clips, but
   the device reads small at 45mm and would carry further as a tighter crop.
-- Signing is Automatic on this target while the iPhone target is Manual. A
-  store build needs a provisioning profile for the watch bundle id; without
-  one, archiving fails on the watch target rather than the app.
+- Store builds sign manually with the "Your Launch Monitor Watch Store"
+  profile (App Store, `…YourLaunchMonitor.watchkitapp`, team VGUWC2L7S2);
+  Debug stays Automatic so a paired watch installs without a development
+  profile. An archive that carries the watch app cannot be exported with the
+  iPhone profile alone, so release and IPA builds pass
+  `--export-options-plist=ios/ExportOptions.plist`, which maps both bundle
+  ids and pins the build number to Flutter's.
 - Tagging is the only command the watch can send: no arming the device, no
   changing club, no starting or finishing a session.
 - No complications, no always-on refresh, no background delivery beyond what

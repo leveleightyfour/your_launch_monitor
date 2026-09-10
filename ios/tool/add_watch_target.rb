@@ -29,6 +29,7 @@ WATCH_DIR = 'YourLMWatch'
 IOS_BUNDLE_ID = 'com.leveleightyfour.YourLaunchMonitor'
 WATCH_BUNDLE_ID = "#{IOS_BUNDLE_ID}.watchkitapp"
 DEVELOPMENT_TEAM = 'VGUWC2L7S2'
+WATCH_STORE_PROFILE = 'Your Launch Monitor Watch Store'
 WATCHOS_DEPLOYMENT_TARGET = '9.0'
 EMBED_PHASE_NAME = 'Embed Watch Content'
 
@@ -126,9 +127,6 @@ watch.build_configurations.each do |config|
     # be. A target-level setting outranks the base configuration, so this
     # puts the watch app back in its own platform directory.
     'CONFIGURATION_BUILD_DIR' => '$(BUILD_DIR)/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)',
-    # Automatic, unlike the iPhone target: a prototype should install on a
-    # paired watch without anyone having to mint a provisioning profile first.
-    'CODE_SIGN_STYLE' => 'Automatic',
     'DEVELOPMENT_TEAM' => DEVELOPMENT_TEAM,
     'ENABLE_PREVIEWS' => 'YES',
     'GENERATE_INFOPLIST_FILE' => 'NO',
@@ -146,6 +144,21 @@ watch.build_configurations.each do |config|
     'WATCHOS_DEPLOYMENT_TARGET' => WATCHOS_DEPLOYMENT_TARGET
   )
   config.build_settings['SWIFT_OPTIMIZATION_LEVEL'] = '-Onone' if config.name == 'Debug'
+
+  # Store builds sign manually, as the iPhone target does, because an export
+  # cannot mix styles across the bundles in one archive: the watch app needs
+  # its own App Store profile named here and in ios/ExportOptions.plist.
+  # Debug stays Automatic so a paired watch installs without a development
+  # profile being minted for the watch bundle id.
+  if config.name == 'Debug'
+    config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
+  else
+    config.build_settings.merge!(
+      'CODE_SIGN_STYLE' => 'Manual',
+      'CODE_SIGN_IDENTITY[sdk=watchos*]' => 'Apple Distribution',
+      'PROVISIONING_PROFILE_SPECIFIER[sdk=watchos*]' => WATCH_STORE_PROFILE
+    )
+  end
 end
 
 # ── 4. Embed it in the iPhone app ─────────────────────────────────────────────

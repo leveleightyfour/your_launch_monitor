@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Store export for the iPhone app and its embedded watch app. Both
+	     bundles must be mapped here: an archive that carries a watch app
+	     cannot be exported with one profile and automatic signing for the
+	     other. Pass with:
+	       shorebird release ios - -export-options-plist=ios/ExportOptions.plist
+	       flutter build ipa - -export-options-plist=ios/ExportOptions.plist
+	     (join the dashes; they are split only to keep this comment valid). -->
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>destination</key>
+	<string>export</string>
+	<key>teamID</key>
+	<string>VGUWC2L7S2</string>
+	<key>signingStyle</key>
+	<string>manual</string>
+	<key>signingCertificate</key>
+	<string>Apple Distribution</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>com.leveleightyfour.YourLaunchMonitor</key>
+		<string>Your Launch Monitor Store</string>
+		<key>com.leveleightyfour.YourLaunchMonitor.watchkitapp</key>
+		<string>Your Launch Monitor Watch Store</string>
+	</dict>
+	<!-- The build number is Flutter's, from pubspec, for both bundles. Xcode
+	     would otherwise renumber the iPhone app on export and leave the watch
+	     app behind, and watchOS refuses a companion whose version differs. -->
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+	<key>stripSwiftSymbols</key>
+	<true/>
+	<key>uploadSymbols</key>
+	<true/>
+</dict>
+</plist>
