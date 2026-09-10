@@ -1,8 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/club.dart';
 import 'package:omni_sniffer/features/launch_monitor/domain/entities/shot_data.dart';
+import 'package:omni_sniffer/features/launch_monitor/application/club_head_model_provider.dart';
+import 'package:omni_sniffer/features/launch_monitor/presentation/widgets/tabs/club_head_view.dart';
+import 'package:omni_sniffer/shared/providers/unit_prefs_provider.dart';
 import 'package:omni_sniffer/shared/theme.dart';
 
 // Colour tokens shared by both panels
@@ -11,7 +15,7 @@ const _kPurple = Color(0xFF9D6EC8);
 const _kBlue = Color(0xFF5B9BD5);
 const _kOrange = Color(0xFFE07840);
 
-class ClubTab extends StatefulWidget {
+class ClubTab extends ConsumerStatefulWidget {
   final List<ShotData> shots;
   final List<Club> clubs;
   final ShotData? selectedShot;
@@ -24,11 +28,10 @@ class ClubTab extends StatefulWidget {
   });
 
   @override
-  State<ClubTab> createState() => _ClubTabState();
+  ConsumerState<ClubTab> createState() => _ClubTabState();
 }
 
-class _ClubTabState extends State<ClubTab> {
-  int _subTab = 0; // 0 = Top, 1 = Side, 2 = Impact
+class _ClubTabState extends ConsumerState<ClubTab> {
   bool _showAvg = false;
   bool _showHeatmap = false;
 
@@ -52,132 +55,120 @@ class _ClubTabState extends State<ClubTab> {
     final display = _showAvg ? avg : last;
     final club = _clubFor(last);
     final clubType = club?.type ?? ClubType.iron;
+    final prefs = ref.watch(unitPrefsProvider);
+    final view = ClubView.fromName(prefs.clubView);
+    final model = ref.watch(clubHeadModelProvider);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 600;
-        return Column(
-          children: [
-            // ── Header ─────────────────────────────────────────────────────
-            Container(
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: AppColors.border)),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  if (!isWide) ...[
-                    _SubTab(
-                      label: 'Top',
-                      active: _subTab == 0,
-                      onTap: () => setState(() => _subTab = 0),
-                    ),
-                    const SizedBox(width: 8),
-                    _SubTab(
-                      label: 'Side',
-                      active: _subTab == 1,
-                      onTap: () => setState(() => _subTab = 1),
-                    ),
-                    const SizedBox(width: 8),
-                    _SubTab(
-                      label: 'Impact',
-                      active: _subTab == 2,
-                      onTap: () => setState(() => _subTab = 2),
-                    ),
-                  ],
-                  const Spacer(),
-                  if (isWide || _subTab == 2) ...[
-                    GestureDetector(
-                      onTap: () => setState(() => _showHeatmap = !_showHeatmap),
-                      child: Row(
-                        children: [
-                          Text(
-                            'Heatmap',
-                            style: AppTextStyles.sans(
-                              size: 10,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          _Toggle(active: _showHeatmap),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                  ],
-                  GestureDetector(
-                    onTap: () => setState(() => _showAvg = !_showAvg),
-                    child: Row(
-                      children: [
-                        Text(
-                          'Show AVG',
-                          style: AppTextStyles.sans(
-                            size: 10,
-                            color: AppColors.textMuted,
-                          ),
+    return Column(
+      children: [
+        // ── Header ─────────────────────────────────────────────────────
+        Container(
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppColors.border)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              // The chips scroll on a rail too narrow for them and both
+              // toggles, rather than pushing the toggles off the edge.
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final v in ClubView.values) ...[
+                        _SubTab(
+                          label: v.label,
+                          active: view == v,
+                          onTap: () => ref
+                              .read(unitPrefsProvider.notifier)
+                              .setClubView(v.name),
                         ),
                         const SizedBox(width: 6),
-                        _Toggle(active: _showAvg),
                       ],
-                    ),
+                    ],
                   ),
-                ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (view == ClubView.impact) ...[
+                GestureDetector(
+                  onTap: () => setState(() => _showHeatmap = !_showHeatmap),
+                  child: Row(
+                    children: [
+                      Text(
+                        'Heatmap',
+                        style: AppTextStyles.sans(
+                          size: 10,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      _Toggle(active: _showHeatmap),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              GestureDetector(
+                onTap: () => setState(() => _showAvg = !_showAvg),
+                child: Row(
+                  children: [
+                    Text(
+                      'Show AVG',
+                      style: AppTextStyles.sans(
+                        size: 10,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    _Toggle(active: _showAvg),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        // ── Content ────────────────────────────────────────────────────
+        Expanded(
+          child: model.when(
+            data: (head) => ClubHeadView(
+              model: head,
+              shot: display,
+              allShots: widget.shots,
+              view: view,
+              showHeatmap: _showHeatmap,
+              prefs: prefs,
+            ),
+            loading: () => Center(
+              child: Text(
+                'Loading club model',
+                style: AppTextStyles.sans(
+                  size: 12,
+                  color: AppColors.textDimmed,
+                ),
               ),
             ),
-            // ── Content ────────────────────────────────────────────────────
-            Expanded(
-              child: isWide
-                  ? Column(
-                      children: [
-                        Expanded(
-                          flex: 4,
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Expanded(child: _TrajPanel(shot: display)),
-                              Container(width: 1, color: AppColors.border),
-                              Expanded(
-                                child: _LoftPanel(
-                                  shot: display,
-                                  clubType: clubType,
-                                  clubId: last.clubId,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(height: 1, color: AppColors.border),
-                        Expanded(
-                          flex: 3,
-                          child: _ImpactSection(
-                            shot: display,
-                            allShots: widget.shots,
-                            clubType: clubType,
-                            clubId: last.clubId,
-                            showHeatmap: _showHeatmap,
-                          ),
-                        ),
-                      ],
-                    )
-                  : switch (_subTab) {
-                      1 => _LoftPanel(
-                        shot: display,
-                        clubType: clubType,
-                        clubId: last.clubId,
-                      ),
-                      2 => _ImpactSection(
-                        shot: display,
-                        allShots: widget.shots,
-                        clubType: clubType,
-                        clubId: last.clubId,
-                        showHeatmap: _showHeatmap,
-                      ),
-                      _ => _TrajPanel(shot: display),
-                    },
-            ),
-          ],
-        );
-      },
+            // The model failing to load must never take the tab with it:
+            // the flat drawings this view replaced still know every figure.
+            error: (_, _) => switch (view) {
+              ClubView.side => _LoftPanel(
+                shot: display,
+                clubType: clubType,
+                clubId: last.clubId,
+              ),
+              ClubView.impact => _ImpactSection(
+                shot: display,
+                allShots: widget.shots,
+                clubType: clubType,
+                clubId: last.clubId,
+                showHeatmap: _showHeatmap,
+              ),
+              ClubView.top => _TrajPanel(shot: display),
+            },
+          ),
+        ),
+      ],
     );
   }
 }

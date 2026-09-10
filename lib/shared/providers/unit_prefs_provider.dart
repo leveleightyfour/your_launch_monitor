@@ -141,6 +141,10 @@ class UnitPrefs {
 
   final FlightViewStyle flightViewStyle;
 
+  /// The Club tab's last chosen view of the head — `side`, `top` or
+  /// `impact` — so the tab reopens where the golfer left it.
+  final String clubView;
+
   /// The split view's pane choices, stored by pane-enum name so the
   /// screens' private enums stay private. Unknown names fall back to the
   /// screen's own default.
@@ -177,6 +181,7 @@ class UnitPrefs {
     this.showTestShotButton = false,
     this.skyScene = SkyScene.day,
     this.flightViewStyle = FlightViewStyle.classic,
+    this.clubView = 'side',
     this.splitLeftPane = 'table',
     this.splitRightPane = 'dispersion',
     this.splitThirdPane = 'optimizer',
@@ -202,6 +207,7 @@ class UnitPrefs {
     bool? showTestShotButton,
     SkyScene? skyScene,
     FlightViewStyle? flightViewStyle,
+    String? clubView,
     String? splitLeftPane,
     String? splitRightPane,
     String? splitThirdPane,
@@ -218,6 +224,7 @@ class UnitPrefs {
     showTestShotButton: showTestShotButton ?? this.showTestShotButton,
     skyScene: skyScene ?? this.skyScene,
     flightViewStyle: flightViewStyle ?? this.flightViewStyle,
+    clubView: clubView ?? this.clubView,
     splitLeftPane: splitLeftPane ?? this.splitLeftPane,
     splitRightPane: splitRightPane ?? this.splitRightPane,
     splitThirdPane: splitThirdPane ?? this.splitThirdPane,
@@ -253,6 +260,7 @@ class UnitPrefs {
     'showTestShotButton': showTestShotButton,
     'skyScene': skyScene.name,
     'flightViewStyle': flightViewStyle.name,
+    'clubView': clubView,
     'splitLeftPane': splitLeftPane,
     'splitRightPane': splitRightPane,
     'splitThirdPane': splitThirdPane,
@@ -286,6 +294,7 @@ class UnitPrefs {
       (e) => e.name == j['flightViewStyle'],
       orElse: () => FlightViewStyle.classic,
     ),
+    clubView: j['clubView'] as String? ?? 'side',
     splitLeftPane: j['splitLeftPane'] as String? ?? 'table',
     splitRightPane: j['splitRightPane'] as String? ?? 'dispersion',
     splitThirdPane: j['splitThirdPane'] as String? ?? 'optimizer',
@@ -368,6 +377,11 @@ class UnitPrefsNotifier extends Notifier<UnitPrefs> {
 
   void setFlightViewStyle(FlightViewStyle style) {
     state = state.copyWith(flightViewStyle: style);
+    _save();
+  }
+
+  void setClubView(String view) {
+    state = state.copyWith(clubView: view);
     _save();
   }
 
