@@ -37,8 +37,9 @@ enum ClubView {
 
 /// Where each view parks the camera: yaw about +Y (0 = in front of the
 /// face, on the target side; −90° = at the heel, looking along the face),
-/// pitch above the ground, and where the head sits on screen so the figures
-/// have room beside it.
+/// pitch above the ground, where the head's silhouette is centred on
+/// screen, and how much of the viewport's width and height it may fill —
+/// the rest is the room its figures need.
 ///
 /// Yaw is kept on one continuous scale — impact 0°, side −90°, top −180° —
 /// so a move between any two views swings past the hosel side and never has
@@ -47,22 +48,38 @@ class _Preset {
   final double yawDeg;
   final double pitchDeg;
   final Offset anchor;
-  final double fill;
+  final double fillWidth;
+  final double fillHeight;
 
-  const _Preset(this.yawDeg, this.pitchDeg, this.anchor, this.fill);
+  const _Preset(this.yawDeg, this.pitchDeg, this.anchor, this.fillWidth, this.fillHeight);
 
   static _Preset of(ClubView view) => switch (view) {
-    ClubView.side => const _Preset(-90, 7, Offset(0.56, 0.5), 0.32),
-    ClubView.top => const _Preset(-180, 76, Offset(0.5, 0.52), 0.28),
-    ClubView.impact => const _Preset(0, 4, Offset(0.5, 0.48), 0.36),
+    // Loft and attack figures sit to the left of the face.
+    ClubView.side => const _Preset(-90, 7, Offset(0.58, 0.52), 0.52, 0.5),
+    // Face and path figures stand above the head along the target line.
+    ClubView.top => const _Preset(-180, 76, Offset(0.5, 0.58), 0.6, 0.5),
+    // Readouts live in the corners; the face can take the middle.
+    ClubView.impact => const _Preset(0, 4, Offset(0.5, 0.5), 0.66, 0.6),
   };
 
   _Preset lerp(_Preset other, double t) => _Preset(
     yawDeg + (other.yawDeg - yawDeg) * t,
     pitchDeg + (other.pitchDeg - pitchDeg) * t,
     Offset.lerp(anchor, other.anchor, t)!,
-    fill + (other.fill - fill) * t,
+    fillWidth + (other.fillWidth - fillWidth) * t,
+    fillHeight + (other.fillHeight - fillHeight) * t,
   );
+
+  @override
+  bool operator ==(Object other) =>
+      other is _Preset &&
+      other.yawDeg == yawDeg &&
+      other.pitchDeg == pitchDeg &&
+      other.anchor == anchor &&
+      other.fillWidth == fillWidth &&
+      other.fillHeight == fillHeight;
+  @override
+  int get hashCode => Object.hash(yawDeg, pitchDeg, anchor, fillWidth, fillHeight);
 }
 
 /// How the shot turns the head: the face open or closed about +Y, and the
@@ -97,7 +114,8 @@ class _Pose {
   int get hashCode => Object.hash(faceAngle, loftDelta);
 }
 
-/// Perspective camera orbiting the head's centre.
+/// Perspective camera orbiting the head's centre, backed off until the
+/// head's silhouette from this angle fills what the preset allows.
 class _Camera {
   final Float64List eye;
   final Float64List right;
@@ -108,33 +126,62 @@ class _Camera {
 
   const _Camera._(this.eye, this.right, this.up, this.forward, this.focal, this.centre);
 
-  factory _Camera(_Preset p, ClubHeadModel model, Size size) {
+  factory _Camera(_Preset p, ClubHeadModel model, _Pose pose, Size size) {
     const fov = 28.0;
     final focal = size.height / (2 * math.tan(fov * math.pi / 360));
-    final short = math.min(size.width, size.height);
-    // Distance at which the head's bounding radius spans [fill] of the
-    // shorter side.
-    final distance = focal * model.radius / (p.fill * short);
     final yaw = p.yawDeg * math.pi / 180, pitch = p.pitchDeg * math.pi / 180;
     final focus = model.centre;
-    final eye = Float64List.fromList([
-      focus[0] + math.sin(yaw) * math.cos(pitch) * distance,
-      focus[1] + math.sin(pitch) * distance,
-      focus[2] + math.cos(yaw) * math.cos(pitch) * distance,
-    ]);
-    final forward = _norm([focus[0] - eye[0], focus[1] - eye[1], focus[2] - eye[2]]);
+    // The basis depends on the angle alone, so the silhouette can be
+    // measured before the distance is known.
+    final direction = [
+      math.sin(yaw) * math.cos(pitch),
+      math.sin(pitch),
+      math.cos(yaw) * math.cos(pitch),
+    ];
+    final forward = _norm([-direction[0], -direction[1], -direction[2]]);
     var right = _cross([0, 1, 0], forward);
     if (_len(right) < 1e-6) right = Float64List.fromList([1, 0, 0]);
     right = _norm(right);
     final up = _norm(_cross(forward, right));
-    return _Camera._(
-      eye,
-      right,
-      up,
-      forward,
-      focal,
-      Offset(size.width * p.anchor.dx, size.height * p.anchor.dy),
+
+    // Extent of the posed hull across and up the screen, about the centre.
+    final r = pose.matrix();
+    var minR = double.infinity, maxR = -double.infinity;
+    var minU = double.infinity, maxU = -double.infinity;
+    final hull = model.hull;
+    for (var i = 0; i < hull.length; i += 3) {
+      final px = hull[i] - focus[0], py = hull[i + 1] - focus[1], pz = hull[i + 2] - focus[2];
+      final wx = r[0] * px + r[1] * py + r[2] * pz;
+      final wy = r[3] * px + r[4] * py + r[5] * pz;
+      final wz = r[6] * px + r[7] * py + r[8] * pz;
+      final a = wx * right[0] + wy * right[1] + wz * right[2];
+      final u = wx * up[0] + wy * up[1] + wz * up[2];
+      if (a < minR) minR = a;
+      if (a > maxR) maxR = a;
+      if (u < minU) minU = u;
+      if (u > maxU) maxU = u;
+    }
+    // Back off until the wider of the two fits its allowance. Perspective
+    // spreads the near side a little, hence the margin.
+    const margin = 1.06;
+    final distance = margin *
+        math.max(
+          focal * (maxR - minR) / (p.fillWidth * size.width),
+          focal * (maxU - minU) / (p.fillHeight * size.height),
+        );
+    final eye = Float64List.fromList([
+      focus[0] + direction[0] * distance,
+      focus[1] + direction[1] * distance,
+      focus[2] + direction[2] * distance,
+    ]);
+    // Centre the silhouette, not the model's origin, on the anchor: the
+    // hosel sticks out one side and would otherwise drag the head off it.
+    final scale = focal / distance;
+    final centre = Offset(
+      size.width * p.anchor.dx - (minR + maxR) / 2 * scale,
+      size.height * p.anchor.dy + (minU + maxU) / 2 * scale,
     );
+    return _Camera._(eye, right, up, forward, focal, centre);
   }
 
   Offset project(double x, double y, double z) {
@@ -189,10 +236,10 @@ class _ClubHeadPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final key = Object.hash(model, preset.yawDeg, preset.pitchDeg, preset.anchor, preset.fill, pose, size);
+    final key = Object.hash(model, preset, pose, size);
     if (_FrameCache.key != key) {
       _FrameCache.key = key;
-      _FrameCache.draws = _build(_Camera(preset, model, size));
+      _FrameCache.draws = _build(_Camera(preset, model, pose, size));
     }
     for (final d in _FrameCache.draws!) {
       canvas.drawVertices(d.vertices, BlendMode.modulate, d.paint);
@@ -360,12 +407,7 @@ class _ClubHeadPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ClubHeadPainter old) =>
-      old.model != model ||
-      old.preset.yawDeg != preset.yawDeg ||
-      old.preset.pitchDeg != preset.pitchDeg ||
-      old.preset.anchor != preset.anchor ||
-      old.preset.fill != preset.fill ||
-      old.pose != pose;
+      old.model != model || old.preset != preset || old.pose != pose;
 }
 
 // ── Annotations ──────────────────────────────────────────────────────────────
@@ -403,7 +445,7 @@ class _AnnotationPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (opacity <= 0) return;
     canvas.saveLayer(Offset.zero & size, Paint()..color = Colors.white.withAlpha((opacity * 255).round()));
-    final cam = _Camera(preset, model, size);
+    final cam = _Camera(preset, model, pose, size);
     switch (view) {
       case ClubView.side:
         _paintSide(canvas, size, cam);
@@ -556,11 +598,14 @@ class _AnnotationPainter extends CustomPainter {
       // Arc from vertical to the delivered face plane, above the face.
       final delivered = _rotX(faceUp, -pose.loftDelta);
       _arc(canvas, cam, [fc[0], fc[1], fc[2]], [0, 1, 0], delivered, loftLen * 0.9, _line(accent.withAlpha(180), width: 1));
+      // Beside the arc, clear of whichever of the two lines leans further
+      // out at that height.
       final beside = _p(cam, fc[0], fc[1] + loftLen * 0.62, fc[2], posed: false);
+      final onFace = _p(cam, fc[0] + faceUp[0] * loftLen * 0.62, fc[1] + faceUp[1] * loftLen * 0.62, fc[2] + faceUp[2] * loftLen * 0.62);
       _readout(
         canvas,
         size,
-        Offset(beside.dx - 22, beside.dy),
+        Offset(math.min(beside.dx, onFace.dx) - 20, beside.dy),
         'Dyn. loft',
         _deg(dynLoft),
         '°',
@@ -728,10 +773,20 @@ class _AnnotationPainter extends CustomPainter {
   void _paintImpact(Canvas canvas, Size size, _Camera cam) {
     final halfW = model.faceHalfWidth * 1000;
     final halfH = model.faceHalfHeight * 1000;
-    // Crosshair on the face plane.
-    final hair = _line(AppColors.border2, width: 0.8);
-    canvas.drawLine(_faceScreen(cam, halfW * 0.92, 0), _faceScreen(cam, -halfW * 0.92, 0), hair);
-    canvas.drawLine(_faceScreen(cam, 0, halfH * 0.9), _faceScreen(cam, 0, -halfH * 0.9), hair);
+    // The face centre's own axes, drawn on the face plane and run well
+    // past the head so a strike reads against them at a glance: a solid
+    // horizontal for high and low, a dashed vertical for toe and heel.
+    canvas.drawLine(
+      _faceScreen(cam, halfW * 3.2, 0),
+      _faceScreen(cam, -halfW * 3.2, 0),
+      _line(_referenceColor.withAlpha(150), width: 1),
+    );
+    _dashed(
+      canvas,
+      _faceScreen(cam, 0, halfH * 3.4),
+      _faceScreen(cam, 0, -halfH * 3.4),
+      _line(_referenceColor.withAlpha(150), width: 1),
+    );
     final tp = TextPainter(textDirection: TextDirection.ltr);
     void zone(String t, Offset at) {
       tp
@@ -825,10 +880,7 @@ class _AnnotationPainter extends CustomPainter {
   @override
   bool shouldRepaint(_AnnotationPainter old) =>
       old.model != model ||
-      old.preset.yawDeg != preset.yawDeg ||
-      old.preset.pitchDeg != preset.pitchDeg ||
-      old.preset.anchor != preset.anchor ||
-      old.preset.fill != preset.fill ||
+      old.preset != preset ||
       old.pose != pose ||
       old.view != view ||
       old.shot != shot ||

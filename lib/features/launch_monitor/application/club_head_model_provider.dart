@@ -41,6 +41,12 @@ class ClubHeadModel {
   final Float32List centre;
   final double radius;
 
+  /// Support points of the head's convex hull — the farthest vertex in each
+  /// of a spread of directions, xyz triples. Projecting these onto a camera
+  /// gives the silhouette's extent from any angle without touching the
+  /// whole mesh, which is what lets a view fit the head to the viewport.
+  final Float32List hull;
+
   const ClubHeadModel({
     required this.mesh,
     required this.images,
@@ -51,6 +57,7 @@ class ClubHeadModel {
     required this.faceHalfHeight,
     required this.centre,
     required this.radius,
+    required this.hull,
   });
 
   static const asset = 'assets/models/titleist_gt2_head.glb';
@@ -145,7 +152,39 @@ class ClubHeadModel {
       faceHalfHeight: (maxU - minU) / 2,
       centre: headCentre,
       radius: math.sqrt(radius),
+      hull: _supportPoints(mesh),
     );
+  }
+
+  /// The farthest vertex along each of [count] directions spread evenly
+  /// over the sphere (a Fibonacci lattice).
+  static Float32List _supportPoints(GlbModel mesh, {int count = 96}) {
+    final out = Float32List(count * 3);
+    final golden = math.pi * (3 - math.sqrt(5));
+    for (var i = 0; i < count; i++) {
+      final y = 1 - 2 * (i + 0.5) / count;
+      final r = math.sqrt(1 - y * y);
+      final theta = golden * i;
+      final dx = math.cos(theta) * r, dy = y, dz = math.sin(theta) * r;
+      var best = -double.infinity;
+      var bx = 0.0, by = 0.0, bz = 0.0;
+      for (final part in mesh.parts) {
+        final p = part.positions;
+        for (var k = 0; k < p.length; k += 3) {
+          final d = p[k] * dx + p[k + 1] * dy + p[k + 2] * dz;
+          if (d > best) {
+            best = d;
+            bx = p[k];
+            by = p[k + 1];
+            bz = p[k + 2];
+          }
+        }
+      }
+      out[i * 3] = bx;
+      out[i * 3 + 1] = by;
+      out[i * 3 + 2] = bz;
+    }
+    return out;
   }
 
   static Float32List _averageNormal(GlbPart part) {
