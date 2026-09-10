@@ -41,9 +41,11 @@ enum ClubView {
 /// screen, and how much of the viewport's width and height it may fill —
 /// the rest is the room its figures need.
 ///
-/// Yaw is kept on one continuous scale — impact 0°, side −90°, top −180° —
-/// so a move between any two views swings past the hosel side and never has
-/// to choose a direction.
+/// Impact looks at the face from the target side (yaw 0°). Side stands at
+/// the toe (+90°) looking along the face toward the hosel, which puts the
+/// hosel at the back and the target to the right. Top rises over the heel
+/// (−90°) to look down, so the target line runs left across the screen with
+/// the toe at the top — the head seen as the golfer stands over it.
 class _Preset {
   final double yawDeg;
   final double pitchDeg;
@@ -54,10 +56,10 @@ class _Preset {
   const _Preset(this.yawDeg, this.pitchDeg, this.anchor, this.fillWidth, this.fillHeight);
 
   static _Preset of(ClubView view) => switch (view) {
-    // Loft and attack figures sit to the left of the face.
-    ClubView.side => const _Preset(-90, 7, Offset(0.58, 0.52), 0.52, 0.5),
-    // Face and path figures stand above the head along the target line.
-    ClubView.top => const _Preset(-180, 76, Offset(0.5, 0.58), 0.6, 0.5),
+    // Loft and attack figures sit to the right of the face.
+    ClubView.side => const _Preset(90, 7, Offset(0.42, 0.52), 0.52, 0.5),
+    // The target line runs left; the figures sit above and below it.
+    ClubView.top => const _Preset(-90, 76, Offset(0.6, 0.5), 0.5, 0.6),
     // Readouts live in the corners; the face can take the middle.
     ClubView.impact => const _Preset(0, 4, Offset(0.5, 0.5), 0.66, 0.6),
   };
@@ -522,6 +524,52 @@ class _AnnotationPainter extends CustomPainter {
     canvas.drawPath(path, paint);
   }
 
+  /// The angle between two directions, filled from the vertex outward and
+  /// fading to nothing at the arc — the delivered angle read as an area,
+  /// not only a line.
+  void _wedge(
+    Canvas canvas,
+    _Camera cam,
+    List<double> origin,
+    List<double> from,
+    List<double> to,
+    double radius,
+    Color color, {
+    bool posed = false,
+  }) {
+    final vertex = _p(cam, origin[0], origin[1], origin[2], posed: posed);
+    final path = Path()..moveTo(vertex.dx, vertex.dy);
+    const steps = 18;
+    var reach = 0.0;
+    for (var i = 0; i <= steps; i++) {
+      final t = i / steps;
+      final dot = (from[0] * to[0] + from[1] * to[1] + from[2] * to[2]).clamp(-1.0, 1.0);
+      final omega = math.acos(dot);
+      final wa = omega < 1e-4 ? 1 - t : math.sin((1 - t) * omega) / math.sin(omega);
+      final wb = omega < 1e-4 ? t : math.sin(t * omega) / math.sin(omega);
+      final s = _p(
+        cam,
+        origin[0] + (from[0] * wa + to[0] * wb) * radius,
+        origin[1] + (from[1] * wa + to[1] * wb) * radius,
+        origin[2] + (from[2] * wa + to[2] * wb) * radius,
+        posed: posed,
+      );
+      reach = math.max(reach, (s - vertex).distance);
+      path.lineTo(s.dx, s.dy);
+    }
+    path.close();
+    if (reach <= 0) return;
+    canvas.drawPath(
+      path,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          vertex,
+          reach,
+          [color.withAlpha(110), color.withAlpha(0)],
+        ),
+    );
+  }
+
   /// A readout — label above, value with unit — anchored by one of its
   /// corners so it can sit on either side of the thing it measures.
   void _readout(
@@ -597,6 +645,7 @@ class _AnnotationPainter extends CustomPainter {
     if (dynLoft != null) {
       // Arc from vertical to the delivered face plane, above the face.
       final delivered = _rotX(faceUp, -pose.loftDelta);
+      _wedge(canvas, cam, [fc[0], fc[1], fc[2]], [0, 1, 0], delivered, loftLen * 0.9, accent);
       _arc(canvas, cam, [fc[0], fc[1], fc[2]], [0, 1, 0], delivered, loftLen * 0.9, _line(accent.withAlpha(180), width: 1));
       // Beside the arc, clear of whichever of the two lines leans further
       // out at that height.
@@ -605,11 +654,11 @@ class _AnnotationPainter extends CustomPainter {
       _readout(
         canvas,
         size,
-        Offset(math.min(beside.dx, onFace.dx) - 20, beside.dy),
+        Offset(math.max(beside.dx, onFace.dx) + 20, beside.dy),
         'Dyn. loft',
         _deg(dynLoft),
         '°',
-        align: Alignment.centerRight,
+        align: Alignment.centerLeft,
         color: accent,
         note: 'face at impact',
       );
@@ -625,16 +674,20 @@ class _AnnotationPainter extends CustomPainter {
       final origin = [fc[0], ground, fc[2] + model.faceHalfWidth * 0.2];
       final back = _p(cam, origin[0] - dir[0] * len, origin[1] - dir[1] * len, origin[2] - dir[2] * len, posed: false);
       final fore = _p(cam, origin[0] + dir[0] * len, origin[1] + dir[1] * len, origin[2] + dir[2] * len, posed: false);
+      _wedge(canvas, cam, origin, [0, 0, 1], dir, len * 0.75, accent);
       canvas.drawLine(back, fore, _line(accent, width: 1.6));
       _arc(canvas, cam, origin, [0, 0, 1], dir, len * 0.75, _line(accent.withAlpha(180), width: 1));
+      // Under the ground line, where nothing else lives, clear of the
+      // loft figure above the face.
+      final under = _p(cam, origin[0], ground, origin[2] + len * 0.9, posed: false);
       _readout(
         canvas,
         size,
-        Offset(fore.dx + 6, fore.dy + (aoa >= 0 ? 10 : -10)),
+        Offset(under.dx, under.dy + 14),
         'Angle of attack',
         _deg(aoa),
         '°',
-        align: aoa >= 0 ? Alignment.topLeft : Alignment.bottomLeft,
+        align: Alignment.topRight,
         color: accent,
         note: aoa >= 0 ? 'up' : 'down',
       );
@@ -659,61 +712,76 @@ class _AnnotationPainter extends CustomPainter {
     final fc = model.faceCentre;
     final r = model.radius;
     final ground = model.mesh.boundsMin[1] + 0.001;
-    // The target line runs through the ball position just off the face.
+    // The target line runs through the ball just off the face — leftward
+    // on screen from this camera — with the ball's cross line through it.
+    // Its reach is set by the screen, not the head: out to near the edge
+    // however wide the pane, so the figures beside it always have room.
     final ball = [fc[0], ground, fc[2] + 0.02];
-    final tA = _p(cam, ball[0], ball[1], ball[2] - r * 1.9, posed: false);
-    final tB = _p(cam, ball[0], ball[1], ball[2] + r * 2.4, posed: false);
+    final ballScreen = _p(cam, ball[0], ball[1], ball[2], posed: false);
+    final perMetre = cam.scaleAt(Float32List.fromList([ball[0], ball[1], ball[2]]));
+    final reach = math.max(r * 1.2, (ballScreen.dx - size.width * 0.07) / perMetre);
+    final tA = _p(cam, ball[0], ball[1], ball[2] - r * 1.4, posed: false);
+    final tB = _p(cam, ball[0], ball[1], ball[2] + reach, posed: false);
     canvas.drawLine(tA, tB, _line(_referenceColor, width: 1.2));
-    _dashed(canvas, _p(cam, ball[0] - r * 1.6, ball[1], ball[2], posed: false), _p(cam, ball[0] + r * 1.6, ball[1], ball[2], posed: false), _line(AppColors.border2, width: 1));
+    _dashed(
+      canvas,
+      _p(cam, ball[0] - r * 0.9, ball[1], ball[2], posed: false),
+      _p(cam, ball[0] + r * 0.9, ball[1], ball[2], posed: false),
+      _line(AppColors.border2, width: 1),
+    );
 
     final face = shot.faceAngle;
     if (face != null) {
-      // The face line, heel to toe, turned as the head is.
+      // The face line, heel to toe, turned as the head is; its normal
+      // arced against the target line in front of the face.
       final along = _rotY([1, 0, 0], pose.faceAngle);
       final half = model.faceHalfWidth * 1.35;
+      final normal = _rotY([0, 0, 1], pose.faceAngle);
+      final len = reach * 0.5;
+      _wedge(canvas, cam, [fc[0], ground, fc[2]], [0, 0, 1], normal, len * 0.7, accent);
       final a = _p(cam, fc[0] + along[0] * half, ground, fc[2] + along[2] * half, posed: false);
       final b = _p(cam, fc[0] - along[0] * half, ground, fc[2] - along[2] * half, posed: false);
       canvas.drawLine(a, b, _line(accent, width: 1.6));
-      // Its normal against the target line, arced in front of the face.
-      final normal = _rotY([0, 0, 1], pose.faceAngle);
-      final len = r * 1.3;
       final tip = _p(cam, fc[0] + normal[0] * len, ground, fc[2] + normal[2] * len, posed: false);
       _dashed(canvas, _p(cam, fc[0], ground, fc[2], posed: false), tip, _line(accent.withAlpha(180), width: 1));
       _arc(canvas, cam, [fc[0], ground, fc[2]], [0, 0, 1], normal, len * 0.7, _line(accent.withAlpha(180), width: 1));
-      // The figure sits on the heel side of the target line, level with
-      // the arc, leaving the toe side to the path.
-      final level = _p(cam, ball[0], ground, fc[2] + len * 0.75, posed: false);
+      // Above the line for an open face (which turns toward the toe, the
+      // top of the screen), below for a closed one.
+      final above = face >= 0;
       _readout(
         canvas,
         size,
-        Offset(level.dx - 18, level.dy),
+        Offset(tip.dx, tip.dy + (above ? -12 : 12)),
         'Face to target',
         _deg(face),
         '°',
-        align: Alignment.centerRight,
+        align: above ? Alignment.bottomCenter : Alignment.topCenter,
         color: accent,
-        note: face >= 0 ? 'open' : 'closed',
+        note: above ? 'open' : 'closed',
       );
     }
 
     final path = shot.swingPath;
     if (path != null) {
       final dir = _rotY([0, 0, 1], path);
-      final len = r * 2.0;
-      final back = _p(cam, ball[0] - dir[0] * len, ball[1], ball[2] - dir[2] * len * 0.9, posed: false);
+      final len = reach * 0.8;
+      _wedge(canvas, cam, ball, [0, 0, 1], dir, len * 0.6, accent);
+      final back = _p(cam, ball[0] - dir[0] * len * 0.5, ball[1], ball[2] - dir[2] * len * 0.5, posed: false);
       final fore = _p(cam, ball[0] + dir[0] * len, ball[1], ball[2] + dir[2] * len, posed: false);
       canvas.drawLine(back, fore, _line(accent, width: 1.6));
       _arrowHead(canvas, back, fore, accent);
-      _arc(canvas, cam, ball, [0, 0, 1], dir, len * 0.45, _line(accent.withAlpha(180), width: 1));
-      final level = _p(cam, ball[0], ground, ball[2] + len * 0.55, posed: false);
+      _arc(canvas, cam, ball, [0, 0, 1], dir, len * 0.6, _line(accent.withAlpha(180), width: 1));
+      // Opposite side of the target line from the face figure, so the two
+      // never meet: in-to-out heads for the toe, so its figure goes below.
+      final below = path >= 0;
       _readout(
         canvas,
         size,
-        Offset(math.max(fore.dx, level.dx) + 18, level.dy),
+        Offset(fore.dx + 8, fore.dy + (below ? 14 : -14)),
         'Club path',
         _deg(path),
         '°',
-        align: Alignment.centerLeft,
+        align: below ? Alignment.topLeft : Alignment.bottomLeft,
         color: accent,
         note: path > 0 ? 'in to out' : path < 0 ? 'out to in' : 'square',
       );
@@ -724,11 +792,11 @@ class _AnnotationPainter extends CustomPainter {
       _readout(
         canvas,
         size,
-        Offset(16, size.height - 16),
+        Offset(size.width - 16, size.height - 16),
         'Face to path',
         _deg(ftp),
         '°',
-        align: Alignment.bottomLeft,
+        align: Alignment.bottomRight,
         note: ftp > 0 ? 'open to path' : ftp < 0 ? 'closed to path' : 'square to path',
       );
     }

@@ -43,9 +43,15 @@ left-handed head; its decals read backwards to prove it), so
 winding. Anything that builds a model without going through `load`,
 including the render rig, must apply `mirroredX()` itself.
 
-Camera presets, yaw about +Y: Impact 0° (in front of the face), Side −90°
-(at the heel, looking along the face), Top −180° from 76° above. Yaw is one
-continuous scale so every move swings the same way round.
+Camera presets, yaw about +Y: Impact 0° (in front of the face), Side +90°
+(at the toe, looking along the face toward the hosel, so the hosel sits at
+the back and the target is to the right), Top −90° from 76° above (over the
+heel, so the target line runs left across the screen with the toe at the
+top — the head as the golfer stands over it). The camera backs off until
+the head's silhouette from that angle fills the preset's share of the
+viewport's width and height, measured from support points of the hull, so
+the head scales with the pane and leaves the figures their room. Angles
+are filled with a wedge that fades from the vertex to the arc.
 
 ## Measuring the face
 
