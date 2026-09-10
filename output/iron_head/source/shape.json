@@ -1,0 +1,8 @@
+{
+  "reference": "view_578.png",
+  "metres_per_pixel_estimate": 0.00017,
+  "origin_pixel": [325, 670],
+  "face_outline": [[91,487],[98,444],[116,401],[145,361],[173,336],[195,327],[220,332],[274,351],[343,380],[411,412],[479,446],[541,478],[566,494],[579,530],[591,576],[583,615],[556,647],[526,663],[458,670],[356,673],[252,670],[192,666],[156,654],[125,630],[104,595],[94,547]],
+  "loft_degrees_estimate": 32,
+  "note": "Blade silhouette traced independently from the metal hosel. Scale and loft inferred, not calibrated. Photographed sole identifies a 7-iron."
+}

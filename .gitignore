@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Model-generation intermediates: the iron head volumetric field alone is 145 MB, over GitHub's limit.
+output/**/*.npy

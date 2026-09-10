@@ -1,0 +1,35 @@
+{
+  "revision": 3,
+  "name": "Titleist GT2 driver head (photo-informed approximation)",
+  "scope": "head and hosel only; no shaft or grip",
+  "units": "metres",
+  "triangles": 64156,
+  "vertices_blender": 32738,
+  "mesh_objects": 13,
+  "bounds_blender_m": {
+    "min": [
+      -0.059554390609264374,
+      -0.04814234748482704,
+      -0.024629753082990646
+    ],
+    "max": [
+      0.0702294111251831,
+      0.0679420456290245,
+      0.046451158821582794
+    ]
+  },
+  "dimensions_including_hosel_m": [
+    0.12978380173444748,
+    0.11608439311385155,
+    0.07108091190457344
+  ],
+  "glb_bytes": 1873228,
+  "materials": 9,
+  "notes": [
+    "Geometry inferred from four photographs; no calibrated dimensions or photogrammetric reconstruction.",
+    "Sole graphic is projected from supplied photograph and retains some photographed lighting.",
+    "Head and face outlines traced independently from view 05; face scoring uses the supplied photograph.",
+    "Head and lower hosel form one closed mesh with a rounded junction.",
+    "No shaft or grip included."
+  ]
+}

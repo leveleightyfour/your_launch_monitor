@@ -1,0 +1,10 @@
+{
+  "comparison": "Orthographic render aligned to traced reference pixels; not a camera calibration",
+  "body_region_pixels": [
+    0,
+    610,
+    550,
+    850
+  ],
+  "silhouette_intersection_over_union": 0.9692557155589919
+}

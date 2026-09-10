@@ -1,0 +1,9 @@
+{
+  "head_hosel_one_closed_connected_mesh": true,
+  "native_blend_reopens": true,
+  "native_packed_textures": 3,
+  "glb_reimports": true,
+  "imported_meshes": 13,
+  "camera_and_lights_excluded": true,
+  "preview": "glb_verified.png"
+}

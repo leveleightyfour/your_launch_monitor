@@ -1,0 +1,22 @@
+{
+  "name": "Srixon ZXi7 7-iron head",
+  "scope": "Head, hosel and short ferrule only. No shaft or grip.",
+  "source_photos": [
+    575,
+    578,
+    579,
+    580,
+    581
+  ],
+  "units": "metres",
+  "loft_degrees_estimate": 32,
+  "mesh_objects": 9,
+  "triangles": 104568,
+  "glb_bytes": 2589436,
+  "notes": [
+    "Asymmetric blade outline traced from front photo.",
+    "Cavity, forged facets, sole and continuous hosel are geometry.",
+    "13 stepped scorelines use a portable tangent normal texture.",
+    "Scale, loft and hidden surfaces are inferred; not manufacturer CAD."
+  ]
+}

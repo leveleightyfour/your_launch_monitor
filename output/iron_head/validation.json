@@ -1,0 +1,14 @@
+{
+  "container": "PASS",
+  "all_resources_embedded": true,
+  "finite_buffers_and_unit_normals": "PASS",
+  "indices_in_range": "PASS",
+  "embedded_PNG_images": 8,
+  "meshes": 9,
+  "primitives": 10,
+  "triangles": 104590,
+  "degenerate_triangles": 0,
+  "bytes": 2615012,
+  "extensions_used": [],
+  "external_dependencies": 0
+}
